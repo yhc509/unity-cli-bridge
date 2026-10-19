@@ -154,6 +154,11 @@ def relative_files(root: Path) -> dict[str, bytes]:
     return files
 
 
+def canonical_bytes(data: bytes) -> bytes:
+    # Windows checkouts rewrite LF as CRLF. Compare the text, not the checkout ending.
+    return data.replace(b"\r\n", b"\n")
+
+
 def report_tree_diff(expected: dict[str, bytes], actual: dict[str, bytes]) -> str:
     lines: list[str] = []
     expected_names = set(expected)
@@ -163,7 +168,7 @@ def report_tree_diff(expected: dict[str, bytes], actual: dict[str, bytes]) -> st
     for name in sorted(actual_names - expected_names):
         lines.append(f"unexpected {name}")
     for name in sorted(expected_names & actual_names):
-        if expected[name] == actual[name]:
+        if canonical_bytes(expected[name]) == canonical_bytes(actual[name]):
             continue
         lines.append(f"differs {name}")
         if name.endswith((".md", ".yaml", ".yml", ".json")):
