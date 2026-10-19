@@ -1,6 +1,24 @@
-# unity-cli-bridge
+<p align="center">
+  <img alt="unity-cli-bridge icon: curly braces bridged by an arc over a cube" src="docs/assets/icon.svg" width="128" height="128">
+</p>
 
-Control the Unity Editor from the command line. No manual server startup, no port management — the bridge starts when the Editor opens, and the CLI finds the right project automatically.
+<h1 align="center">unity-cli-bridge</h1>
+
+**unity-cli-bridge** is a command-line interface for the Unity Editor: declarative commands for scenes, prefabs, materials, assets, packages, the Test Runner, Play Mode QA, and profiling, each returning JSON on stdout.
+
+It is for developers who script the Editor and for AI coding agents such as Claude Code, Codex, and Grok Build. An agent skill ships with the repo. The bridge runs on Unity 2021.3 LTS or later, including Unity 6. Published CLI builds are macOS Apple Silicon and Windows x64.
+
+It does not use an MCP client or a Python server. [MCP for Unity](https://github.com/CoplayDev/unity-mcp) requires both. [Unity CLI Loop](https://github.com/hatayama/unity-cli-loop) says almost any Editor operation can be done with `execute-dynamic-code`, and keeps dedicated commands for what that cannot cover. Unity's [official CLI](https://docs.unity.com/en-us/unity-cli/unity-cli) installs and manages Editors on its own; driving a running Editor uses the [Pipeline package](https://docs.unity.com/en-us/unity-cli/unity-pipeline/unity-pipeline-package) over a local HTTP API, including [`unity command eval`](https://unity.com/blog/meet-the-unity-cli) for C#. Common edits here are dedicated commands. `execute` is the escape hatch and requires `--force`. Sources and the rest of the comparison are in [How it compares](#how-it-compares).
+
+## Requirements
+
+- **Unity:** 2021.3 LTS or newer, including Unity 6. Checked on 2021.3.45f2, the latest public 2021.3 patch. Later 2021.3 releases are paid extended-LTS builds. Gradient property edits require Unity 2022.1 or newer; older editors return `UNSUPPORTED_PROPERTY`.
+- **Published CLI builds:** macOS Apple Silicon (`unity-cli-osx-arm64.tar.gz`) and Windows x64 (`unity-cli-win-x64.zip`). No Intel Mac build is published. No Linux build is published.
+- **Running Editor:** commands that query or change a project need an Editor with this package loaded. The bridge starts when that Editor opens. `editor launch` can start one, including headless (`-batchmode`, GPU left available).
+- **Installed with the package:** `com.unity.test-framework` 1.4.5 (declared in `package.json`).
+- **Optional — Unity Recorder** (`com.unity.recorder` 3.0.0 or newer): required for `record` and `qa run-sequence --record`. Without it, `record start` returns an install hint and the other commands still work. On Unity 6000.4 and newer, Recorder 5.1.6 or later is required or Recorder itself does not compile.
+- **Optional — Input System** (`com.unity.inputsystem`): `qa key`, `qa swipe`, right-button `qa tap`, and the coordinate fallback of `qa tap --target` return `QA_INPUT_SYSTEM_REQUIRED` when it is not installed.
+- **Optional — Memory Profiler** (`com.unity.memoryprofiler`): required only for `profile memory snapshot`. The other `profile` commands do not use it.
 
 ## Design Philosophy
 
@@ -14,20 +32,20 @@ Most Unity automation tools fall into two camps:
 
 ```
 CLI ──── local IPC ──── Unity Editor (bridge)
-         (Named Pipe on Windows, Unix socket on macOS/Linux)
+         (Named Pipe on Windows, Unix socket on macOS)
 ```
 
-- **One hop, no intermediary.** CLI talks directly to the Editor over local IPC. Average response: 265 ms.
+- **One hop, no intermediary.** CLI talks directly to the Editor over local IPC. Average response: 265 ms (v0.1.0, measured 2026-04-05).
 - **Declarative, not imperative.** `scene add-object --primitive Cube --position 3,0,0` instead of writing C# code. The LLM picks options, not APIs.
-- **Token-aware responses.** `--output compact` strips envelope metadata. `--omit-defaults` cuts material info by 71% and scene inspect by 41%.
+- **Token-aware responses.** `--output compact` strips envelope metadata. `--omit-defaults` cuts material info by 71% and scene inspect by 41% (same v0.1.0 run, 2026-04-05).
 - **Structured results in stdout.** No polling, no log scraping, no file reads. Every command returns JSON immediately.
 - **Fail fast, fail loud.** Invalid options get a clear error. Unrecognized patch keys return warnings instead of silent success.
 
-> See [Benchmark: 3-Way Comparison](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison) for measured results against two other approaches on the same scenario.
+> See [Benchmark: 3-Way Comparison](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison) for that 2026-04-05 v0.1.0 run. The other two approaches are anonymized there (Tool B / Tool C). They are not the named projects in [How it compares](#how-it-compares).
 
 ## Quick Start
 
-Unity 2021.3 LTS or newer, including Unity 6. Checked on 2021.3.45f2, the latest public 2021.3 patch. Later 2021.3 releases are paid extended-LTS builds.
+Unity version, CLI platforms, and optional packages are in [Requirements](#requirements).
 
 ### 1. Add the Unity Package
 
@@ -434,8 +452,8 @@ For AI agent workflows, minimize token consumption:
 unity-cli asset info --path ... --output compact
 
 # --omit-defaults: strip default/identity values from inspect and material responses
-unity-cli scene inspect --path ... --with-values --omit-defaults    # 41% smaller
-unity-cli material info --path ... --omit-defaults                  # 71% smaller
+unity-cli scene inspect --path ... --with-values --omit-defaults    # 41% smaller (v0.1.0, 2026-04-05)
+unity-cli material info --path ... --omit-defaults                  # 71% smaller (v0.1.0, 2026-04-05)
 
 # --max-depth: limit hierarchy traversal depth
 unity-cli scene inspect --path ... --max-depth 2
@@ -490,13 +508,63 @@ Unity -batchmode -quit -projectPath . -noUnityCliBridge -executeMethod Build.Run
 
 A disabled bridge constructs nothing and logs one line saying so.
 
+## How it compares
+
+Facts in this table were read from the linked pages on 2026-10-19. They describe what those pages say. They are not a timed benchmark. The only timed numbers in this README are the v0.1.0 figures above, from the anonymized [wiki benchmark](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison) (2026-04-05).
+
+| | unity-cli-bridge | [MCP for Unity](https://github.com/CoplayDev/unity-mcp) | [Unity CLI Loop](https://github.com/hatayama/unity-cli-loop) | [Unity CLI](https://docs.unity.com/en-us/unity-cli/unity-cli) + [Pipeline](https://docs.unity.com/en-us/unity-cli/unity-pipeline/unity-pipeline-package) |
+| --- | --- | --- | --- | --- |
+| Transport to a running Editor | Local named pipe on Windows, Unix socket on macOS. No TCP port. | An MCP client talks to a Python server over stdio or HTTP ([transport modes](https://coplaydev.github.io/unity-mcp/architecture/transports)). Stdio discovers Editors through status files and a TCP port ([instance routing](https://coplaydev.github.io/unity-mcp/architecture/instance-routing)). HTTP has Editors connect over a WebSocket ([v8 networking](https://coplaydev.github.io/unity-mcp/migrations/v8)). | Unix domain socket on macOS/Linux, named pipe on Windows. The README says this path uses no TCP port. | Local HTTP API, as the Pipeline package page describes it. |
+| Extra runtime | None beyond the Editor. The published CLI is a self-contained binary. | Python 3.10+ via [`uv`](https://docs.astral.sh/uv/), plus an MCP client. Stated in the README quickstart. | The V3 README says there is no Node.js setup. Install is a `uloop` binary. | The `unity` binary. Pipeline is a package in the Unity project. |
+| How edits are expressed | Dedicated commands for scenes, prefabs, materials, assets, and packages. `execute` runs C# only with `--force`. | MCP tools. The README lists managing assets, controlling scenes, editing scripts, running tests, profiling, and building. | The README says almost any Editor operation can be done with `execute-dynamic-code`. Dedicated commands are for what that cannot cover (input simulation, screenshots) and for frequent steps such as compile and logs. | Registered Pipeline commands, plus `unity command eval` for C# in the running Editor ([Unity blog, 2026-07-20](https://unity.com/blog/meet-the-unity-cli)). |
+| Minimum Unity | 2021.3 LTS, including Unity 6. Checked on 2021.3.45f2. | README quickstart: Unity 2021.3 LTS through 6.x. | README: Unity 2022.3 or later. | The CLI manages Editor installs on its own. The Pipeline page requires Unity 6.0 or later to drive a running Editor ([also stated here](https://docs.unity.com/en-us/unity-cli/replace-mcp-server-unity-cli)). |
+| Operating systems | Published CLI: macOS Apple Silicon and Windows x64. No Intel Mac build. No Linux build. | No host OS matrix on the README quickstart. | README install: macOS, Linux (x86_64), and Windows. On Linux, `focus-window` is not supported. | [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli): Windows 10 21H1 or newer, Linux (RHEL 9 and Ubuntu 22.04 or later, glibc 2.34+), macOS 14 or newer. |
+| License | [Apache-2.0](LICENSE) | MIT, stated in the README. | MIT, stated in the README. | The [replacement guide](https://docs.unity.com/en-us/unity-cli/replace-mcp-server-unity-cli) says the CLI is free and is not a Unity AI subscription. Those pages do not name an open-source license. |
+
+Also named on those same pages: this repo documents Play Mode `qa` (click, tap, swipe, ui-dump, world-dump, wait-until, run-sequence) and the `profile` commands. Unity CLI Loop's README lists `simulate-mouse-ui`, `simulate-mouse-input`, `simulate-keyboard`, and `replay-input`. MCP for Unity's README lists running tests and profiling. Unity's CLI reference lists `unity test` for the Test Runner.
+
+## FAQ
+
+### Is this an MCP server?
+
+No. `unity-cli` talks to the Editor over a local named pipe (Windows) or Unix socket (macOS) and prints JSON. There is no MCP server to configure and no Python process. [MCP for Unity](https://github.com/CoplayDev/unity-mcp) is a different project; its README requires an MCP client and Python 3.10+. Claude Code, Codex, and Grok Build use this repo through the plugin skill in [Install the agent skill](#3-install-the-agent-skill).
+
+### How do I use it with Claude Code, Codex, or Grok Build?
+
+Install the skill as a plugin, at user scope, so it loads whichever folder the agent is opened in. The commands for Claude Code, Codex, and Grok Build are in [Install the agent skill](#3-install-the-agent-skill). **Window > Unity CLI Manager** shows those commands first. Copying the files is the alternative: Claude Code writes `.claude/skills/unity-cli-bridge/`, Codex writes `.agents/skills/unity-cli-bridge/` (not `.codex/skills/`), and Grok Build writes `.grok/skills/unity-cli-bridge/`.
+
+### Which Unity versions and platforms are supported? Does it run on Linux?
+
+Unity 2021.3 LTS or newer, including Unity 6. It was checked on 2021.3.45f2. Published CLI binaries are macOS Apple Silicon and Windows x64. No Intel Mac build is published, and no Linux build is published. A summary that says this project supports Linux is repeating an old diagram label; the listener line now says macOS.
+
+### Does the Editor have to be open already?
+
+Commands that query or change the project need a running Editor with this package loaded. The bridge starts when that Editor opens. `unity-cli editor launch` starts the Editor for the project, headless (`-batchmode`, GPU kept) unless you pass `--gui`, and waits until the bridge answers (default 300 seconds). If that Editor is already running, launch reuses it.
+
+### How is this different from Unity's official `unity` CLI?
+
+Unity's CLI is Unity Technologies' binary for installing Editors, modules, and projects. Driving a running Editor with it requires the Pipeline package, which the docs say needs Unity 6.0 or later and uses a local HTTP API. `unity command eval` runs C# in that Editor. This repository is a separate Apache-2.0 package and `unity-cli` binary. Scenes, prefabs, materials, assets, tests, QA, and profiling are dedicated commands. `execute` runs C# only when you pass `--force`.
+
+### Can it run in CI or batchmode?
+
+Yes. The bridge starts in any main Editor process, including `-batchmode`. Leave the GPU available (do not pass `-nographics`) when you need screenshots, recording, or coordinate-based QA. A job that only builds a player can set `UNITY_CLI_BRIDGE_DISABLE=1` or pass `-noUnityCliBridge` so the bridge does not listen or take the registry lock. See [Release Builds & CI](#release-builds--ci).
+
+### Is it safe to let an agent run it?
+
+Destructive commands require `--force`, including asset delete, `execute`, package remove, and scene or prefab component removal. Scene patch, prefab patch, and asset overwrite write a backup of the asset and its `.meta` under `Library/com.yhc509.unity-cli-bridge/backups/`. `scene patch` still refuses a target scene that is already loaded with unsaved changes, even with `--force`. The list is in [Safety Rules](#safety-rules).
+
+### Is it free?
+
+Yes. The repository is [Apache License 2.0](LICENSE).
+
 ## Documentation
 
 - [CLI Reference (generated)](docs/cli-reference.md)
 - [Architecture](docs/architecture.md)
 - [Scene Spec](docs/scene-spec.md)
 - [Prefab Spec](docs/prefab-spec.md)
-- [Benchmark](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison)
+- [llms.txt](llms.txt)
+- [Benchmark (v0.1.0, 2026-04-05)](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison)
 - [Unity Package](unity-package/com.yhc509.unity-cli-bridge/README.md)
 
 ## AI Agent Skill
@@ -517,7 +585,7 @@ dotnet run --project cli/UnityCli.DocGen -- --check   # Verify docs match code
 
 ## Current Limits
 
-- macOS arm64 and Windows x64 supported
+- macOS Apple Silicon (arm64) and Windows x64. No Intel Mac CLI build and no Linux CLI build are published
 - Live IPC required — Unity commands fail fast when no Editor is running (`editor launch` can start one for you)
 - Scene patching targets saved `Assets/...unity` scenes; multi-scene orchestration is out of scope
 - Prefab-internal object references and nested variants are not yet supported

@@ -1,0 +1,18 @@
+# unity-cli-bridge
+
+> Command-line interface for the Unity Editor for scripts and AI coding agents (Claude Code, Codex, Grok Build). Declarative commands return JSON over a local pipe or socket. No MCP server and no Python server. Unity 2021.3 LTS or later. Published CLI builds: macOS Apple Silicon and Windows x64.
+
+## Docs
+
+- [README](https://github.com/yhc509/unity-cli-bridge/blob/main/README.md): install, requirements, comparison, FAQ, commands, limits
+- [CLI reference](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/cli-reference.md): generated command list
+- [Scene spec](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/scene-spec.md): scene patch paths and operations
+- [Prefab spec](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/prefab-spec.md): prefab inspect and patch
+- [Agent skill](https://github.com/yhc509/unity-cli-bridge/tree/main/plugins/unity-cli-bridge/skills/unity-cli-bridge): skill installed by the Claude Code, Codex, and Grok Build plugin
+- [Changelog](https://github.com/yhc509/unity-cli-bridge/blob/main/CHANGELOG.md)
+
+## Install
+
+- Unity package: `https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#main`
+- CLI: Window > Unity CLI Manager, or the archives on the GitHub Releases page
+- Skill: plugin install is the recommended path (see the README). A file copy for Codex goes under `.agents/skills/unity-cli-bridge/`
