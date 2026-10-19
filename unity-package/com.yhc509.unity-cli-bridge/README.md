@@ -44,9 +44,9 @@ For Git-based installation, use the package path inside the repository.
 
 If you are migrating from the old package, update the dependency key in `Packages/manifest.json` from `com.puc.bridge` to `com.yhc509.unity-cli-bridge`. If your Unity project references the bridge asmdefs directly, also rename `PUC.Editor` / `PUC.Runtime` references to `UnityCliBridge.Bridge.Editor` / `UnityCliBridge.Bridge.Runtime`.
 
-The CLI executable is installed separately from **Window > Unity CLI Manager**. The package includes the AI Agent Skill template, and the same window can install or remove it for Claude Code, Codex, or Grok Build.
+The CLI executable is installed separately from **Window > Unity CLI Manager**. The same window lists the plugin install commands for Claude Code, Codex, and Grok Build. That is the way to load the agent skill from any folder.
 
-By default, the skill installs into the current Unity project under `<project-root>/.claude/skills/`, `<project-root>/.agents/skills/` (Codex), or `<project-root>/.grok/skills/`. The same window can target the git repository root or your home directory instead. Commit a project or git-root install if you want teammates to use the same skill version as the package. Choose User (home) only when you want one user-wide copy. Older `.codex/skills/unity-cli-bridge` copies are left in place until you remove them from the window.
+Copying the skill files is under **Advanced: copy skill files into a folder** in that window. That copy goes into the current Unity project under `<project-root>/.claude/skills/`, `<project-root>/.agents/skills/` (Codex), or `<project-root>/.grok/skills/` unless you pick another location. The same controls can target the git repository root or your home directory. Commit a project or git-root install if you want teammates to use the same skill version as the package. Choose User (home) only when you want one user-wide copy. Older `.codex/skills/unity-cli-bridge` copies are left in place until you remove them from the window. Cursor has no plugin command in this repository, so Cursor uses the file copy.
 
 ## Notes
 

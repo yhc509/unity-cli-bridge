@@ -31,6 +31,7 @@
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\ClientDisconnectMonitor.cs" Link="UnityEditor\ClientDisconnectMonitor.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\CliInstallGuard.cs" Link="UnityEditor\CliInstallGuard.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\EnvelopeJsonWriter.cs" Link="UnityEditor\EnvelopeJsonWriter.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\SkillPluginCommands.cs" Link="UnityEditor\SkillPluginCommands.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\NamedPipeOwnershipLock.cs" Link="UnityEditor\NamedPipeOwnershipLock.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\PendingRequestState.cs" Link="UnityEditor\PendingRequestState.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\ProtocolErrorDetails.cs" Link="UnityEditor\ProtocolErrorDetails.cs" />

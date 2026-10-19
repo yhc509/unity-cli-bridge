@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Window > Unity CLI Manager** leads the AI Agent Skill section with copyable plugin install commands. Copying the skill into a folder is under **Advanced: copy skill files into a folder**.
+
 ## [0.5.5] - 2026-10-19
 
 ### Changed

@@ -18,6 +18,7 @@ namespace UnityCliBridge.Bridge.Editor
         private const string SkillTargetPrefKey = "UnityCliBridge.CliManager.SkillTarget";
         private const string SkillLocationPrefKeyPrefix = "UnityCliBridge.CliManager.SkillLocation.";
         private const string SkillCustomRootPrefKeyPrefix = "UnityCliBridge.CliManager.SkillCustomRoot.";
+        private const string SkillFileCopyFoldoutPrefKey = "UnityCliBridge.CliManager.SkillFileCopyFoldout";
 
         private Vector2 _scrollPosition;
         private CliInstallStatus _status;
@@ -52,6 +53,7 @@ namespace UnityCliBridge.Bridge.Editor
         private bool _isSkillInstalled;
         private bool _isGlobalSkillInstalled;
         private bool _skillRootResolved;
+        private bool _skillFileCopyExpanded;
         private SkillTarget _skillTarget;
         private SkillInstallLocation _skillLocation;
         private string _skillCustomRoot = string.Empty;
@@ -391,110 +393,229 @@ namespace UnityCliBridge.Bridge.Editor
         {
             using (new CliManagerStyles.SectionScope("AI Agent Skill"))
             {
-                EditorGUI.BeginChangeCheck();
-                Rect targetRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
-                _skillTarget = (SkillTarget)EditorGUI.EnumPopup(targetRow, "Target", _skillTarget);
-                Rect locationRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
-                _skillLocation = (SkillInstallLocation)EditorGUI.EnumPopup(locationRow, "Location", _skillLocation);
-                if (EditorGUI.EndChangeCheck())
+                DrawPluginInstallBlock();
+                GUILayout.Space(6f);
+                if (DrawSkillFileCopyFoldout())
                 {
-                    SaveSkillPreferences();
-                    ClearSkillFeedback();
-                    RefreshSkillState();
+                    DrawSkillFileCopyControls();
+                }
+            }
+        }
+
+        private void DrawPluginInstallBlock()
+        {
+            GUILayout.Label(
+                "Install as plugin (recommended)",
+                EditorStyles.boldLabel,
+                GUILayout.MinWidth(0f),
+                GUILayout.ExpandWidth(true));
+            CliManagerStyles.DrawWrappedHelp(
+                "A plugin loads the skill from any folder. Run each command in order. Copying files into a folder only works when the agent is opened at that folder or below it.",
+                MessageType.None);
+
+            string previousGroup = string.Empty;
+            SkillPluginCommandLine[] commands = SkillPluginCommands.All();
+            for (int i = 0; i < commands.Length; i++)
+            {
+                SkillPluginCommandLine command = commands[i];
+                if (!string.Equals(previousGroup, command.Group, StringComparison.Ordinal))
+                {
+                    if (!string.IsNullOrEmpty(previousGroup))
+                    {
+                        DrawPluginGroupFooter(previousGroup);
+                    }
+
+                    previousGroup = command.Group;
+                    GUILayout.Space(4f);
+                    GUILayout.Label(
+                        command.Group,
+                        EditorStyles.miniBoldLabel,
+                        GUILayout.MinWidth(0f),
+                        GUILayout.ExpandWidth(true));
+                    DrawPluginGroupHeader(command.Group);
                 }
 
-                if (_skillLocation == SkillInstallLocation.GitRepository)
+                DrawCopyableCommand(command.Command);
+            }
+
+            if (!string.IsNullOrEmpty(previousGroup))
+            {
+                DrawPluginGroupFooter(previousGroup);
+            }
+
+            CliManagerStyles.DrawWrappedHelp(
+                "Cursor has no plugin install command in this repository. Use the file copy below for Cursor.",
+                MessageType.None);
+        }
+
+        private static void DrawPluginGroupHeader(string group)
+        {
+            if (!string.Equals(group, SkillPluginCommands.ClaudeCodeTerminalGroup, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            CliManagerStyles.DrawWrappedHelp(
+                "The shell form pins user scope (the default for claude plugin install is already user).",
+                MessageType.None);
+        }
+
+        private static void DrawPluginGroupFooter(string group)
+        {
+            if (!string.Equals(group, SkillPluginCommands.CodexGroup, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            CliManagerStyles.DrawWrappedHelp(
+                "When codex plugin add is not available, install unity-cli-bridge from /plugins in the Codex TUI, or from the Plugins directory in the ChatGPT desktop app.",
+                MessageType.None);
+        }
+
+        private static void DrawCopyableCommand(string command)
+        {
+            const float buttonWidth = 52f;
+            const float gap = 4f;
+            Rect row = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            float usedButtonWidth = Mathf.Min(buttonWidth, Mathf.Max(0f, row.width));
+            Rect buttonRect = new Rect(row.xMax - usedButtonWidth, row.y, usedButtonWidth, row.height);
+            float fieldWidth = Mathf.Max(0f, buttonRect.x - gap - row.x);
+            Rect fieldRect = new Rect(row.x, row.y, fieldWidth, row.height);
+            EditorGUI.SelectableLabel(fieldRect, command, CliManagerStyles.ClippedFieldStyle());
+            if (GUI.Button(buttonRect, "Copy"))
+            {
+                EditorGUIUtility.systemCopyBuffer = command;
+            }
+        }
+
+        private bool DrawSkillFileCopyFoldout()
+        {
+            Rect row = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            GUIStyle style = new GUIStyle(EditorStyles.foldout)
+            {
+                wordWrap = false,
+                clipping = TextClipping.Clip,
+            };
+            bool expanded = EditorGUI.Foldout(
+                row,
+                _skillFileCopyExpanded,
+                new GUIContent("Advanced: copy skill files into a folder"),
+                true,
+                style);
+            if (expanded != _skillFileCopyExpanded)
+            {
+                _skillFileCopyExpanded = expanded;
+                EditorPrefs.SetBool(SkillFileCopyFoldoutPrefKey, _skillFileCopyExpanded);
+            }
+
+            return _skillFileCopyExpanded;
+        }
+
+        private void DrawSkillFileCopyControls()
+        {
+            EditorGUI.BeginChangeCheck();
+            Rect targetRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            _skillTarget = (SkillTarget)EditorGUI.EnumPopup(targetRow, "Target", _skillTarget);
+            Rect locationRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            _skillLocation = (SkillInstallLocation)EditorGUI.EnumPopup(locationRow, "Location", _skillLocation);
+            if (EditorGUI.EndChangeCheck())
+            {
+                SaveSkillPreferences();
+                ClearSkillFeedback();
+                RefreshSkillState();
+            }
+
+            if (_skillLocation == SkillInstallLocation.GitRepository)
+            {
+                CliManagerStyles.DrawWrappedHelp(
+                    "Choose the folder that should contain the tool directory (.claude, .agents, or .grok). The Path row shows the skill directory that will be created inside it.",
+                    MessageType.None);
+                DrawSelectableValue(
+                    "Git root",
+                    string.IsNullOrWhiteSpace(_detectedGitRoot) ? "(not found)" : _detectedGitRoot);
+                if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
                 {
-                    CliManagerStyles.DrawWrappedHelp(
-                        "Choose the folder that should contain the tool directory (.claude, .agents, or .grok). The Path row shows the skill directory that will be created inside it.",
-                        MessageType.None);
-                    DrawSelectableValue(
-                        "Git root",
-                        string.IsNullOrWhiteSpace(_detectedGitRoot) ? "(not found)" : _detectedGitRoot);
+                    DrawSelectableValue("Chosen folder", _skillCustomRoot);
+                }
+
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    if (GUILayout.Button("Choose folder", GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
+                    {
+                        ChooseSkillFolder();
+                    }
+
                     if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
                     {
-                        DrawSelectableValue("Chosen folder", _skillCustomRoot);
+                        string clearLabel = string.IsNullOrWhiteSpace(_detectedGitRoot)
+                            ? "Clear chosen folder"
+                            : "Use detected git root";
+                        if (GUILayout.Button(clearLabel, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
+                        {
+                            _skillCustomRoot = string.Empty;
+                            SaveSkillPreferences();
+                            ClearSkillFeedback();
+                            RefreshSkillState();
+                        }
                     }
+                }
+            }
 
+            DrawSelectableValue("Path", _skillDestinationPath);
+            CliManagerStyles.BadgeField("Skill", GetSkillStatusLabel(), GetSkillBadgeKind());
+
+            if (!string.IsNullOrWhiteSpace(_skillRootError))
+            {
+                CliManagerStyles.DrawWrappedHelp(_skillRootError, MessageType.Warning);
+            }
+
+            using (new EditorGUI.DisabledScope(!_skillRootResolved))
+            {
+                if (_isSkillInstalled)
+                {
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("Choose folder", GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
+                        if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                         {
-                            ChooseSkillFolder();
+                            InstallSkill();
                         }
 
-                        if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
+                        if (GUILayout.Button("Remove Skill", GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                         {
-                            string clearLabel = string.IsNullOrWhiteSpace(_detectedGitRoot)
-                                ? "Clear chosen folder"
-                                : "Use detected git root";
-                            if (GUILayout.Button(clearLabel, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
-                            {
-                                _skillCustomRoot = string.Empty;
-                                SaveSkillPreferences();
-                                ClearSkillFeedback();
-                                RefreshSkillState();
-                            }
+                            RemoveSkill();
                         }
                     }
                 }
-
-                DrawSelectableValue("Path", _skillDestinationPath);
-                CliManagerStyles.BadgeField("Skill", GetSkillStatusLabel(), GetSkillBadgeKind());
-
-                if (!string.IsNullOrWhiteSpace(_skillRootError))
+                else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                 {
-                    CliManagerStyles.DrawWrappedHelp(_skillRootError, MessageType.Warning);
+                    InstallSkill();
                 }
+            }
 
-                using (new EditorGUI.DisabledScope(!_skillRootResolved))
-                {
-                    if (_isSkillInstalled)
-                    {
-                        using (new EditorGUILayout.HorizontalScope())
-                        {
-                            if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
-                            {
-                                InstallSkill();
-                            }
+            if (_skillLocation != SkillInstallLocation.UserHome
+                && _isGlobalSkillInstalled
+                && !SkillInstallPaths.PathsEqual(_resolvedInstallRoot, _userHomeRoot))
+            {
+                CliManagerStyles.DrawWrappedHelp(
+                    "A user-home copy of this skill is also installed at `" + _globalSkillPath + "`. It may take precedence over this copy. Set Location to User (home) to update or remove that copy.",
+                    MessageType.Warning);
+            }
 
-                            if (GUILayout.Button("Remove Skill", GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
-                            {
-                                RemoveSkill();
-                            }
-                        }
-                    }
-                    else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
-                    {
-                        InstallSkill();
-                    }
-                }
+            if (!string.IsNullOrWhiteSpace(_gitRootMismatchWarning))
+            {
+                CliManagerStyles.DrawWrappedHelp(_gitRootMismatchWarning, MessageType.Warning);
+            }
 
-                if (_skillLocation != SkillInstallLocation.UserHome
-                    && _isGlobalSkillInstalled
-                    && !SkillInstallPaths.PathsEqual(_resolvedInstallRoot, _userHomeRoot))
-                {
-                    CliManagerStyles.DrawWrappedHelp(
-                        "A user-home copy of this skill is also installed at `" + _globalSkillPath + "`. It may take precedence over this copy. Set Location to User (home) to update or remove that copy.",
-                        MessageType.Warning);
-                }
+            for (int i = 0; i < _duplicateWarnings.Count; i++)
+            {
+                CliManagerStyles.DrawWrappedHelp(_duplicateWarnings[i], MessageType.Warning);
+            }
 
-                if (!string.IsNullOrWhiteSpace(_gitRootMismatchWarning))
-                {
-                    CliManagerStyles.DrawWrappedHelp(_gitRootMismatchWarning, MessageType.Warning);
-                }
+            DrawLegacyCodexCopies();
 
-                for (int i = 0; i < _duplicateWarnings.Count; i++)
-                {
-                    CliManagerStyles.DrawWrappedHelp(_duplicateWarnings[i], MessageType.Warning);
-                }
-
-                DrawLegacyCodexCopies();
-
-                if (!string.IsNullOrWhiteSpace(_skillFeedbackMessage))
-                {
-                    CliManagerStyles.DrawWrappedHelp(_skillFeedbackMessage, _skillFeedbackType);
-                }
+            if (!string.IsNullOrWhiteSpace(_skillFeedbackMessage))
+            {
+                CliManagerStyles.DrawWrappedHelp(_skillFeedbackMessage, _skillFeedbackType);
             }
         }
 
@@ -1496,6 +1617,7 @@ namespace UnityCliBridge.Bridge.Editor
             string suffix = GetProjectPrefSuffix();
             _skillLocation = ReadEnumPref(SkillLocationPrefKeyPrefix + suffix, SkillInstallLocation.UnityProject);
             _skillCustomRoot = EditorPrefs.GetString(SkillCustomRootPrefKeyPrefix + suffix, string.Empty);
+            _skillFileCopyExpanded = EditorPrefs.GetBool(SkillFileCopyFoldoutPrefKey, false);
         }
 
         private void SaveSkillPreferences()
