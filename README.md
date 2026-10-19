@@ -99,11 +99,17 @@ Extract and add the binary to your PATH. A manually placed binary carries no ver
 
 ### 3. Install AI Agent Skill
 
-In the Unity Editor, open `Window > Unity CLI Manager`. Select your AI tool (Claude Code, Codex, or Grok Build), keep **Scope** set to **Project** unless you need a global install, and click **Install Skill**.
+In the Unity Editor, open `Window > Unity CLI Manager`. Select your AI tool (Claude Code, Codex, or Grok Build), choose an install location, and click **Install Skill**.
 
-Once installed, the same section offers **Remove Skill** for the selected tool and scope.
+**Unity project** writes under the open project. **Git repository** walks up from that project to the nearest `.git` directory, or uses a folder you pick, so an agent opened at a monorepo root can see the skill. **User (home)** writes one copy under your home directory. The window shows the resolved path before it installs.
 
-Project-scoped installs go under `<project-root>/.claude/skills/`, `<project-root>/.codex/skills/`, or `<project-root>/.grok/skills/`. Commit that folder if you want the team to share the same skill version as the Unity package.
+| Tool | Folder under the chosen root |
+|------|------------------------------|
+| Claude Code | `.claude/skills/unity-cli-bridge/` |
+| Codex | `.agents/skills/unity-cli-bridge/` |
+| Grok Build | `.grok/skills/unity-cli-bridge/` |
+
+Codex no longer installs to `.codex/skills`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens.
 
 The skill teaches AI agents how to pick the right commands, run them safely, and verify results with `read-console`. The installed `SKILL.md` records the package version it came from, so the CLI Manager can tell you when the skill needs an update.
 
@@ -443,7 +449,7 @@ A disabled bridge constructs nothing and logs one line saying so.
 
 The `unity-cli-bridge` skill teaches AI agents how to use the CLI safely: pick the right command, verify with `read-console`, follow inspect-before-patch patterns.
 
-Install from **Window > Unity CLI Manager** in the Unity Editor — select your AI tool and scope, then click **Install Skill**. Once installed, use **Remove Skill** from the same section to remove that scoped copy. Project scope is the default and writes to `<project-root>/.claude/skills/`, `<project-root>/.codex/skills/`, or `<project-root>/.grok/skills/`; global scope writes to the user's agent skills directory. Supports Claude Code, Codex, and Grok Build.
+Install from **Window > Unity CLI Manager** in the Unity Editor — select your AI tool and location, then click **Install Skill**. Once installed, use **Remove Skill** from the same section to remove that copy. The default location is the Unity project. Git repository (detected by walking up for `.git`, or a folder you pick) and User (home) are the other choices. Claude Code writes `.claude/skills/unity-cli-bridge/`, Codex writes `.agents/skills/unity-cli-bridge/`, and Grok Build writes `.grok/skills/unity-cli-bridge/`.
 
 ## Development
 

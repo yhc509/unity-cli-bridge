@@ -13,7 +13,8 @@
 **Pass `--project` on every command.** Without it, the CLI may route to the Unity project in the current working directory, the pin from `instances use`, or the single live instance, so automation must name the project.
 
 ```bash
-# Current directory is a Unity project
+# Only when the current directory itself is a Unity project
+# (it contains both Assets/ and ProjectSettings/)
 PROJECT="$(pwd -P)"
 
 # You know the running project's name
@@ -26,14 +27,18 @@ PROJECT="unity-cli-bridge-sample"
 PROJECT="/path/to/YourProject"
 ```
 
-When several projects are open:
+When several projects are open, or the working directory is not a Unity project:
 
 ```bash
 ucli instances list --brief
 ```
 
+The command name is `instances list`. `unity-cli` and `ucli` are the same executable.
+
+- If the working directory is not a Unity project, do not use `PROJECT="$(pwd -P)"`. That path is the current directory, not the Unity project, and the command will target the wrong folder. Run `instances list` and pass `--project` explicitly with the `projectRoot` or `projectName` you want.
+- If `instances list` is empty, look for a child directory that contains `ProjectSettings/ProjectVersion.txt`. If several match, ask which project to use before passing `--project`.
 - `--project` accepts a project name or a full path.
-- On macOS, always use the real path from `pwd -P`.
+- On macOS, always use the real path from `pwd -P` when the current directory is the Unity project.
 - To pin a default for repeated work, run `ucli instances use <projectPath|projectName>`.
 - A 12-character hash that matches more than one instance is rejected as ambiguous.
 

@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
@@ -14,7 +15,9 @@ namespace UnityCliBridge.Bridge.Editor
         private const double AutoRefreshIntervalSeconds = 1d;
         private const double StateLoadFailureAutoRetryDelaySeconds = 10d;
         private static readonly Vector2 WindowMinSize = new Vector2(420f, 340f);
-        private static GUIStyle? _updateAvailableLabelStyle;
+        private const string SkillTargetPrefKey = "UnityCliBridge.CliManager.SkillTarget";
+        private const string SkillLocationPrefKeyPrefix = "UnityCliBridge.CliManager.SkillLocation.";
+        private const string SkillCustomRootPrefKeyPrefix = "UnityCliBridge.CliManager.SkillCustomRoot.";
 
         private Vector2 _scrollPosition;
         private CliInstallStatus _status;
@@ -48,8 +51,21 @@ namespace UnityCliBridge.Bridge.Editor
         private bool _stateLoadFailed;
         private bool _isSkillInstalled;
         private bool _isGlobalSkillInstalled;
+        private bool _skillRootResolved;
         private SkillTarget _skillTarget;
-        private SkillScope _skillScope;
+        private SkillInstallLocation _skillLocation;
+        private string _skillCustomRoot = string.Empty;
+        private string _unityProjectRoot = string.Empty;
+        private string _userHomeRoot = string.Empty;
+        private string _detectedGitRoot = string.Empty;
+        private string _resolvedInstallRoot = string.Empty;
+        private string _skillRootError = string.Empty;
+        private string _gitRootMismatchWarning = string.Empty;
+        private string? _pendingLegacyRemoval;
+        private Texture2D? _headerIcon;
+        private Texture2D? _tabIcon;
+        private IReadOnlyList<string> _legacyCodexPaths = Array.Empty<string>();
+        private IReadOnlyList<string> _duplicateWarnings = Array.Empty<string>();
         private double _nextAutoRefreshTime;
         private double _nextStateLoadRetryTime;
 
@@ -57,20 +73,24 @@ namespace UnityCliBridge.Bridge.Editor
         private static void OpenWindow()
         {
             CliInstallerWindow window = GetWindow<CliInstallerWindow>();
-            window.titleContent = new GUIContent(WindowTitle);
-            window.minSize = WindowMinSize;
+            window.ApplyWindowChrome();
             window.Show();
         }
 
         private void OnEnable()
         {
-            titleContent = new GUIContent(WindowTitle);
-            minSize = WindowMinSize;
+            ApplyWindowChrome();
+            LoadSkillPreferences();
             RefreshState(true);
         }
 
         private void OnFocus()
         {
+            if (_tabIcon == null || _headerIcon == null)
+            {
+                ApplyWindowChrome();
+            }
+
             if (!_isDownloading)
             {
                 RefreshState(false);
@@ -84,9 +104,12 @@ namespace UnityCliBridge.Bridge.Editor
                 RefreshState(false);
             }
 
+            CliManagerStyles.EnsureStyles();
+            CliManagerStyles.DrawHeader(_headerIcon, FormatVersion(_packageVersion));
+
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
-            GUILayout.Space(8f);
+            GUILayout.Space(6f);
             DrawPackageInfoSection();
             GUILayout.Space(8f);
             DrawCliStatusSection();
@@ -114,21 +137,29 @@ namespace UnityCliBridge.Bridge.Editor
         {
             InstalledCliVersion? versionToRemove = _pendingVersionRemoval;
             string? orphanToRemove = _pendingOrphanRemoval;
-            if (versionToRemove == null && string.IsNullOrWhiteSpace(orphanToRemove))
+            string? legacyToRemove = _pendingLegacyRemoval;
+            if (versionToRemove == null
+                && string.IsNullOrWhiteSpace(orphanToRemove)
+                && string.IsNullOrWhiteSpace(legacyToRemove))
             {
                 return;
             }
 
             _pendingVersionRemoval = null;
             _pendingOrphanRemoval = null;
+            _pendingLegacyRemoval = null;
 
             if (versionToRemove != null)
             {
                 RemoveVersion(versionToRemove);
             }
-            else
+            else if (!string.IsNullOrWhiteSpace(orphanToRemove))
             {
                 RemoveOrphanedInstall(orphanToRemove!);
+            }
+            else
+            {
+                RemoveLegacyCodex(legacyToRemove!);
             }
 
             GUIUtility.ExitGUI();
@@ -136,18 +167,23 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawPackageInfoSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("Package Info"))
             {
-                GUILayout.Label("Package Info", EditorStyles.boldLabel);
                 EditorGUILayout.LabelField("Package Version", FormatVersion(_packageVersion));
                 EditorGUILayout.LabelField("Wire Protocol", string.IsNullOrWhiteSpace(_protocolVersion) ? "-" : _protocolVersion);
 
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     EditorGUILayout.PrefixLabel("Latest Release");
-                    EditorGUILayout.LabelField(
-                        GetLatestReleaseVersionLabel(),
-                        IsUpdateAvailable() ? UpdateAvailableLabelStyle : EditorStyles.label);
+                    if (IsUpdateAvailable())
+                    {
+                        CliManagerStyles.DrawBadge(GetLatestReleaseVersionLabel(), CliManagerStyles.BadgeKind.Update, 80f);
+                        GUILayout.FlexibleSpace();
+                    }
+                    else
+                    {
+                        EditorGUILayout.LabelField(GetLatestReleaseVersionLabel());
+                    }
 
                     using (new EditorGUI.DisabledScope(_isFetchingLatestVersion))
                     {
@@ -166,10 +202,9 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawCliStatusSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("CLI Status"))
             {
-                GUILayout.Label("CLI Status", EditorStyles.boldLabel);
-                EditorGUILayout.LabelField("Status", GetStatusLabel());
+                CliManagerStyles.BadgeField("Status", GetStatusLabel(), GetStatusBadgeKind());
                 EditorGUILayout.LabelField("Platform", _platformDisplayName);
                 EditorGUILayout.LabelField("PATH Target", GetPathTargetLabel());
                 DrawSelectableValue("Path", _executablePath);
@@ -178,9 +213,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawActionSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("Actions"))
             {
-                GUILayout.Label("Actions", EditorStyles.boldLabel);
 
                 if (!string.IsNullOrWhiteSpace(_errorMessage))
                 {
@@ -210,7 +244,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (!string.IsNullOrWhiteSpace(_errorMessage))
                 {
-                    if (GUILayout.Button("Retry", GUILayout.Height(28f)))
+                    if (CliManagerStyles.PrimaryButton("Retry", GUILayout.Height(28f)))
                     {
                         BeginInstall();
                     }
@@ -252,7 +286,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     case CliInstallStatus.NotInstalled:
                     case CliInstallStatus.UpdateRequired:
-                        if (GUILayout.Button("Install CLI", GUILayout.Height(28f)))
+                        if (CliManagerStyles.PrimaryButton("Install CLI", GUILayout.Height(28f)))
                         {
                             BeginInstall();
                         }
@@ -273,10 +307,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawInstalledVersionsSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("Installed Versions"))
             {
-                GUILayout.Label("Installed Versions", EditorStyles.boldLabel);
-
                 EditorGUILayout.HelpBox(
                     "Each Unity package version needs the CLI of the same version. The PATH target runs the newest one and hands off to an older one automatically when a project's bridge speaks an older protocol. Nothing is removed automatically.",
                     MessageType.None);
@@ -289,10 +321,15 @@ namespace UnityCliBridge.Bridge.Editor
                 for (int i = 0; i < _installedVersions.Count; i++)
                 {
                     InstalledCliVersion installedVersion = _installedVersions[i];
-                    using (new EditorGUILayout.HorizontalScope())
+                    using (EditorGUILayout.HorizontalScope row = new EditorGUILayout.HorizontalScope())
                     {
                         bool isPathTarget = !string.IsNullOrWhiteSpace(_pathTargetVersion)
                             && string.Equals(installedVersion.Version, _pathTargetVersion, StringComparison.Ordinal);
+                        if (isPathTarget && Event.current.type == EventType.Repaint)
+                        {
+                            CliManagerStyles.HighlightRow(row.rect);
+                        }
+
                         string label = FormatVersion(installedVersion.Version)
                             + "  protocol " + installedVersion.ProtocolVersion
                             + (isPathTarget ? "  [PATH target]" : string.Empty);
@@ -347,9 +384,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawPathSetupSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("PATH Setup"))
             {
-                GUILayout.Label("PATH Setup", EditorStyles.boldLabel);
 
                 EditorGUILayout.HelpBox("Add the install directory to your PATH to use the CLI from the terminal. A short, fixed path also saves tokens when AI agents invoke the CLI repeatedly.", MessageType.None);
                 DrawSelectableValue("Command", _pathCommand);
@@ -366,53 +402,138 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void DrawSkillSection()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            using (new CliManagerStyles.SectionScope("AI Agent Skill"))
             {
-                GUILayout.Label("AI Agent Skill", EditorStyles.boldLabel);
-
                 EditorGUI.BeginChangeCheck();
                 _skillTarget = (SkillTarget)EditorGUILayout.EnumPopup("Target", _skillTarget);
-                _skillScope = (SkillScope)EditorGUILayout.EnumPopup("Scope", _skillScope);
+                _skillLocation = (SkillInstallLocation)EditorGUILayout.EnumPopup("Location", _skillLocation);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    _skillFeedbackType = MessageType.None;
-                    _skillFeedbackMessage = string.Empty;
+                    SaveSkillPreferences();
+                    ClearSkillFeedback();
                     RefreshSkillState();
                 }
 
-                DrawSelectableValue("Path", _skillDestinationPath);
-                EditorGUILayout.LabelField("Skill", GetSkillStatusLabel());
-
-                if (_isSkillInstalled)
+                if (_skillLocation == SkillInstallLocation.GitRepository)
                 {
+                    EditorGUILayout.HelpBox(
+                        "Choose the folder that should contain the tool directory (.claude, .agents, or .grok). The Path row shows the skill directory that will be created inside it.",
+                        MessageType.None);
+                    DrawSelectableValue(
+                        "Git root",
+                        string.IsNullOrWhiteSpace(_detectedGitRoot) ? "(not found)" : _detectedGitRoot);
+                    if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
+                    {
+                        DrawSelectableValue("Chosen folder", _skillCustomRoot);
+                    }
+
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+                        if (GUILayout.Button("Choose folder"))
                         {
-                            InstallSkill();
+                            ChooseSkillFolder();
                         }
 
-                        if (GUILayout.Button("Remove Skill", GUILayout.Height(24f)))
+                        if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
                         {
-                            RemoveSkill();
+                            string clearLabel = string.IsNullOrWhiteSpace(_detectedGitRoot)
+                                ? "Clear chosen folder"
+                                : "Use detected git root";
+                            if (GUILayout.Button(clearLabel))
+                            {
+                                _skillCustomRoot = string.Empty;
+                                SaveSkillPreferences();
+                                ClearSkillFeedback();
+                                RefreshSkillState();
+                            }
                         }
                     }
                 }
-                else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+
+                DrawSelectableValue("Path", _skillDestinationPath);
+                CliManagerStyles.BadgeField("Skill", GetSkillStatusLabel(), GetSkillBadgeKind());
+
+                if (!string.IsNullOrWhiteSpace(_skillRootError))
                 {
-                    InstallSkill();
+                    EditorGUILayout.HelpBox(_skillRootError, MessageType.Warning);
                 }
 
-                if (_skillScope == SkillScope.Project && _isGlobalSkillInstalled)
+                using (new EditorGUI.DisabledScope(!_skillRootResolved))
+                {
+                    if (_isSkillInstalled)
+                    {
+                        using (new EditorGUILayout.HorizontalScope())
+                        {
+                            if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+                            {
+                                InstallSkill();
+                            }
+
+                            if (GUILayout.Button("Remove Skill", GUILayout.Height(24f)))
+                            {
+                                RemoveSkill();
+                            }
+                        }
+                    }
+                    else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+                    {
+                        InstallSkill();
+                    }
+                }
+
+                if (_skillLocation != SkillInstallLocation.UserHome
+                    && _isGlobalSkillInstalled
+                    && !SkillInstallPaths.PathsEqual(_resolvedInstallRoot, _userHomeRoot))
                 {
                     EditorGUILayout.HelpBox(
-                        "A global copy of this skill is also installed at `" + _globalSkillPath + "`. It may take precedence over the project copy. Switch Scope to Global to update or remove that copy.",
+                        "A user-home copy of this skill is also installed at `" + _globalSkillPath + "`. It may take precedence over this copy. Set Location to User (home) to update or remove that copy.",
                         MessageType.Warning);
                 }
+
+                if (!string.IsNullOrWhiteSpace(_gitRootMismatchWarning))
+                {
+                    EditorGUILayout.HelpBox(_gitRootMismatchWarning, MessageType.Warning);
+                }
+
+                for (int i = 0; i < _duplicateWarnings.Count; i++)
+                {
+                    EditorGUILayout.HelpBox(_duplicateWarnings[i], MessageType.Warning);
+                }
+
+                DrawLegacyCodexCopies();
 
                 if (!string.IsNullOrWhiteSpace(_skillFeedbackMessage))
                 {
                     EditorGUILayout.HelpBox(_skillFeedbackMessage, _skillFeedbackType);
+                }
+            }
+        }
+
+        private void DrawLegacyCodexCopies()
+        {
+            if (_legacyCodexPaths.Count == 0)
+            {
+                return;
+            }
+
+            EditorGUILayout.HelpBox(
+                "A deprecated Codex skill is still installed under .codex/skills. Codex now reads .agents/skills, and the old copy can be loaded as well. Remove it once you no longer need it.",
+                MessageType.Warning);
+
+            for (int i = 0; i < _legacyCodexPaths.Count; i++)
+            {
+                string legacyPath = _legacyCodexPaths[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.SelectableLabel(
+                        legacyPath,
+                        EditorStyles.textField,
+                        GUILayout.Height(EditorGUIUtility.singleLineHeight));
+
+                    if (GUILayout.Button("Remove", GUILayout.Width(72f)))
+                    {
+                        _pendingLegacyRemoval = legacyPath;
+                    }
                 }
             }
         }
@@ -444,6 +565,15 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void InstallSkill()
         {
+            if (!_skillRootResolved)
+            {
+                _skillFeedbackType = MessageType.Error;
+                _skillFeedbackMessage = string.IsNullOrWhiteSpace(_skillRootError)
+                    ? "Choose an install location before installing the skill."
+                    : _skillRootError;
+                return;
+            }
+
             try
             {
                 if (_isSkillInstalled)
@@ -459,7 +589,7 @@ namespace UnityCliBridge.Bridge.Editor
                     }
                 }
 
-                SkillInstaller.Install(_skillTarget, _skillScope);
+                SkillInstaller.Install(_skillTarget, _resolvedInstallRoot);
                 RefreshSkillState();
                 _skillFeedbackType = MessageType.Info;
                 _skillFeedbackMessage = "Installed to: " + _skillDestinationPath;
@@ -474,6 +604,15 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void RemoveSkill()
         {
+            if (!_skillRootResolved)
+            {
+                _skillFeedbackType = MessageType.Error;
+                _skillFeedbackMessage = string.IsNullOrWhiteSpace(_skillRootError)
+                    ? "Choose an install location before removing the skill."
+                    : _skillRootError;
+                return;
+            }
+
             string removedPath = _skillDestinationPath;
             bool shouldRemove = EditorUtility.DisplayDialog(
                 "Remove Skill?",
@@ -487,7 +626,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             try
             {
-                bool removed = SkillInstaller.Remove(_skillTarget, _skillScope);
+                bool removed = SkillInstaller.Remove(_skillTarget, _resolvedInstallRoot);
                 RefreshSkillState();
 
                 if (removed)
@@ -907,28 +1046,164 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void RefreshSkillState()
         {
+            _unityProjectRoot = string.Empty;
+            _userHomeRoot = string.Empty;
+            _detectedGitRoot = string.Empty;
+            _resolvedInstallRoot = string.Empty;
+            _skillRootError = string.Empty;
+            _skillRootResolved = false;
+            _skillDestinationPath = string.Empty;
+            _gitRootMismatchWarning = string.Empty;
+            _duplicateWarnings = Array.Empty<string>();
+            _legacyCodexPaths = Array.Empty<string>();
+            _isSkillInstalled = false;
+            _installedSkillVersion = string.Empty;
+            _globalSkillPath = string.Empty;
+            _isGlobalSkillInstalled = false;
+
             try
             {
-                _skillDestinationPath = SkillInstaller.GetDestination(_skillTarget, _skillScope);
+                _unityProjectRoot = SkillInstaller.GetUnityProjectRoot();
+            }
+            catch (Exception exception)
+            {
+                _skillRootError = exception.Message;
+            }
+
+            try
+            {
+                _userHomeRoot = SkillInstaller.GetUserHomeRoot();
+            }
+            catch (Exception exception)
+            {
+                if (string.IsNullOrWhiteSpace(_skillRootError))
+                {
+                    _skillRootError = exception.Message;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(_unityProjectRoot))
+            {
+                _detectedGitRoot = SkillInstallPaths.TryFindGitRoot(_unityProjectRoot) ?? string.Empty;
+            }
+
+            if (SkillInstallPaths.TryResolveInstallRoot(
+                    _skillLocation,
+                    _unityProjectRoot,
+                    string.IsNullOrWhiteSpace(_detectedGitRoot) ? null : _detectedGitRoot,
+                    _skillCustomRoot,
+                    _userHomeRoot,
+                    out string installRoot,
+                    out string? rootError))
+            {
+                _resolvedInstallRoot = installRoot;
+                _skillRootResolved = true;
+                _skillRootError = string.Empty;
+            }
+            else if (!string.IsNullOrWhiteSpace(rootError) && string.IsNullOrWhiteSpace(_skillRootError))
+            {
+                _skillRootError = rootError;
+            }
+
+            try
+            {
+                if (_skillRootResolved)
+                {
+                    _skillDestinationPath = SkillInstaller.GetDestination(_skillTarget, _resolvedInstallRoot);
+                    _isSkillInstalled = SkillInstaller.IsSkillInstalled(_skillTarget, _resolvedInstallRoot);
+                    _installedSkillVersion = SkillInstaller.GetInstalledSkillVersion(_skillTarget, _resolvedInstallRoot) ?? string.Empty;
+                    _duplicateWarnings = SkillInstallPaths.DescribeDuplicateVisibility(
+                        _skillTarget,
+                        SkillInstaller.IsSkillInstalled(SkillTarget.ClaudeCode, _resolvedInstallRoot),
+                        SkillInstaller.IsSkillInstalled(SkillTarget.Codex, _resolvedInstallRoot),
+                        SkillInstaller.IsSkillInstalled(SkillTarget.GrokBuild, _resolvedInstallRoot),
+                        SkillInstallPaths.PathsEqual(_resolvedInstallRoot, _userHomeRoot));
+                }
             }
             catch (Exception exception)
             {
                 _skillDestinationPath = exception.Message;
+                _skillRootResolved = false;
+                _skillRootError = exception.Message;
             }
-
-            _isSkillInstalled = SkillInstaller.IsSkillInstalled(_skillTarget, _skillScope);
-            _installedSkillVersion = SkillInstaller.GetInstalledSkillVersion(_skillTarget, _skillScope) ?? string.Empty;
 
             try
             {
                 _globalSkillPath = SkillInstaller.GetDestination(_skillTarget, SkillScope.Global);
+                _isGlobalSkillInstalled = SkillInstaller.IsSkillInstalled(_skillTarget, SkillScope.Global);
             }
             catch (Exception exception)
             {
                 _globalSkillPath = exception.Message;
+                _isGlobalSkillInstalled = false;
             }
 
-            _isGlobalSkillInstalled = SkillInstaller.IsSkillInstalled(_skillTarget, SkillScope.Global);
+            _gitRootMismatchWarning = SkillInstallPaths.GitRootMismatchWarning(
+                _skillLocation,
+                _unityProjectRoot,
+                string.IsNullOrWhiteSpace(_detectedGitRoot) ? null : _detectedGitRoot) ?? string.Empty;
+
+            try
+            {
+                List<string> roots = new List<string>();
+                if (!string.IsNullOrWhiteSpace(_unityProjectRoot))
+                {
+                    roots.Add(_unityProjectRoot);
+                }
+
+                if (!string.IsNullOrWhiteSpace(_detectedGitRoot))
+                {
+                    roots.Add(_detectedGitRoot);
+                }
+
+                if (!string.IsNullOrWhiteSpace(_userHomeRoot))
+                {
+                    roots.Add(_userHomeRoot);
+                }
+
+                if (!string.IsNullOrWhiteSpace(_skillCustomRoot))
+                {
+                    roots.Add(_skillCustomRoot);
+                }
+
+                _legacyCodexPaths = SkillInstaller.FindLegacyCodexInstalls(roots);
+            }
+            catch (Exception)
+            {
+                _legacyCodexPaths = Array.Empty<string>();
+            }
+        }
+
+        private CliManagerStyles.BadgeKind GetStatusBadgeKind()
+        {
+            switch (_status)
+            {
+                case CliInstallStatus.NotInstalled:
+                    return CliManagerStyles.BadgeKind.None;
+                case CliInstallStatus.UpToDate:
+                    return CliManagerStyles.BadgeKind.Installed;
+                case CliInstallStatus.UpdateRequired:
+                    return CliManagerStyles.BadgeKind.Update;
+                default:
+                    return CliManagerStyles.BadgeKind.None;
+            }
+        }
+
+        private CliManagerStyles.BadgeKind GetSkillBadgeKind()
+        {
+            if (!_isSkillInstalled)
+            {
+                return CliManagerStyles.BadgeKind.None;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_installedSkillVersion)
+                && !string.IsNullOrWhiteSpace(_packageVersion)
+                && CliInstallerState.CompareVersions(_installedSkillVersion, _packageVersion) < 0)
+            {
+                return CliManagerStyles.BadgeKind.Update;
+            }
+
+            return CliManagerStyles.BadgeKind.Installed;
         }
 
         private string GetSkillStatusLabel()
@@ -1012,17 +1287,159 @@ namespace UnityCliBridge.Bridge.Editor
                 : "v" + version.Trim().TrimStart('v', 'V');
         }
 
-        private static GUIStyle UpdateAvailableLabelStyle =>
-            _updateAvailableLabelStyle ??= CreateUpdateAvailableLabelStyle();
-
-        private static GUIStyle CreateUpdateAvailableLabelStyle()
+        private void ApplyWindowChrome()
         {
-            GUIStyle style = new GUIStyle(EditorStyles.label)
+            EnsureIcons();
+            titleContent = _tabIcon != null
+                ? new GUIContent(WindowTitle, _tabIcon)
+                : new GUIContent(WindowTitle);
+            minSize = WindowMinSize;
+        }
+
+        private void EnsureIcons()
+        {
+            string? directory = GetScriptDirectory();
+            if (directory == null)
             {
-                fontStyle = FontStyle.Bold,
-            };
-            style.normal.textColor = new Color(0.2f, 0.8f, 0.2f);
-            return style;
+                return;
+            }
+
+            _headerIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(directory + "/Icons/unity-cli-bridge-icon.png");
+            _tabIcon = AssetDatabase.LoadAssetAtPath<Texture2D>(directory + "/Icons/unity-cli-bridge-tab.png");
+        }
+
+        private string? GetScriptDirectory()
+        {
+            MonoScript script = MonoScript.FromScriptableObject(this);
+            if (script == null)
+            {
+                return null;
+            }
+
+            string assetPath = AssetDatabase.GetAssetPath(script);
+            if (string.IsNullOrEmpty(assetPath))
+            {
+                return null;
+            }
+
+            string? directory = Path.GetDirectoryName(assetPath);
+            if (string.IsNullOrEmpty(directory))
+            {
+                return null;
+            }
+
+            return directory.Replace('\\', '/');
+        }
+
+        private void ChooseSkillFolder()
+        {
+            string start = _skillCustomRoot;
+            if (string.IsNullOrWhiteSpace(start))
+            {
+                start = _detectedGitRoot;
+            }
+
+            if (string.IsNullOrWhiteSpace(start))
+            {
+                start = _unityProjectRoot;
+            }
+
+            string picked = EditorUtility.OpenFolderPanel(
+                "Choose skill install folder",
+                start ?? string.Empty,
+                string.Empty);
+            if (string.IsNullOrEmpty(picked))
+            {
+                return;
+            }
+
+            _skillCustomRoot = picked;
+            _skillLocation = SkillInstallLocation.GitRepository;
+            SaveSkillPreferences();
+            ClearSkillFeedback();
+            RefreshSkillState();
+        }
+
+        private void RemoveLegacyCodex(string legacyPath)
+        {
+            bool shouldRemove = EditorUtility.DisplayDialog(
+                "Remove legacy Codex skill?",
+                "This will delete the deprecated copy at:\n" + legacyPath
+                    + "\n\nCodex now reads .agents/skills. This only removes the old .codex copy.",
+                "Remove",
+                "Cancel");
+            if (!shouldRemove)
+            {
+                return;
+            }
+
+            try
+            {
+                bool removed = SkillInstaller.RemoveLegacyCodex(legacyPath);
+                RefreshSkillState();
+                if (removed)
+                {
+                    _skillFeedbackType = MessageType.Info;
+                    _skillFeedbackMessage = "Removed legacy copy from: " + legacyPath;
+                }
+                else
+                {
+                    _skillFeedbackType = MessageType.Warning;
+                    _skillFeedbackMessage = "Nothing to remove at: " + legacyPath;
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogException(exception);
+                _skillFeedbackType = MessageType.Error;
+                _skillFeedbackMessage = exception.Message;
+            }
+        }
+
+        private void ClearSkillFeedback()
+        {
+            _skillFeedbackType = MessageType.None;
+            _skillFeedbackMessage = string.Empty;
+        }
+
+        private void LoadSkillPreferences()
+        {
+            _skillTarget = ReadEnumPref(SkillTargetPrefKey, SkillTarget.ClaudeCode);
+            string suffix = GetProjectPrefSuffix();
+            _skillLocation = ReadEnumPref(SkillLocationPrefKeyPrefix + suffix, SkillInstallLocation.UnityProject);
+            _skillCustomRoot = EditorPrefs.GetString(SkillCustomRootPrefKeyPrefix + suffix, string.Empty);
+        }
+
+        private void SaveSkillPreferences()
+        {
+            EditorPrefs.SetInt(SkillTargetPrefKey, (int)_skillTarget);
+            string suffix = GetProjectPrefSuffix();
+            EditorPrefs.SetInt(SkillLocationPrefKeyPrefix + suffix, (int)_skillLocation);
+            EditorPrefs.SetString(SkillCustomRootPrefKeyPrefix + suffix, _skillCustomRoot ?? string.Empty);
+        }
+
+        private static string GetProjectPrefSuffix()
+        {
+            try
+            {
+                return SkillInstaller.GetUnityProjectRoot();
+            }
+            catch (Exception)
+            {
+                return "unknown";
+            }
+        }
+
+        private static TEnum ReadEnumPref<TEnum>(string key, TEnum fallback)
+            where TEnum : struct
+        {
+            int stored = EditorPrefs.GetInt(key, Convert.ToInt32(fallback));
+            if (Enum.IsDefined(typeof(TEnum), stored))
+            {
+                return (TEnum)Enum.ToObject(typeof(TEnum), stored);
+            }
+
+            return fallback;
         }
     }
 }

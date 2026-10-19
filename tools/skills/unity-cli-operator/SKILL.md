@@ -20,6 +20,7 @@ Operating skill for using `unity-cli` safely on real work. The point is not a lo
 
 2. **Choose the target project.**
 - Passing `--project`, `pwd -P`, multi-instance routing, and `instances use` are in [references/command-flows.md](references/command-flows.md) under `Choosing the project`.
+- If the working directory is not a Unity project, do not treat `pwd -P` as the project. Run `ucli instances list --brief` and pass `--project` explicitly. Details are under `Choosing the project`.
 
 3. Check status before a write.
 - Start with `status --json --project <name>` and confirm the live connection, the busy state, and that this is the right project.
