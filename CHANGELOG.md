@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `profile memory snapshot` compiles on Unity 2021.3. That editor exposes the snapshot API as `UnityEngine.Profiling.Memory.Experimental`; Unity 2022.2 and newer use `Unity.Profiling.Memory`.
 - Projects without the Input System no longer get an unreachable-code warning from `qa key` and `qa swipe`.
 - A Unity 2021.3 project that runs `-batchmode -quit -executeMethod` with this package installed no longer waits 300 seconds and then exits with a failure. The bridge's connection listener was keeping an unfinished background operation that this editor refuses to quit while it is still open. Editors that stay open, including a normal window and a headless editor without `-quit`, still accept CLI commands. Unity 6 already quit cleanly; that path uses the same scheduling now.
+- `test run` no longer reports success while the Test Framework is still restoring the open scenes. The finish callback runs before that restore, so a `play` command in the gap threw `InvalidOperationException` from scene restore ("This cannot be used during play mode") on both Unity 2021.3 and Unity 6. Edit Mode and Play Mode `--wait` now return only after that cleanup has finished. Until then, `play`, `pause`, `stop`, and scene commands fail with the existing retryable `TEST_RUN_IN_PROGRESS` code. Result JSON is unchanged.
 
 ## [0.5.4] - 2026-08-18
 

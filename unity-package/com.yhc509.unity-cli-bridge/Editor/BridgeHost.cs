@@ -1222,6 +1222,8 @@ namespace UnityCliBridge.Bridge.Editor
                     return BuildBusyResponse(command, stopwatch.ElapsedMilliseconds);
                 }
 
+                TestCommandHandler.ThrowIfEditorBusyWithTestRun(command.command);
+
                 if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null
                     && CliCommandCatalog.RequiresGraphics(command.command))
                 {
