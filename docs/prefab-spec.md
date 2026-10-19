@@ -56,7 +56,7 @@ Supported operations:
 
 Patch saves are wrapped in a `Library/com.yhc509.unity-cli-bridge/backups/` backup for the prefab file and `.meta`. If backup restore itself fails, the bridge returns `BACKUP_RESTORE_FAILED` with backup paths for manual recovery.
 
-예시:
+Example:
 
 ```json
 {
