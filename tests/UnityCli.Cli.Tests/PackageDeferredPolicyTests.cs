@@ -37,7 +37,7 @@ public sealed class PackageDeferredPolicyTests
     {
         Assert.Equal("PACKAGE_TIMEOUT", ProtocolConstants.ErrorPackageTimeout);
         Assert.Equal(
-            "패키지 명령이 300초 안에 완료되지 않았습니다. Editor의 Package Manager 상태를 확인해 주세요.",
+            "The package command did not finish within 300 seconds. Check Package Manager in the Editor.",
             ProtocolConstants.BuildPackageRequestTimeoutMessage(300));
     }
 
@@ -46,7 +46,7 @@ public sealed class PackageDeferredPolicyTests
     {
         Assert.Equal("PACKAGE_BUSY", ProtocolConstants.ErrorPackageBusy);
         Assert.Equal(
-            "다른 패키지 명령이 진행 중입니다. 완료 후 다시 시도하세요.",
+            "Another package command is in progress. Try again when it finishes.",
             ProtocolConstants.PackageBusyMessage);
     }
 

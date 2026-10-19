@@ -124,7 +124,7 @@ public sealed class InstanceRegistryStore
         var trimmed = input.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
         {
-            throw new CliUsageException("project hash, project path 또는 project name이 필요합니다.");
+            throw new CliUsageException("A project hash, project path, or project name is required.");
         }
 
         if (!ContainsDirectorySeparator(trimmed) && IsProjectHashInput(trimmed))
@@ -199,7 +199,7 @@ public sealed class InstanceRegistryStore
         var trimmed = input.Trim();
         if (string.IsNullOrWhiteSpace(trimmed))
         {
-            throw new CliUsageException("project path 또는 project name이 필요합니다.");
+            throw new CliUsageException("A project path or project name is required.");
         }
 
         return TryResolveProjectRootOverride(registry, trimmed, out var projectRoot, out _)
@@ -405,12 +405,12 @@ public sealed class InstanceRegistryStore
     private static CliUsageException CreateAmbiguousProjectNameException(string projectName, string[] candidatePaths)
     {
         return new CliUsageException(
-            $"등록된 프로젝트 이름이 중복되어 대상을 결정할 수 없습니다: {projectName}. project path를 사용하세요. 후보: {string.Join(", ", candidatePaths)}");
+            $"Registered project name is ambiguous, so the target cannot be resolved: {projectName}. Use a project path. Candidates: {string.Join(", ", candidatePaths)}");
     }
 
     private static CliUsageException CreateAmbiguousProjectHashException(string projectHash, string[] candidatePaths)
     {
         return new CliUsageException(
-            $"projectHash '{projectHash}'에 매칭되는 인스턴스가 여러 개입니다. project path 또는 suffixed project hash로 정확히 지정하세요. 후보: {string.Join(", ", candidatePaths)}");
+            $"projectHash '{projectHash}' matches more than one instance. Specify a project path or a suffixed project hash. Candidates: {string.Join(", ", candidatePaths)}");
     }
 }

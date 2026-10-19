@@ -137,7 +137,7 @@ namespace UnityCli.Protocol
         {
             if (!TryGetDescriptor(typeId, out AssetCreateTypeDescriptor? descriptor) || descriptor is null)
             {
-                throw new InvalidOperationException("지원하지 않는 built-in asset create 타입입니다: " + typeId);
+                throw new InvalidOperationException("Unsupported built-in asset create type: " + typeId);
             }
 
             return descriptor;

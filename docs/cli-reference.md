@@ -43,7 +43,7 @@ Commands for editor state, compilation, play state, menus, arbitrary code execut
 | `record start` | `record start [--path <output.mp4>] [--fps <n> (default: 30)] [--max-width <n>] [--duration <seconds>] [--wait]` | live | `None` | Starts recording the Game View to an mp4 file via Unity Recorder. Returns immediately with a recordingId. Requires Play Mode. |
 | `record stop` | `record stop` | live | `None` | Stops the active recording, finalizes the mp4, and returns the output path. |
 | `record status` | `record status [--recording-id <id>]` | live | `None` | Reports whether a recording is active and the result of a finished recording. |
-| `execute` | `execute (--code <csharp> \| --file <path>) [--args <json>] [--timeout <초>] --force` | live | `Always` | Executes arbitrary C# code in the running editor context with optional JSON arguments, structured __pucResult return values, and an optional cooperative timeout; always requires --force. |
+| `execute` | `execute (--code <csharp> \| --file <path>) [--args <json>] [--timeout <seconds>] --force` | live | `Always` | Executes arbitrary C# code in the running editor context with optional JSON arguments, structured __pucResult return values, and an optional cooperative timeout; always requires --force. |
 | `custom` | `custom <command-name> [--json <args>]` | live | `None` | Invokes a project-defined custom command registered via [PucCommand] attribute. |
 
 ## Asset Workflows

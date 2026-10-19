@@ -134,7 +134,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         {
             Assert.That(failure.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorSceneDirty));
             Assert.That(failure.Message, Does.Contain(_scenePath!));
-            Assert.That(failure.Message, Does.Contain("저장하지 않은 변경"));
+            Assert.That(failure.Message, Does.Contain("unsaved changes"));
         }
     }
 }

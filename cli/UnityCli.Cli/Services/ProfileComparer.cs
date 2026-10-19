@@ -81,7 +81,7 @@ internal static class ProfileComparer
             "local",
             null,
             ProtocolConstants.ErrorProfileFailed,
-            $"{side} 캡처 `{sidecar.captureId}`는 정상적으로 끝나지 않아 비교할 수 없습니다 ({reason}). 다시 캡처하세요.",
+            $"{side} capture `{sidecar.captureId}` did not finish cleanly and cannot be compared ({reason}). Capture it again.",
             false,
             0,
             "cli");
@@ -263,34 +263,34 @@ internal static class ProfileComparer
 
         if (Math.Abs(baseSummary.budgetMs - headSummary.budgetMs) > BudgetToleranceMs)
         {
-            notes.Add($"두 캡처의 budgetMs가 다릅니다 ({baseSummary.budgetMs} vs {headSummary.budgetMs}). overBudgetFrames는 그대로 비교할 수 없습니다.");
+            notes.Add($"budgetMs differs ({baseSummary.budgetMs} vs {headSummary.budgetMs}). overBudgetFrames cannot be compared directly.");
         }
 
         if (!string.Equals(baseSummary.unityVersion, headSummary.unityVersion, StringComparison.Ordinal))
         {
-            notes.Add($"두 캡처의 unityVersion이 다릅니다 ({baseSummary.unityVersion} vs {headSummary.unityVersion}).");
+            notes.Add($"unityVersion differs ({baseSummary.unityVersion} vs {headSummary.unityVersion}).");
         }
 
         if (baseSummary.truncated || headSummary.truncated)
         {
-            notes.Add("잘린(truncated) 캡처가 포함되어 있어 마커 집계가 불완전할 수 있습니다.");
+            notes.Add("A truncated capture is included, so marker totals may be incomplete.");
         }
 
         int larger = Math.Max(baseSummary.capturedFrames, headSummary.capturedFrames);
         int gap = Math.Abs(baseSummary.capturedFrames - headSummary.capturedFrames);
         if (larger > 0 && gap > larger * FrameCountMismatchRatio)
         {
-            notes.Add($"캡처 프레임 수 차이가 큽니다 ({baseSummary.capturedFrames} vs {headSummary.capturedFrames}). 표본 크기가 달라 비교 신뢰도가 낮습니다.");
+            notes.Add($"Captured frame counts differ widely ({baseSummary.capturedFrames} vs {headSummary.capturedFrames}). Sample sizes differ, so the comparison is less reliable.");
         }
 
         if (baseMedianUnusable)
         {
-            notes.Add("base 캡처에 쓸 만한 frame-time 데이터가 없어(중앙값 0 이하) verdict를 unchanged로 고정했습니다.");
+            notes.Add("base capture has no usable frame-time data (median is 0 or below), so the verdict is fixed to unchanged.");
         }
 
         if (headMedianUnusable)
         {
-            notes.Add("head 캡처에 쓸 만한 frame-time 데이터가 없어(중앙값 0 이하) verdict를 unchanged로 고정했습니다.");
+            notes.Add("head capture has no usable frame-time data (median is 0 or below), so the verdict is fixed to unchanged.");
         }
 
         return notes.ToArray();

@@ -23,7 +23,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
         [Test] public void Float_Uses_G9_RoundTrip()
         {
-            // 0.1f의 round-trip 표현은 "0.100000001"
+            // 0.1f's round-trip form is "0.100000001"
             Assert.AreEqual("0.100000001", ExecuteValueSerializer.Serialize(0.1f));
         }
 
@@ -161,7 +161,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     () => SerializedValueApplier.Apply(gameObject.transform, values));
 
                 Assert.AreEqual("COMPONENT_VALUE_KEY_INVALID", ex.ErrorCode);
-                StringAssert.Contains("inspect에 노출되지 않아 patch할 수 없습니다", ex.Message);
+                StringAssert.Contains("not exposed to inspect, so it cannot be patched", ex.Message);
                 StringAssert.Contains("m_GameObject", ex.Message);
             }
             finally
@@ -236,7 +236,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     () => SerializedValueApplier.Apply(host, values));
 
                 Assert.AreEqual("COMPONENT_VALUE_KEY_INVALID", ex.ErrorCode);
-                StringAssert.Contains("inspect에 노출되지 않아 patch할 수 없습니다", ex.Message);
+                StringAssert.Contains("not exposed to inspect, so it cannot be patched", ex.Message);
                 Assert.AreEqual(0, host.nested.hidden);
             }
             finally
@@ -319,7 +319,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     () => SerializedValueApplier.Apply(host, values));
 
                 Assert.AreEqual("COMPONENT_VALUE_KEY_INVALID", ex.ErrorCode);
-                StringAssert.Contains("inspect에 노출되지 않아 patch할 수 없습니다", ex.Message);
+                StringAssert.Contains("not exposed to inspect, so it cannot be patched", ex.Message);
                 Assert.IsInstanceOf<SerializedValueApplierNestedManagedReferenceTypes.ValidReference>(host.reference);
                 Assert.AreEqual(0, ((SerializedValueApplierNestedManagedReferenceTypes.ValidReference)host.reference!).hidden);
             }
@@ -348,7 +348,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     () => SerializedValueApplier.Apply(host, values));
 
                 Assert.AreEqual("PREFAB_FIELD_INVALID", ex.ErrorCode);
-                StringAssert.Contains("필드 선언 타입과 호환되지 않습니다", ex.Message);
+                StringAssert.Contains("not compatible with the field's declared type", ex.Message);
             }
             finally
             {
@@ -375,7 +375,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     () => SerializedValueApplier.Apply(host, values));
 
                 Assert.AreEqual("PREFAB_FIELD_INVALID", ex.ErrorCode);
-                StringAssert.Contains("public parameterless 생성자가 필요합니다", ex.Message);
+                StringAssert.Contains("needs a public parameterless constructor", ex.Message);
             }
             finally
             {

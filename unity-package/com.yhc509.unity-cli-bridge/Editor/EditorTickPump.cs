@@ -141,7 +141,7 @@ namespace UnityCliBridge.Bridge.Editor
                 _signalTick = null;
                 SyncPumpState();
                 UnityEngine.Debug.LogWarning(
-                    "Unity CLI bridge editor tick pump 중단 (EditorApplication.SignalTick 호출 실패): " + exception.Message);
+                    "Unity CLI bridge editor tick pump stopped (EditorApplication.SignalTick call failed): " + exception.Message);
             }
         }
 
@@ -161,8 +161,8 @@ namespace UnityCliBridge.Bridge.Editor
                 if (method == null)
                 {
                     UnityEngine.Debug.LogWarning(
-                        "Unity CLI bridge editor tick pump 비활성화: EditorApplication.SignalTick을 찾지 못했습니다. " +
-                        "unfocused 에디터에서 deferred 명령이 느리게 진행될 수 있습니다.");
+                        "Unity CLI bridge editor tick pump disabled: could not find EditorApplication.SignalTick. " +
+                        "Deferred commands may run slowly in an unfocused editor.");
                     return null;
                 }
 
@@ -171,7 +171,7 @@ namespace UnityCliBridge.Bridge.Editor
             catch (Exception exception)
             {
                 UnityEngine.Debug.LogWarning(
-                    "Unity CLI bridge editor tick pump 비활성화 (EditorApplication.SignalTick 바인딩 실패): "
+                    "Unity CLI bridge editor tick pump disabled (EditorApplication.SignalTick bind failed): "
                     + exception.Message);
                 _signalTick = null;
             }

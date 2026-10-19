@@ -168,7 +168,7 @@ namespace UnityCliBridge.Bridge.Editor
             if (QaCoordinateConverter.IsAspectMismatch(screenshotWidth, screenshotHeight, screenWidth, screenHeight))
             {
                 UnityEngine.Debug.LogWarning(
-                    $"[UnityCliBridge] qa coordinate aspect mismatch: screenshot {screenshotWidth}x{screenshotHeight} vs game view {screenWidth}x{screenHeight}. 좌표가 빗나갈 수 있습니다. 최신 스크린샷을 다시 캡처했는지 확인하세요.");
+                    $"[UnityCliBridge] qa coordinate aspect mismatch: screenshot {screenshotWidth}x{screenshotHeight} vs game view {screenWidth}x{screenHeight}. Coordinates may miss. Capture a fresh screenshot and try again.");
             }
         }
 

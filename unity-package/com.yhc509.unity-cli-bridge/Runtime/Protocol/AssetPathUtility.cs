@@ -18,8 +18,8 @@ namespace UnityCli.Protocol
 
             throw new InvalidOperationException(
                 allowPackages
-                    ? "asset 경로는 `Assets/...` 또는 `Packages/...` 형식이어야 합니다."
-                    : "asset 경로는 `Assets/...` 형식이어야 합니다.");
+                    ? "Asset paths must use the `Assets/...` or `Packages/...` form."
+                    : "Asset paths must use the `Assets/...` form.");
         }
 
         public static bool IsAssetsPath(string? path)
@@ -57,7 +57,7 @@ namespace UnityCli.Protocol
         {
             if (path.StartsWith("/", StringComparison.Ordinal) || IsWindowsDriveQualifiedPath(path))
             {
-                throw new InvalidOperationException("asset 경로는 절대 경로일 수 없습니다: " + path);
+                throw new InvalidOperationException("An asset path cannot be absolute: " + path);
             }
         }
 
@@ -76,13 +76,13 @@ namespace UnityCli.Protocol
                 string segment = segments[index];
                 if (segment.Length == 0 && index > 0)
                 {
-                    throw new InvalidOperationException("asset 경로에는 빈 경로 세그먼트를 사용할 수 없습니다: " + path);
+                    throw new InvalidOperationException("An asset path cannot contain an empty segment: " + path);
                 }
 
                 if (string.Equals(segment, ".", StringComparison.Ordinal)
                     || string.Equals(segment, "..", StringComparison.Ordinal))
                 {
-                    throw new InvalidOperationException("asset 경로에는 `.` 또는 `..` 세그먼트를 사용할 수 없습니다: " + path);
+                    throw new InvalidOperationException("An asset path cannot contain a `.` or `..` segment: " + path);
                 }
             }
         }

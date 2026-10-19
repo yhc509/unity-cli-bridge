@@ -379,7 +379,7 @@ namespace UnityCli.Protocol
                 }),
             new CliCommandDescriptor(
                 "execute",
-                "execute (--code <csharp> | --file <path>) [--args <json>] [--timeout <초>] --force",
+                "execute (--code <csharp> | --file <path>) [--args <json>] [--timeout <seconds>] --force",
                 "Executes arbitrary C# code in the running editor context with optional JSON arguments, structured __pucResult return values, and an optional cooperative timeout; always requires --force.",
                 CliCommandGroup.EditorControl,
                 ProtocolConstants.CommandExecuteCode,
@@ -390,12 +390,12 @@ namespace UnityCli.Protocol
                 {
                     "Live-only.",
                     "Always requires --force as a safety gate.",
-                    "--args JSON은 사용자 코드에서 __pucArgsJson 문자열 변수로 읽을 수 있습니다.",
-                    "__pucResult에 값을 담으면 응답 result에 타입 보존 JSON이 반환됩니다. float는 G9, double은 G17 round-trip 포맷을 사용합니다.",
-                    "--timeout (default 30초, 상한 600초)은 협력적 cancel입니다. 사용자 코드가 __pucToken (System.Threading.CancellationToken)을 직접 체크해야 강제 종료됩니다 — 체크하지 않으면 main thread를 계속 점유하므로 force 사용자 책임입니다.",
-                    "wrapper 예약 prefix `__puc_internal_*` 변수와 `__pucToken`, `__pucResult` 변수는 사용자 코드에서 선언하지 마세요.",
-                    "--args 값에는 secret/credential을 넣지 마세요. CodeDOM 컴파일 중 OS temp에 .cs 파일이 잠시 생성될 수 있습니다.",
-                    "C# 5.0 이하 문법만 지원합니다 (CodeDOM 제한).",
+                    "--args JSON is exposed to user code as the __pucArgsJson string variable.",
+                    "Assigning __pucResult returns type-preserving JSON in result. float uses G9 and double uses G17 round-trip format.",
+                    "--timeout (default 30 seconds, maximum 600) is a cooperative cancel. User code must check __pucToken (System.Threading.CancellationToken) to stop — otherwise it keeps the main thread, and that is the --force user's responsibility.",
+                    "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
+                    "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
+                    "Only C# 5.0 syntax and below is supported (CodeDOM limit).",
                 },
                 forceRule: ForceRule.Always),
             new CliCommandDescriptor(
@@ -727,7 +727,7 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "패키지 작업 중 Editor가 일시 정지될 수 있습니다." },
+                notes: new[] { "The Editor may pause while a package operation runs." },
                 defaultLiveTimeoutMs: ProtocolConstants.DefaultPackageLiveTimeoutMs),
             new CliCommandDescriptor(
                 "package remove",
@@ -738,7 +738,7 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Removal is always gated by --force.", "패키지 작업 중 Editor가 일시 정지될 수 있습니다." },
+                notes: new[] { "Removal is always gated by --force.", "The Editor may pause while a package operation runs." },
                 forceRule: ForceRule.Always,
                 defaultLiveTimeoutMs: ProtocolConstants.DefaultPackageLiveTimeoutMs),
             new CliCommandDescriptor(

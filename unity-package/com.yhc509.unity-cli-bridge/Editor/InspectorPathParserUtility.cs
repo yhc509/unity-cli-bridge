@@ -10,7 +10,7 @@ namespace UnityCliBridge.Bridge.Editor
             string normalized = string.IsNullOrWhiteSpace(name) ? string.Empty : name.Trim();
             if (string.IsNullOrWhiteSpace(normalized))
             {
-                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", commandName + " node 이름이 비어 있습니다.");
+                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", commandName + " node name is empty.");
             }
 
             return normalized;
@@ -46,7 +46,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (IsWhiteSpace(segment))
             {
-                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", commandName + " path segment가 비어 있습니다.");
+                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", commandName + " path segment is empty.");
             }
 
             nameLength = segment.Length;
