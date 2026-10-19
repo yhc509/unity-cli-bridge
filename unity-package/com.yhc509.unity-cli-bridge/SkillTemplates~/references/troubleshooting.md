@@ -31,7 +31,7 @@
 
 ## Test Runner error codes
 
-- `TEST_RUN_IN_PROGRESS` — single-flight lock conflict. The response includes the in-progress `runId`; wait, or check again after the watchdog deadline. If a missing callback leaves the lock held, clear it with `test cancel`.
+- `TEST_RUN_IN_PROGRESS` — the editor is busy with a test run. A second `test run` is refused while one is already in progress; the response includes that `runId`. `play`, `pause`, `stop`, and scene commands also get this error while Unity is restoring the scene after a test run finishes. Wait briefly and retry, or use `test run --wait`, which returns only after that restore. If a missing callback leaves the lock held, clear it with `test cancel`.
 - `TEST_RUN_TIMEOUT` — `--timeout` elapsed. The result payload is `status: TimedOut` and the CLI exits with code 1.
 - `TEST_PLAYMODE_ENTRY_FAILED` — `isPlaying` did not become true within 15 seconds after `TestRunnerApi.Execute`. Check a dirty scene, an in-progress compile, and asmdef discovery first.
 - `TEST_LIST_TIMEOUT` — the `RetrieveTestList` callback did not arrive within 30 seconds. The Editor may be compiling or importing assets.

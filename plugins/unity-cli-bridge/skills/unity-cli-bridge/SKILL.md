@@ -23,6 +23,7 @@ This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bri
 
 2. **Choose the target project and always pass `--project`.**
 - Passing `--project`, `pwd -P`, and multi-instance routing are in [references/command-flows.md](references/command-flows.md) under `Choosing the project`.
+- A Unity project folder contains both `Assets/` and `Packages/`. If the working directory is not inside one, do not treat `pwd -P` as the project. Run `ucli instances list --brief` and pass `--project` explicitly. Details are under `Choosing the project`.
 
 3. Check status before a write.
 - Start with `status --json --project <name>` and confirm the live connection, the busy state, and that this is the right project.

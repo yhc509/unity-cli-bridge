@@ -46,7 +46,7 @@ If you are migrating from the old package, update the dependency key in `Package
 
 The CLI executable is installed separately from **Window > Unity CLI Manager**. The package includes the AI Agent Skill template, and the same window can install or remove it for Claude Code, Codex, or Grok Build.
 
-By default, the skill installs into the current Unity project under `<project-root>/.claude/skills/`, `<project-root>/.codex/skills/`, or `<project-root>/.grok/skills/`. Commit that folder if you want teammates to use the same skill version as the package. Choose global scope only when you want one user-wide copy.
+By default, the skill installs into the current Unity project under `<project-root>/.claude/skills/`, `<project-root>/.agents/skills/` (Codex), or `<project-root>/.grok/skills/`. The same window can target the git repository root or your home directory instead. Commit a project or git-root install if you want teammates to use the same skill version as the package. Choose User (home) only when you want one user-wide copy. Older `.codex/skills/unity-cli-bridge` copies are left in place until you remove them from the window.
 
 ## Notes
 

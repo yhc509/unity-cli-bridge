@@ -159,6 +159,8 @@ namespace UnityCli.Protocol
         public const string TestSessionKeyScopeWasEnabled = "UCB.Test.scope.wasEnabled";
         public const string TestSessionKeyScopePreviousFlags = "UCB.Test.scope.previousFlags";
         public const string TestSessionKeyCallbacksInstanceId = "UCB.Test.callbacks.instanceId";
+        public const string TestSessionKeySettlementArmedAt = "UCB.Test.settlementArmedAt";
+        public const string TestPendingResultSuffix = ".pending.json";
         public const string TestRunsDirectoryRelative = "Library/com.yhc509.unity-cli-bridge/test-runs";
         public const string TestLastRunFileRelative = "Library/com.yhc509.unity-cli-bridge/last-run.json";
         public const string TestRunInterruptedMessage = "EditMode run interrupted by domain reload — no result available";

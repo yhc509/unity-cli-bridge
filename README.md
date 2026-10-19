@@ -155,7 +155,15 @@ Pass that path or skill name. The repo also contains a maintainer skill (`unity-
 
 **Alternative: copy from the Unity Editor**
 
-Open `Window > Unity CLI Manager`, choose Claude Code, Codex, or Grok Build, and click **Install Skill**. Project scope writes `<Unity project>/.claude/skills/`, `.codex/skills/`, or `.grok/skills/`. Commit that folder when the team should share the skill version that matches the package. The same section offers **Remove Skill**. If the plugin and a project copy are both installed, the agent can show the skill twice; remove the project copy when you only want the plugin.
+Open `Window > Unity CLI Manager`, choose Claude Code, Codex, or Grok Build, choose an install location, and click **Install Skill**. **Unity project** writes under the open project. **Git repository** walks up to the nearest `.git` directory, or uses a folder you pick, so an agent opened at a monorepo root can see the skill. **User (home)** writes one copy under your home directory. The window shows the resolved path before it installs.
+
+| Tool | Folder under the chosen root |
+|------|------------------------------|
+| Claude Code | `.claude/skills/unity-cli-bridge/` |
+| Codex | `.agents/skills/unity-cli-bridge/` |
+| Grok Build | `.grok/skills/unity-cli-bridge/` |
+
+Codex installs under `.agents/skills/`. It no longer writes `.codex/skills/`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens. The same section offers **Remove Skill**. If the plugin and a project copy are both installed, the agent can show the skill twice; remove the project copy when you only want the plugin.
 
 The plugin command is `/unity-cli-bridge:unity-cli-bridge` (bare `/unity-cli-bridge` when the name is free). Third-party marketplaces do not auto-update. Refresh with `/plugin marketplace update unity-cli-bridge`, `codex plugin marketplace upgrade unity-cli-bridge`, or `grok plugin marketplace update unity-cli-bridge`.
 
@@ -169,7 +177,7 @@ unity-cli status --project /path/to/your-project --json
 
 > If two worktrees happen to collide on the same 12-character SHA256 prefix, the bridge still listens on separate socket/pipe names. Use `--project <path>` to route by canonical project root.
 
-When `--project` is omitted, the CLI first uses the current Unity project directory, then an explicit default set with `unity-cli instances use <projectPath|projectName>`, then the single live Editor if exactly one is running. If multiple live Editors remain and none is pinned, the command fails with a usage error that lists candidates instead of guessing.
+When `--project` is omitted, the CLI walks up from the working directory to the nearest Unity project (a folder that contains both `Assets/` and `Packages/`). If that walk does not find one, it searches up to three levels of subdirectories, skipping heavy and hidden folders (`Library`, `Temp`, `Logs`, `obj`, `bin`, `node_modules`, `Build`, `Builds`, and names starting with `.`), and uses a single match. If several projects remain, a reachable Editor connected to exactly one of them selects that project, and an explicit `unity-cli instances use` pin does the same when that Editor is reachable. A registry row counts only when its process is alive or its pipe or socket accepts a connection. Otherwise the command fails with `AMBIGUOUS_PROJECT`, lists the candidate paths, and asks for `--project`. If no project is found on disk, the CLI uses the pinned live Editor, then the single live Editor. If multiple live Editors remain and none is pinned, the command fails with a usage error that lists candidates.
 
 ## What You Can Do
 
@@ -328,7 +336,7 @@ unity-cli test results --run-id <runId> --failures-only
 unity-cli test cancel
 ```
 
-`test run --mode edit` returns a synchronous result payload. `test run --mode play` starts the run and returns `STARTED` plus a `runId`; add `--wait` when the CLI should poll until the PlayMode result is ready. `--filter` is a case-insensitive substring match against each test's full name (`Namespace.Class.Method`), so a value like `Smoke` also matches every method on a `SmokeTests` class — when the class and method share a prefix, narrow it with a more specific fragment such as `Smoke_`. Cached results are stored under `Library/com.yhc509.unity-cli-bridge/test-runs/<runId>.json` and can be retrieved with `test results`. A non-`Completed` cached run result returns an error envelope and CLI exit code 1. Add `--failures-only` to `test run` or `test results` to keep summary counts intact while trimming `tests[]` to non-passed entries; add `--no-detail` to `test list` to return only `fullName` and `mode`. `test cancel` releases a stuck test-run lock: it attempts a graceful `TestRunnerApi` cancel then always clears the lock, returning the cancelled `runId`, or a no-op success when no run is active.
+`test run --mode edit` returns a synchronous result payload. `test run --mode play` starts the run and returns `STARTED` plus a `runId`; add `--wait` when the CLI should poll until the PlayMode result is ready. The result is not returned until the Test Framework has finished restoring the editor, including the open scenes — a following `play` or scene command is then safe. While that cleanup is still running, `play`, `pause`, `stop`, and scene commands return retryable `TEST_RUN_IN_PROGRESS`. `--filter` is a case-insensitive substring match against each test's full name (`Namespace.Class.Method`), so a value like `Smoke` also matches every method on a `SmokeTests` class — when the class and method share a prefix, narrow it with a more specific fragment such as `Smoke_`. Cached results are stored under `Library/com.yhc509.unity-cli-bridge/test-runs/<runId>.json` and can be retrieved with `test results`. A non-`Completed` cached run result returns an error envelope and CLI exit code 1. Add `--failures-only` to `test run` or `test results` to keep summary counts intact while trimming `tests[]` to non-passed entries; add `--no-detail` to `test list` to return only `fullName` and `mode`. `test cancel` releases a stuck test-run lock: it attempts a graceful `TestRunnerApi` cancel then clears the lock, returning the cancelled `runId`, or a no-op success when no run is active. A run that has already finished and is only restoring scenes keeps that lock until the restore finishes.
 
 `--no-domain-reload` is an opt-in PlayMode-only speed option. It can avoid 30-120 seconds of domain reload overhead, but static state can leak between runs, so only use it for suites that reset their own state:
 
@@ -493,7 +501,7 @@ A disabled bridge constructs nothing and logs one line saying so.
 
 ## AI Agent Skill
 
-The `unity-cli-bridge` skill teaches agents how to pick commands, verify with `read-console`, and follow inspect-before-patch. Install it as a plugin so it loads from any folder — see [Install the agent skill](#3-install-the-agent-skill). Copying the skill from **Window > Unity CLI Manager** remains available when you want a project-local copy that matches that project's package version.
+The `unity-cli-bridge` skill teaches agents how to pick commands, verify with `read-console`, and follow inspect-before-patch. Install it as a plugin so it loads from any folder — see [Install the agent skill](#3-install-the-agent-skill). Copying the skill from **Window > Unity CLI Manager** remains available when you want a copy that matches that project's package version. The default location is the Unity project. Git repository (walk up for `.git`, or a folder you pick) and User (home) are the other choices. Claude Code writes `.claude/skills/unity-cli-bridge/`, Codex writes `.agents/skills/unity-cli-bridge/`, and Grok Build writes `.grok/skills/unity-cli-bridge/`.
 
 ## Development
 
