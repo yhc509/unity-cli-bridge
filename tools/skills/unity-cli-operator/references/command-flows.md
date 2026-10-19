@@ -10,31 +10,38 @@
 
 ## Choosing the project
 
-**Pass `--project` on every command.** Without it, the CLI may route to the Unity project in the current working directory, the pin from `instances use`, or the single live instance, so automation must name the project.
+**Pass `--project` on every command.** The CLI can infer a project when the flag is omitted, but automation should still name it.
 
 ```bash
-# Current directory is a Unity project
+# Only when this directory (or a parent) is a Unity project: it contains Assets/ and Packages/
 PROJECT="$(pwd -P)"
 
-# You know the running project's name
+# Registered project name
 PROJECT="<your-project>"
 
 # Developing or testing inside the unity-cli repo
 PROJECT="unity-cli-bridge-sample"
 
-# Pin a project by path
+# Explicit path
 PROJECT="/path/to/YourProject"
 ```
 
-When several projects are open:
+When `--project` is omitted, resolution order is:
+
+1. Walk upward from the working directory to the nearest folder that contains both `Assets/` and `Packages/`.
+2. When the walk does not find a project, search descendant directories up to 3 levels deep. Skip `Library`, `Temp`, `Logs`, `obj`, `bin`, `node_modules`, `Build`, `Builds`, and hidden directories (including `.git`). Sort matches by canonical path.
+3. Use the match when there is exactly one. When several remain, use one only when it is uniquely implied: the `instances use` pin if that Editor is live, or the single candidate with a running Editor. Otherwise the command fails with `AMBIGUOUS_PROJECT`, lists the candidate paths, and tells you to pass `--project`.
+4. When the disk search finds nothing, use the pinned live instance, then the single running Editor. If two or more Editors are live and none is pinned, the command fails with `CLI_USAGE` and lists them.
+
+When several projects are open, or `AMBIGUOUS_PROJECT` lists more than one path, ask which project to use and pass it explicitly:
 
 ```bash
 ucli instances list --brief
 ```
 
 - `--project` accepts a project name or a full path.
-- On macOS, always use the real path from `pwd -P`.
-- To pin a default for repeated work, run `ucli instances use <projectPath|projectName>`.
+- On macOS, pass the real path from `pwd -P`, not a symlink path.
+- Pin a default for repeated work with `ucli instances use <projectPath|projectName>`.
 - A 12-character hash that matches more than one instance is rejected as ambiguous.
 
 ## Checking status

@@ -50,6 +50,10 @@ public static class CliReferenceDocumentRenderer
         builder.AppendLine("- If the token is an existing directory, path resolution takes precedence when the same token could also match a registered project name.");
         builder.AppendLine("- If multiple registered projects collapse to the same case-insensitive name, use the full project path.");
         builder.AppendLine("- If it is neither, the CLI returns a usage error instead of hashing the current working directory.");
+        builder.AppendLine("- When `--project` is omitted, the CLI walks up from the working directory to the nearest folder that contains both `Assets/` and `Packages/`.");
+        builder.AppendLine("- If that walk does not find a project, it searches descendant directories up to 3 levels deep, skipping `Library`, `Temp`, `Logs`, `obj`, `bin`, `node_modules`, `Build`, `Builds`, and hidden directories. Matches are ordered by canonical path.");
+        builder.AppendLine("- One match is selected. If several matches remain, the explicit `instances use` pin selects its project when that Editor is live, and otherwise the single candidate with a running Editor is selected. If neither applies, the CLI returns `AMBIGUOUS_PROJECT`, lists the candidate paths, and requires `--project`.");
+        builder.AppendLine("- If no project is found on disk, routing uses the pinned live Editor, then the single live Editor. Two or more live Editors with no pin return `CLI_USAGE` and list the candidates.");
         builder.AppendLine();
 
         foreach (CliCommandGroup group in CommandGroups)
