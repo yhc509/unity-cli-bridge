@@ -1,277 +1,277 @@
 # Profiling
 
-`profile` 명령군의 출력을 **해석**하는 법. 명령 사용법은 SKILL.md의 Profiling Workflow를 보고, 여기서는 "이 숫자를 믿어도 되는가"만 다룬다.
+How to **read** `profile` output. Command usage lives in SKILL.md's Profile Workflow. This page only answers "can I trust this number?"
 
-## 0. 먼저 알아야 할 한계 — 이건 Editor 안에서 잰 수치다
+## 0. The limit you need first — these numbers were measured inside the Editor
 
-`profile capture`는 Unity Editor 프로세스 안에서 돈다. Unity 공식 입장:
+`profile capture` runs inside the Unity Editor process. Unity's own position:
 
-> Editor를 프로파일링 대상으로 쓰면 정확도에 큰 영향이 있다. **Profiler 창이 사실상 자기 자신을 재귀적으로 프로파일링하고 있다.**
+> Profiling the Editor has a large effect on accuracy. **The Profiler window is effectively profiling itself recursively.**
 > — Ultimate guide to profiling Unity games (Unity 6 edition)
 
-따라서:
+So:
 
-- **절대값을 출시 성능으로 보고하지 마라.** "이 게임은 60fps가 안 나온다" 같은 결론을 이 데이터로 내리면 안 된다.
-- **상대 비교로만 써라.** 같은 프로젝트, 같은 시나리오에서 수정 전후를 비교하는 용도다. 그래서 `profile compare`가 이 명령군의 핵심이다.
-- 방향은 항상 **과대평가**다. Editor는 일을 더 하지, 덜 하지 않는다. 다만 **얼마나** 부풀려지는지는 Unity가 어디에도 수치로 공표하지 않았다. "1.5배" 같은 비율을 지어내지 마라.
-- 특히 못 믿을 것: **메모리**(Editor가 텍스처를 강제로 read/write 활성화 → 실제보다 큼), **fill rate**(해상도가 타깃 기기와 다름), **스크립트 비용**(Editor는 Mono, 빌드는 IL2CPP인 경우가 많음), **VSync 거동**(Editor는 GPU VSync를 안 하고 `WaitForTargetFPS`로 흉내낸다).
+- **Do not report absolute values as shipping performance.** Do not conclude "this game cannot hold 60 fps" from this data.
+- **Use it for relative comparison only.** Same project, same scenario, before and after a change. That is why `profile compare` is the center of this command family.
+- The bias is always **upward**. The Editor does more work, not less. Unity has never published a number for **how much** it inflates the result. Do not invent a ratio such as "1.5×".
+- Especially untrustworthy: **memory** (the Editor forces textures read/write, so they look larger), **fill rate** (the resolution is not the target device), **script cost** (the Editor is Mono; many builds are IL2CPP), and **VSync behavior** (the Editor does not use GPU VSync; it imitates it with `WaitForTargetFPS`).
 
-Unity가 승인하는 사용 패턴이 정확히 이 도구의 자리다: 빌드에서 문제를 찾고 → Editor에서 빠르게 반복 수정하고 → 다시 빌드로 확인.
+The workflow Unity endorses is exactly where this tool sits: find the problem in a build, iterate quickly in the Editor, then confirm again in a build.
 
-## 1. 무시해야 할 마커 — 가장 흔한 오진
+## 1. Markers to ignore — the most common misread
 
-hotspot 1위나 spike의 `topMarker`가 아래 목록에 있으면 **그건 원인이 아니다.** 대기(idle)거나 Editor 오버헤드다.
+If the top hotspot or a spike's `topMarker` is in the list below, **it is not the cause.** It is idle time or Editor overhead.
 
-Unity 자신이 Highlights 모듈에서 "CPU Active Time"을 계산할 때 아래 세 개를 **빼고** 센다 — 즉 Unity 공식 기준으로도 이건 일이 아니다.
+When Unity's Highlights module computes "CPU Active Time", it **subtracts** the first three. By Unity's own definition, those are not work.
 
-| 마커 | 실제 의미 | 어떻게 읽나 |
+| Marker | What it actually is | How to read it |
 |---|---|---|
-| `WaitForTargetFPS` | 유휴. 목표 프레임레이트까지 남는 시간을 놀고 있는 것 | **크면 좋은 것이다.** 예산 안에 들어왔다는 뜻. 단 `Gfx.WaitForPresentOnGfxThread` 하위에 있으면 GPU 대기 |
-| `Gfx.WaitForPresentOnGfxThread` | 메인 스레드가 렌더 스레드를 기다림 | 이것만으로 GPU-bound 단정 금지. 2절 참조 |
-| `Gfx.WaitForGfxCommandsFromMainThread` / `Gfx.WaitForCommands` | 렌더 스레드가 놀고 있음 | **메인 스레드 병목** 신호 |
-| `Semaphore.WaitForSignal` | 스레드 동기화 대기 | Unity 스태프: "`…WaitFor…` 샘플은 결코 범인이 아니다. 느린 곳이 다른 데 있다는 뜻일 뿐" |
-| `Gfx.WaitForRenderThread` | 메인 스레드 대기 | 비용은 렌더 스레드에 있다 |
-| `<API>.WaitForLastPresent` | 메인 스레드가 GPU flip 대기 | 유휴 |
-| `EditorLoop` | **Editor 자체 비용. 빌드에 존재하지 않는다** | 프레임 예산 계산에서 빼라. spike 원인이 `EditorLoop`면 Editor 아티팩트다 |
-| `EditorOnly ...` 접두 | Editor 전용 검사(prefab, consistency 등) | 안전하게 무시. 여기 딸린 GC bytes도 Editor 아티팩트 |
-| `Mono.JIT` | 첫 호출 시 JIT 컴파일 | Editor는 Mono. IL2CPP 빌드엔 없다 |
-| `Profiler.CollectEditorStats` | 프로파일러 자기 비용 | 무시 |
+| `WaitForTargetFPS` | Idle. Time left until the target frame rate | **Larger is better.** The frame fit the budget. If it sits under `Gfx.WaitForPresentOnGfxThread`, it is a GPU wait |
+| `Gfx.WaitForPresentOnGfxThread` | Main thread waiting on the render thread | Do not call the frame GPU-bound from this marker alone. See section 2 |
+| `Gfx.WaitForGfxCommandsFromMainThread` / `Gfx.WaitForCommands` | Render thread is idle | Signal of a **main-thread bottleneck** |
+| `Semaphore.WaitForSignal` | Thread synchronization wait | Unity staff: "`…WaitFor…` samples are never the culprit. They only mean the slow part is somewhere else" |
+| `Gfx.WaitForRenderThread` | Main thread waiting | The cost is on the render thread |
+| `<API>.WaitForLastPresent` | Main thread waiting for the GPU flip | Idle |
+| `EditorLoop` | **Editor cost. It does not exist in a build** | Subtract it from the frame budget. A spike caused by `EditorLoop` is an Editor artifact |
+| `EditorOnly ...` prefix | Editor-only checks (prefab, consistency, and similar) | Safe to ignore. GC bytes attached here are Editor artifacts too |
+| `Mono.JIT` | JIT compile on first call | The Editor is Mono. An IL2CPP build does not have this |
+| `Profiler.CollectEditorStats` | The profiler's own cost | Ignore |
 
-반대로 **`GC.Collect`는 진짜 일이다.** 이건 실제 정지 시간이고 무시하면 안 된다.
+By contrast, **`GC.Collect` is real work.** It is actual pause time. Do not ignore it.
 
-주의: `Semaphore.WaitForSignal`이 hotspot 1위로 뜨는 건 이 도구에서 **흔한 정상 상황**이다. 실측 예로 샘플 프로젝트의 idle 씬 캡처에서 `selfTotalMs: 35.4`로 1위였고, 2위가 `EditorLoop`였다. 둘 다 게임 코드가 아니다.
+`Semaphore.WaitForSignal` ranking first is a **common healthy result** from this tool. In a measured idle-scene capture of the sample project it led with `selfTotalMs: 35.4`, and `EditorLoop` was second. Neither is game code.
 
-## 2. CPU-bound / GPU-bound 판정 읽기
+## 2. Reading a CPU-bound / GPU-bound verdict
 
-`verdict` 필드:
+`verdict` fields:
 
-| 필드 | 값 | 의미 |
+| Field | Value | Meaning |
 |---|---|---|
-| `bound` | `cpu` / `gpu` / `withinBudget` / `unknown` | `withinBudget`이면 최적화해도 프레임레이트가 안 오른다. 멈춰라 |
-| `basis` | 판정 근거 | `none`이면 GPU 측정이 없어 마커 신호로만 추정했다는 뜻 |
-| `gpuMedianMs` | 수치 또는 `-1` | **`-1`은 "GPU 0ms"가 아니라 미측정 sentinel이다.** 0으로 읽지 마라 |
+| `bound` | `cpu` / `gpu` / `withinBudget` / `unknown` | `withinBudget` means optimizing will not raise the frame rate. Stop |
+| `basis` | Why the verdict was chosen | `none` means there was no GPU measurement, so the call is a marker-signal estimate |
+| `gpuMedianMs` | A number, or `-1` | **`-1` is an unmeasured sentinel, not "GPU 0 ms".** Do not read it as zero |
 
-`gpuMedianMs: -1`이면 GPU-bound 여부를 이 캡처만으로 확정할 수 없다. `bound`는 마커 기반 추정이다.
+When `gpuMedianMs` is `-1`, this capture alone cannot confirm GPU-bound. `bound` is a marker-based estimate.
 
-Unity의 판정 기준(예산 33.33ms 기준):
+Unity's own decision table (33.33 ms budget):
 
-- CPU 25 / GPU 20 → CPU-bound지만 **예산 안**. "문제 없음. 최적화해도 프레임레이트 안 오른다"
-- CPU 40 / GPU 20 → CPU-bound. GPU 최적화는 도움 안 됨
+- CPU 25 / GPU 20 → CPU-bound but **inside budget**. "No problem. Optimizing will not raise the frame rate"
+- CPU 40 / GPU 20 → CPU-bound. Optimizing the GPU will not help
 - CPU 20 / GPU 40 → GPU-bound
-- CPU 40 / GPU 40 → 양쪽 다
+- CPU 40 / GPU 40 → both
 
-핵심 원칙: **가장 오래 걸리는 칩/스레드가 성능을 결정한다.** 거기만 손대라.
+The rule: **the slowest chip or thread sets the performance.** Change only that one.
 
-## 3. 노이즈 플로어 — 언제 delta를 믿지 마라
+## 3. Noise floor — when not to trust a delta
 
-**Unity는 "이 ms 미만은 노이즈"라는 임계값을 공표한 적이 없다.** 지어내지 마라. 공표된 가드레일은 Performance Testing 패키지의 두 문장뿐이다:
+**Unity has never published a threshold of the form "below this many ms is noise."** Do not invent one. The only published guardrails are two sentences from the Performance Testing package:
 
-> 1ms 미만 측정은 피하라. 불안정한 환경에 더 민감하다.
-> 데이터셋 편차가 5% 미만일 때 안정적이라고 본다.
+> Avoid measurements under 1 ms. They are more sensitive to an unstable environment.
+> Treat a dataset as stable when its deviation is under 5%.
 
-그래서 `profile compare` 결과를 읽을 때:
+When reading `profile compare`:
 
-- **`deltaPercent`가 크다고 중요한 게 아니다.** `deltaMs`의 절대 크기를 먼저 봐라. 실측 예: `RenderLoop.Sort`가 `deltaMs: 0.0000625`, `deltaPercent: 75.3`으로 regression 1위로 올라온 적이 있다. 75% 회귀처럼 보이지만 0.00006ms다. 의미 없다.
-- **프레임 예산 대비 비율로 환산해라.** 16.67ms 예산에서 0.1ms 변화는 0.6%다. 이게 판단 기준이어야 한다.
-- **표본 크기를 확인해라.** `capturedFrames`가 작으면 median이 안정적이지 않다. Unity가 실무에서 쓰는 캡처 크기는 300프레임(10초) ~ 2000프레임이다.
-- `notes`에 "프레임 수 차이가 큽니다"가 있으면 **비교 자체를 신뢰하지 마라.** 다시 떠라.
-- 계측 오버헤드는 마커 수에 비례해서 **변한다**(고정값이 아니다). 호출이 많은 코드는 실제보다 비싸 보인다.
+- **A large `deltaPercent` is not automatically important.** Look at the absolute `deltaMs` first. A measured case ranked `RenderLoop.Sort` first among regressions at `deltaMs: 0.0000625` and `deltaPercent: 75.3`. That looks like a 75% regression and is 0.00006 ms. It does not matter.
+- **Convert the change into a share of the frame budget.** On a 16.67 ms budget, a 0.1 ms change is 0.6%. That ratio is the decision.
+- **Check the sample size.** A small `capturedFrames` makes the median unstable. Captures Unity uses in practice are 300 frames (10 seconds) to 2000 frames.
+- If `notes` says the frame counts differ a lot, **do not trust the comparison.** Capture again.
+- Instrumentation overhead **scales with marker count** (it is not a fixed cost). Code with many calls looks more expensive than it is.
 
-## 4. GC는 bytes로만 판단한다
+## 4. Judge GC in bytes only
 
-`profile`은 GC를 바이트로만 내보내고 ms는 절대 내보내지 않는다. 이유는 Unity 공식 문서에 있다:
+`profile` emits GC as bytes and never as milliseconds. Unity's own docs explain why:
 
-> `GC.Alloc` 마커는 Begin/End로 시간을 재지 않는다. 오버헤드를 줄이려고 타임스탬프와 할당 크기만 기록한다. **Profiler가 표시하는 지속시간은 뷰에서 보이게 하려고 붙인 인위적 값이다.**
+> The `GC.Alloc` marker does not time a Begin/End pair. To cut overhead it records only a timestamp and the allocation size. **The duration the Profiler shows is an artificial value added so the sample is visible in the view.**
 
-즉 `GC.Alloc`의 self time으로 순위를 매기면 안 된다. 다른 도구에서 그 숫자를 보더라도 무시해라.
+Do not rank by `GC.Alloc` self time. Ignore that number in other tools too.
 
-목표치는 Unity가 명확히 말한다: **주 게임 루프에서 프레임당 0 bytes**, 최대한 0에 가깝게.
+Unity states the target clearly: **0 bytes per frame in the main game loop**, as close to zero as possible.
 
-**중요한 함정 — spike 목록에 GC가 없다고 안심하지 마라.** Unity 기본값인 Incremental GC는 수집을 여러 프레임에 분산하고, 프레임 끝 유휴 시간을 쓴다. 그래서 할당 압박이 `GC.Collect` 스파이크로 안 보일 수 있다. **프레임당 bytes가 선행 지표고, `GC.Collect` ms는 후행이며 안 보일 수도 있는 지표다.**
+**A trap: an empty spike list does not mean GC is fine.** Incremental GC, Unity's default, spreads collection across frames and uses idle time at the end of a frame. Allocation pressure may never show up as a `GC.Collect` spike. **Bytes per frame is the leading indicator. `GC.Collect` milliseconds are a lagging indicator, and they may not appear at all.**
 
-Incremental GC 자체도 공짜가 아니다 — write barrier 때문에 프레임당 최대 ~1ms의 스크립팅 오버헤드가 붙는다. 할당이 0이면 애초에 Incremental GC가 필요 없다.
+Incremental GC is not free either — write barriers add up to about 1 ms of scripting overhead per frame. If allocation is already 0, Incremental GC is unnecessary.
 
-## 5. `--budget-ms` 기본값은 PC 60fps 가정이다
+## 5. The `--budget-ms` default assumes PC 60 fps
 
-기본값 `16.67`은 60fps 기준이다. **모바일 프로젝트면 이 값을 그대로 쓰면 안 된다.**
+The default `16.67` is 60 fps. **Do not leave it there for a mobile project.**
 
-Unity가 유일하게 숫자로 공표한 헤드룸 가이드:
+The only headroom figure Unity has published as a number:
 
-> 열 문제 대응을 위해 약 **35% 유휴 시간**을 남겨라.
+> Leave about **35% idle time** to deal with thermal limits.
 
-| 목표 | 단순 계산 | 모바일 권장(35% 헤드룸) |
+| Target | Naive budget | Mobile recommendation (35% headroom) |
 |---|---|---|
 | 30 fps | 33.33 ms | **21.66 ms** |
 | 60 fps | 16.67 ms | **10.83 ms** |
 | Quest 2 (72 fps) | 13.88 ms | — |
 
-Unity 자신이 "모바일 60fps는 많은 기기에서 달성하기 어렵고 배터리를 2배로 먹는다. 그래서 많은 모바일 게임이 30fps를 목표로 한다"고 말한다.
+Unity itself says mobile 60 fps is hard to hit on many devices and roughly doubles battery use, which is why many mobile games target 30 fps.
 
-`--budget-ms`는 `overBudgetFrames`와 spike 판정, verdict의 `withinBudget`을 좌우한다. 잘못 잡으면 결론 전체가 낙관적으로 기운다. **프로젝트 타깃을 모르면 사용자에게 물어라.**
+`--budget-ms` drives `overBudgetFrames`, spike detection, and the `withinBudget` verdict. A wrong budget tilts the whole conclusion toward optimism. **If you do not know the project target, ask.**
 
-## 6. 첫 프레임은 버려라
+## 6. Discard the first frames
 
-Play Mode 진입 직후 프레임은 체계적으로 느리다. 원인은 전부 문서화돼 있다:
+Frames right after entering Play Mode are systematically slow. The causes are documented:
 
-- Play Mode 진입 / 도메인 리로드
-- `Mono.JIT` — 함수 첫 호출 시 컴파일
-- 셰이더 variant 컴파일 및 GPU 업로드 (Editor는 `Library/ShaderCache` 미스면 **컴파일까지** 한다)
-- 씬·에셋 로딩
+- Entering Play Mode / domain reload
+- `Mono.JIT` — compile on a function's first call
+- Shader variant compile and GPU upload (in the Editor, a `Library/ShaderCache` miss compiles the shader too)
+- Scene and asset loading
 
-실측: 샘플 캡처의 유일한 spike가 프레임 1(34.6ms)이었고 원인 마커는 `Semaphore.WaitForSignal`이었다. 시작 비용이지 성능 문제가 아니다.
+Measured example: the only spike in a sample capture was frame 1 (34.6 ms), and the marker was `Semaphore.WaitForSignal`. That is startup cost, not a performance problem.
 
-Unity의 Performance Testing 패키지 기본 warmup은 **80ms 또는 최소 3프레임**이다. 인용 가능한 유일한 선례가 이것이다. 그보다 많이 버리는 건 판단이며, 판단이라고 밝혀라.
+The Performance Testing package's default warmup is **80 ms or at least 3 frames**. That is the only citable precedent. Discarding more than that is a judgment; say that it is a judgment.
 
-셰이더/머티리얼을 수정한 직후 첫 실행은 그 다음 실행과 비교 불가다. `profile compare` 전에 한 번 예열해라.
+The first run right after a shader or material edit is not comparable to the next run. Warm up once before `profile compare`.
 
-## 7. `profile compare` 사용 규율
+## 7. How to use `profile compare`
 
-Unity의 A/B 절차를 그대로 따른다:
+Follow Unity's A/B procedure:
 
-1. **재현 가능한 시나리오를 정한다.** Unity: "스크립트로 짜거나 반복 가능한 수동 플레이가 가장 좋다 — 무작위 부작용을 최소화한다." → `qa run-sequence --profile`이 이걸 위한 명령이다.
-2. 수정 전 캡처
-3. **한 번에 하나만** 바꾼다
-4. 수정 후 캡처
+1. **Pick a reproducible scenario.** Unity: "A scripted or repeatable manual playthrough is best — it minimizes random side effects." `qa run-sequence --profile` is the command for that.
+2. Capture before the change
+3. Change **one thing**
+4. Capture after the change
 5. `profile compare <before> <after>`
 
-읽는 순서:
+Read in this order:
 
-| 필드 | 확인할 것 |
+| Field | What to check |
 |---|---|
-| `notes` | **여기부터 본다.** 비어 있지 않으면 비교 신뢰도가 떨어진 것 |
-| `verdict` | median frame time 기준 판정 |
-| `deltaPercentAvailable` | `false`면 기준값이 0이라 퍼센트가 정의되지 않는다. **`deltaPercent`를 읽지 말고 `delta`만 봐라** |
-| `frameTimeWorstMs` | median이 좋아져도 worst가 나빠질 수 있다. hitch는 worst가 만든다 |
-| `gcBytesTotal` | 시간이 그대로여도 할당이 늘었으면 회귀다 |
-| `regressions` | `deltaMs` 절대값을 예산 대비로 환산해서 판단 (3절) |
-| `truncated` | `true`면 목록이 잘렸다. `--limit`을 올려 다시 |
+| `notes` | **Start here.** A non-empty note means the comparison is less trustworthy |
+| `verdict` | Decision from median frame time |
+| `deltaPercentAvailable` | `false` means the baseline was 0, so a percent is undefined. **Ignore `deltaPercent` and read `delta`** |
+| `frameTimeWorstMs` | Median can improve while worst gets worse. Hitches come from worst |
+| `gcBytesTotal` | A flat time with more allocation is still a regression |
+| `regressions` | Judge `deltaMs` against the frame budget (section 3) |
+| `truncated` | `true` means the list was cut. Raise `--limit` and run again |
 
-**끝나지 않은 캡처는 비교되지 않는다.** 캡처 도중 도메인 리로드가 나면 `status = "Interrupted"` sidecar가 남고, `profile compare`는 이걸 `PROFILE_FAILED`로 거절한다. 조용히 "100% 개선"으로 읽히는 걸 막는 가드다. 이 에러를 보면 다시 캡처해라.
+**An unfinished capture is not compared.** A domain reload during capture leaves a sidecar with `status = "Interrupted"`, and `profile compare` rejects it with `PROFILE_FAILED`. That guard stops an interrupted capture from reading as a silent "100% improvement". Recapture when you see this error.
 
-## 8. 마커별 원인과 처방
+## 8. Causes and fixes, by marker
 
-**Unity 공식 마커 레퍼런스에 문서화된 것만** 아래에 싣는다. 캡처에는 문서화되지 않은 이름(`RenderLoop.Sort`, `Render.Mesh`, `Shadows` 계열 등)도 뜨는데, **그 의미를 단정하지 마라.** 출처가 없다.
+The table below includes **only markers documented in Unity's official marker reference.** Captures also show undocumented names (`RenderLoop.Sort`, `Render.Mesh`, the `Shadows` family, and others). **Do not assert what those mean.** There is no source.
 
-| 마커 | 의미 | 처방 |
+| Marker | Meaning | What to do |
 |---|---|---|
-| `BehaviourUpdate` | 모든 `MonoBehaviour.Update` | 원인이 안 보이면 **추측하지 말고 데이터를 더 모아라** — Unity 권고는 "Profiler Marker를 코드에 추가하거나 deep profiling" |
-| `Update.ScriptRunBehaviourUpdate` | 위 + 코루틴 | 〃 |
-| `PreLateUpdate.ScriptRunBehaviourLateUpdate` | 모든 `LateUpdate` | 〃 |
-| `FixedBehaviourUpdate` | 모든 `FixedUpdate` | 아래 physics 항목 참조 |
-| `Physics.Processing` / `Physics.Simulate` | 물리 시뮬레이션 대기/준비 | **호출 수가 10에 가까우면 경고 신호.** 무거운 프레임 때문에 물리가 따라잡으려 여러 번 도는 죽음의 나선이다. 물리 문제가 아니라 *증상*일 수 있다. `Maximum Allowed Timestep`(Project Settings > Time) 확인, fixed timestep 빈도 낮추기 |
-| `Physics.ProcessReports` | `OnTriggerEnter` 등 콜백 전달 | 비용은 시뮬레이션이 아니라 **당신의 콜백**에 있다 |
-| `Physics.Processing`이 높은데 물리 오브젝트가 거의 없음 | job stealing으로 다른 시스템 작업이 물리로 집계됨 | 오진 주의 |
-| `Camera.Render` (메인 스레드) | 카메라당 처리 시간 | **활성 카메라 수를 줄여라.** 아무것도 안 그리는 카메라를 추가해도 비용이 는다. 분할화면이 아니면 활성 카메라는 하나여야 한다 |
-| `Camera.Render` (**렌더 스레드**) | — | **CPU-bound 신호다.** draw call이나 텍스처 전송에 시간을 너무 쓰고 있다 |
-| `Canvas.BuildBatch` | UI 재배칭 | 한 Canvas에 Canvas Renderer가 과도하게 많다 → **Canvas를 분할** |
-| `Canvas.SendWillRenderCanvases` | UI 레이아웃·그래픽 리빌드 | Layout 컴포넌트가 많으면 RectTransform으로 대체. 매 프레임 도는데 hotspot이 없으면 동적 요소와 정적 요소가 한 Canvas에 섞인 것 → 분할 |
-| `Text_OnPopulateMesh` | 텍스트 메시 생성 | Best Fit이 켜져 있으면 끈다. Unity Learn: "UI Text의 Best Fit은 일반적으로 절대 쓰면 안 된다" |
-| `Animators.*` / `Director.PrepareFrame` | 애니메이션 | 같은 Transform 계층에 Animator 여럿 두지 마라(병렬화 불가). `OnStateMachineEnter/Exit`를 구현한 StateMachineBehaviour는 메인 스레드로 강제된다. scale 커브는 translation/rotation보다 비싸다 |
-| `GC.Alloc`이 한 마커에 집중 | 할당 출처 | Call Stacks 토글 + Calls 드롭다운으로 출처 추적(2019.3+, deep profiling 불필요) |
-| `Resources.Load`가 게임플레이 중 | 동기 로딩 | Addressables로 이전. Resources는 언로드 전까지 메모리에 남는다 |
+| `BehaviourUpdate` | Every `MonoBehaviour.Update` | If the cause is not visible, **do not guess — collect more data**. Unity's advice is "add a Profiler Marker or use deep profiling" |
+| `Update.ScriptRunBehaviourUpdate` | The above, plus coroutines | Same |
+| `PreLateUpdate.ScriptRunBehaviourLateUpdate` | Every `LateUpdate` | Same |
+| `FixedBehaviourUpdate` | Every `FixedUpdate` | See the physics rows below |
+| `Physics.Processing` / `Physics.Simulate` | Physics simulation wait/prepare | **A call count near 10 is a warning.** A heavy frame makes physics catch up by stepping several times — a death spiral. It may be a *symptom*, not a physics bug. Check `Maximum Allowed Timestep` (Project Settings > Time) and lower the fixed timestep rate |
+| `Physics.ProcessReports` | Dispatch of callbacks such as `OnTriggerEnter` | The cost is in **your callback**, not the simulation |
+| High `Physics.Processing` with almost no physics objects | Job stealing attributes other systems' work to physics | Easy to misread |
+| `Camera.Render` (main thread) | Per-camera processing time | **Reduce the number of active cameras.** Adding a camera that draws nothing still costs. Unless you are doing split-screen, one camera should be active |
+| `Camera.Render` (**render thread**) | — | **A CPU-bound signal.** Too much time is going to draw calls or texture transfers |
+| `Canvas.BuildBatch` | UI rebatch | One Canvas has too many Canvas Renderers → **split the Canvas** |
+| `Canvas.SendWillRenderCanvases` | UI layout and graphic rebuild | If there are many Layout components, replace them with RectTransform. If this runs every frame but is not a hotspot, dynamic and static elements share one Canvas → split them |
+| `Text_OnPopulateMesh` | Text mesh generation | Turn Best Fit off. Unity Learn: "Best Fit on UI Text should generally never be used" |
+| `Animators.*` / `Director.PrepareFrame` | Animation | Do not put several Animators on the same Transform hierarchy (they cannot run in parallel). A StateMachineBehaviour that implements `OnStateMachineEnter/Exit` is forced onto the main thread. Scale curves cost more than translation/rotation |
+| `GC.Alloc` concentrated on one marker | Allocation source | Trace it with the Call Stacks toggle and the Calls dropdown (2019.3+, no deep profiling required) |
+| `Resources.Load` during gameplay | Synchronous load | Move to Addressables. Resources stay in memory until unloaded |
 
-**GPU-bound일 때 처방 순서** (Unity의 3분류):
-1. **Fill rate 한계** — overdraw 줄이기(투명 UI/파티클/스프라이트 중첩), fragment 셰이더 비용, Dynamic Resolution
-2. **메모리 대역폭 한계** — 밉맵 켜기, 압축 포맷
-3. **Vertex 처리 한계** — 삼각형 수, UV seam/하드 엣지, LOD
+**When GPU-bound, fix in this order** (Unity's three buckets):
+1. **Fill-rate bound** — cut overdraw (overlapping transparent UI, particles, sprites), fragment shader cost, Dynamic Resolution
+2. **Memory-bandwidth bound** — enable mipmaps, use a compressed format
+3. **Vertex-processing bound** — triangle count, UV seams and hard edges, LOD
 
-**CPU-bound일 때 처방 순서** (Unity가 제시한 순서 그대로): 물리 → 스크립트 Update → GC 할당/수집 → 카메라 컬링·렌더링 → draw call 배칭 → UI 리빌드 → 애니메이션
+**When CPU-bound, fix in this order** (Unity's order): physics → script Update → GC allocation/collection → camera culling and rendering → draw-call batching → UI rebuild → animation
 
-## 9. 카운터(`profile stats`)에는 절대 임계값이 없다
+## 9. Counters (`profile stats`) have no absolute threshold
 
-Unity는 draw call, SetPass, batch, triangle, 메모리 어느 것에도 **"이 값을 넘으면 문제"라는 수치를 공표하지 않았다.** "모바일 draw call 200 이하" 같은 숫자는 전부 커뮤니티 관행이다. 사실처럼 말하지 마라.
+Unity has not published a "above this is a problem" number for draw calls, SetPass, batches, triangles, or memory. Figures such as "mobile draw calls under 200" are community practice. Do not state them as fact.
 
-Unity가 선을 긋는 곳은 딱 두 군데다: **GC 할당(프레임당 0 목표)**과 **프레임 예산**.
+Unity draws a line in exactly two places: **GC allocation (target 0 bytes per frame)** and **the frame budget**.
 
-따라서 카운터는 **프로젝트 자체 baseline 대비 변화량**으로만 판단해라.
+Judge counters only as **change against this project's own baseline**.
 
-| 지표 | 뜻 | 비고 |
+| Metric | Meaning | Note |
 |---|---|---|
-| SetPass Calls | 셰이더 패스 전환 횟수 | **셋 중 가장 의미 있는 수치.** render state 변경이 그래픽 API에서 가장 비싼 작업이다 |
-| Draw Calls | 발행한 draw call 총수 | |
-| Batches | 처리한 배치 수 | |
-| `CPU Total Frame Time` | 프레임 간 전체 시간 | **대기 시간 포함.** 작업량 지표로 쓰지 마라 |
+| SetPass Calls | Shader-pass switches | **The most meaningful of the three.** Changing render state is the most expensive graphics-API operation |
+| Draw Calls | Total draw calls issued | |
+| Batches | Batches processed | |
+| `CPU Total Frame Time` | Full time between frames | **Includes wait time.** Do not use it as a work metric |
 
-Editor 캡처에서만 존재하는 카운터: Texture/Mesh/Material/AnimationClip Count, GC Allocated In Frame — 릴리즈 빌드엔 아예 없다. 그리고 Editor는 텍스처를 강제 read/write하므로 **텍스처 메모리는 체계적으로 부풀려져 있다.**
+Counters that exist only in an Editor capture: Texture/Mesh/Material/AnimationClip Count, and GC Allocated In Frame — they are absent from a release build. The Editor also forces textures read/write, so **texture memory is systematically inflated.**
 
-## 10. 추천하면 안 되는 조언 (Unity가 부정한 folklore)
+## 10. Advice not to recommend (folklore Unity has contradicted)
 
-아래는 널리 퍼졌지만 **현재 Unity 버전에서 틀렸다.** 최적화 제안에 넣지 마라.
+These are widely repeated and **wrong on current Unity.** Do not put them in an optimization suggestion.
 
-| 흔한 조언 | 실제 |
+| Common advice | What is actually true |
 |---|---|
-| `Camera.main`은 매번 태그 검색 → 반드시 캐싱 | **2019.4.9부터 캐시됨.** 공식 문서: "`GetComponent` 호출과 비슷한 작은 CPU 오버헤드". 태그 검색도 GC도 아니다. 캐싱은 여전히 권장이지만 이유가 훨씬 약하다 |
-| `foreach`가 enumerator를 boxing | **Unity 5.5 컴파일러 교체로 해결.** 배열과 구체 타입 `List<T>`/`Dictionary<K,V>`는 안전. `IEnumerable<T>` 타입 변수로 순회할 때만 여전히 boxing |
-| `GetComponent<T>()`는 GC 발생 | **빌드에선 발생 안 함.** Editor에서, 그것도 *못 찾았을 때만* fake-null 래퍼 할당. `TryGetComponent`로 그것도 회피 |
-| draw call을 줄여라 | **URP/HDRP에선 초점이 틀렸다.** Unity는 static batching과 GPU Instancing 체크박스를 *끄고* SRP Batcher + GPU Resident Drawer를 쓰라고 한다 — 이건 draw call이 아니라 **state 변경**을 줄인다. Built-in용 조언이 여기선 뒤집힌다 |
-| dynamic batching으로 draw call 절감 | Unity: "대부분의 용도에서 더 이상 권장하지 않는다. CPU 오버헤드가 draw call 오버헤드보다 클 수 있다." HDRP 미지원 |
-| 여러 `Update`를 매니저 하나로 합쳐라 | **Unity 공식 출처가 없다.** 널리 퍼졌을 뿐. Unity 권고는 "마커를 추가하거나 deep profile하라"지 구조 변경이 아니다 |
-| `RaycastNonAlloc`은 deprecated | **2D만 그렇다.** 3D `Physics.RaycastNonAlloc`은 Unity 6.3 매뉴얼에서 여전히 권장 패턴이다 |
+| `Camera.main` searches by tag every time, so you must cache it | **Cached since 2019.4.9.** Official docs: "a small CPU overhead similar to a `GetComponent` call". It is not a tag search and not GC. Caching is still fine, but the reason is much weaker |
+| `foreach` boxes the enumerator | **Fixed by the Unity 5.5 compiler change.** Arrays and concrete `List<T>` / `Dictionary<K,V>` are safe. Boxing remains only when you iterate a variable typed as `IEnumerable<T>` |
+| `GetComponent<T>()` allocates | **It does not allocate in a build.** In the Editor, and only *when the component is missing*, it allocates a fake-null wrapper. `TryGetComponent` avoids that too |
+| Reduce draw calls | **The focus is wrong on URP/HDRP.** Unity says turn the static batching and GPU Instancing checkboxes *off* and use the SRP Batcher plus GPU Resident Drawer — that cuts **state changes**, not draw calls. Built-in pipeline advice reverses here |
+| Save draw calls with dynamic batching | Unity: "no longer recommended for most uses. The CPU overhead can exceed the draw-call overhead." Not supported in HDRP |
+| Merge many `Update` methods into one manager | **No official Unity source.** It is only widely repeated. Unity's advice is "add markers or deep-profile", not a structural rewrite |
+| `RaycastNonAlloc` is deprecated | **Only the 2D version.** 3D `Physics.RaycastNonAlloc` is still a recommended pattern in the Unity 6.3 manual |
 
-반대로 **여전히 유효한** 할당 원인: 문자열 연결/보간, boxing(Unity GC는 generational이 아니라 더 아프다), hot path의 LINQ, 상태를 캡처하는 클로저/람다, Unity API가 반환하는 배열(매번 새 복사본), `new WaitForSeconds`, `params` 배열.
+Allocation causes that **are still valid**: string concatenation and interpolation, boxing (Unity's GC is not generational, so it hurts more), LINQ on a hot path, closures and lambdas that capture state, arrays returned by Unity APIs (a new copy every call), `new WaitForSeconds`, and `params` arrays.
 
-## 11. 메모리 릭 추세 감시 (`profile memory`)
+## 11. Watching a memory-leak trend (`profile memory`)
 
-프레임 시간이 아니라 **메모리**를 볼 때 쓴다. 스냅샷 없이 카운터 median만으로 추세를 잡는 경량 경로이고, Unity 스태프가 권하는 순서(카운터 추세 → 필요할 때만 스냅샷)를 그대로 따른다.
+Use this when you are looking at **memory**, not frame time. It is the light path: counter medians, no snapshot. It follows the order Unity staff recommend (counter trend first, snapshot only when needed).
 
 ```bash
 unity-cli profile memory                          # baseline reportId
-# 의심 플로우 재현 (플레이, 씬 전환 반복, 시간 경과)
+# Reproduce the suspect flow (play, repeat scene loads, let time pass)
 unity-cli profile memory                          # head reportId
 unity-cli profile memory compare <base> <head>
 ```
 
-읽는 법:
+How to read it:
 
-- **verdict는 `Total Used Memory` median 하나로 정해진다.** `--threshold`(기본 5%)를 넘게 늘면 `regression`, 그만큼 줄면 `improvement`. 나머지 카운터는 *왜* 그런지 설명하는 재료다.
-- `increases`에서 **Count와 Memory가 같이 오르는 asset-type**을 먼저 봐라. `Texture Count` + `Texture Memory` 동반 상승 = 텍스처가 해제되지 않는다는 뜻이다. Memory만 오르고 Count가 그대로면 개별 에셋이 커진 것(해상도·포맷 변경)이다.
-- `GC Used Memory` 상승은 managed 객체가 남아 있다는 뜻이고, `GC Reserved Memory`만 오르는 건 힙이 확장된 것으로 릭이 아닐 수 있다. 둘을 구분해라.
-- **`Total Reserved`/`System Used`는 릭 판정에 쓰지 마라.** 예약 메모리는 반환되지 않은 채 유지되는 게 정상이다.
-- 같은 모드끼리 비교해라. editmode ↔ playmode 비교는 Play 진입 자체가 수백 MB를 움직이므로 의미가 없고, 그 경우 `notes`에 mode 불일치 경고가 붙는다 — 경고가 보이면 결과를 신뢰하지 마라.
-- `deltaPercentAvailable`이 false면 퍼센트는 무시하고 절대 `delta`만 봐라. verdict도 그때는 `unchanged`로 고정된다.
-- `unavailable` 배열은 그 Unity 버전에 없는 카운터일 뿐 실패가 아니다. 다만 **`Total Used Memory`가 거기 있으면 verdict가 무의미**하므로 그때는 개별 카운터로만 판단해라.
-- Editor 수치라는 §0의 한계가 여기에도 그대로 적용된다. 특히 Editor는 텍스처를 강제 read/write하므로 텍스처 메모리는 부풀려져 있다 — 절대값이 아니라 변화량만 봐라.
+- **The verdict is decided by the `Total Used Memory` median alone.** Growth past `--threshold` (default 5%) is `regression`; a drop of that size is `improvement`. The other counters explain *why*.
+- In `increases`, look first at an **asset type whose Count and Memory rise together**. `Texture Count` plus `Texture Memory` means textures are not being released. Memory up with Count flat means individual assets got larger (resolution or format).
+- A rise in `GC Used Memory` means managed objects are still alive. A rise in `GC Reserved Memory` alone can be heap growth and may not be a leak. Keep them apart.
+- **Do not use `Total Reserved` or `System Used` to call a leak.** Reserved memory staying allocated is normal.
+- Compare the same mode with the same mode. An editmode versus playmode comparison is meaningless because entering Play moves hundreds of megabytes by itself, and `notes` warns about the mode mismatch. Do not trust the result when that warning is present.
+- When `deltaPercentAvailable` is false, ignore the percent and read the absolute `delta`. The verdict is fixed at `unchanged` in that case.
+- The `unavailable` array is only counters that Unity version does not have. It is not a failure. If **`Total Used Memory` is in that array, the verdict is meaningless**, so judge from the individual counters.
+- The Editor-measurement limit in section 0 applies here too. The Editor forces textures read/write, so texture memory is inflated — read the change, not the absolute value.
 
-추세가 나쁠 때만 정밀 단계로 간다:
+Move to the precise step only when the trend is bad:
 
 ```bash
-unity-cli profile memory snapshot     # → .snap 경로
+unity-cli profile memory snapshot     # → .snap path
 ```
 
-`com.unity.memoryprofiler`가 필요하고(없으면 설치 안내와 함께 거부), profile capture와 동시에 실행되지 않는다. 분석은 **Window > Analysis > Memory Profiler**에서 하고, CLI는 `.snap`을 파싱하지 않는다. 파일은 에디터 메모리만큼 커지며(1GB 초과가 흔하다) 자동 삭제되지 않으니 다 쓰면 지워라.
+This needs `com.unity.memoryprofiler` (otherwise it is rejected with an install hint) and does not run at the same time as profile capture. Analyze in **Window > Analysis > Memory Profiler**. The CLI does not parse `.snap`. The file grows to about the size of Editor memory (over 1 GB is common) and is not deleted automatically, so delete it when you are done.
 
-## 12. headless 회귀 파이프라인
+## 12. Headless regression pipeline
 
-아래는 전부 사람 개입 없이 돈다 — GUI 에디터도, 포커스도 필요 없다.
+Everything below runs with no person in the loop — no GUI Editor and no focus required.
 
 ```bash
-unity-cli editor launch --project <path>     # 기본 headless (GPU는 살아 있음)
+unity-cli editor launch --project <path>     # headless by default (the GPU stays available)
 unity-cli play
 unity-cli profile capture start --duration 10
 unity-cli profile capture stop --wait        # → head captureId
 unity-cli profile memory                     # → head reportId
 unity-cli stop
 unity-cli editor stop
-# 여기서부터는 Editor 없이 로컬 연산:
+# From here the work is local and needs no Editor:
 unity-cli profile compare <baseCapture> <headCapture>
 unity-cli profile memory compare <baseReport> <headReport>
 ```
 
-known-good 실행의 captureId/reportId를 baseline으로 보관해라. sidecar는 `Library/com.yhc509.unity-cli-bridge/` 아래에 남아 에디터를 껐다 켜도 유지된다.
+Keep the captureId and reportId from a known-good run as the baseline. Sidecars stay under `Library/com.yhc509.unity-cli-bridge/` across Editor restarts.
 
-주의: Play Mode 진입과 패키지 설치는 도메인 리로드를 일으켜 IPC 소켓을 잠깐 끊는다. 그 직후 명령이 `LIVE_UNAVAILABLE`(retryable)로 실패하면 몇 초 뒤 재시도해라 — 실패가 아니라 리로드 중이라는 뜻이다.
+Note: entering Play Mode and installing a package cause a domain reload, which drops the IPC socket briefly. If the next command fails with `LIVE_UNAVAILABLE` (retryable), wait a few seconds and retry — that means a reload is in progress, not a hard failure.
 
-## 13. 출처
+## 13. Sources
 
-전부 Unity 공식(primary):
+All Unity official (primary):
 
-- [Best practices for profiling game performance](https://unity.com/how-to/best-practices-for-profiling-game-performance) — 프레임 예산, CPU/GPU-bound 판정표, GC.Alloc 인위적 duration, 모바일 35% 헤드룸
-- [Profiler markers reference](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-markers.html) — 마커별 정의, Editor VSync 흉내, 렌더 스레드 분기
-- [Highlights Profiler module](https://docs.unity3d.com/6000.3/Documentation/Manual/ProfilerHighlights.html) — CPU Active Time에서 빼는 대기 마커 목록
-- [Play mode / Edit mode samples](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-play-edit-samples.html) — `EditorLoop`, `EditorOnly` 접두
-- [Profiler counters reference](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-counters-reference.html) — 카운터 정의와 릴리즈 빌드 가용성
+- [Best practices for profiling game performance](https://unity.com/how-to/best-practices-for-profiling-game-performance) — frame budget, CPU/GPU-bound table, artificial `GC.Alloc` duration, mobile 35% headroom
+- [Profiler markers reference](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-markers.html) — per-marker definitions, Editor VSync imitation, render-thread split
+- [Highlights Profiler module](https://docs.unity3d.com/6000.3/Documentation/Manual/ProfilerHighlights.html) — wait markers subtracted from CPU Active Time
+- [Play mode / Edit mode samples](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-play-edit-samples.html) — `EditorLoop`, `EditorOnly` prefix
+- [Profiler counters reference](https://docs.unity3d.com/6000.3/Documentation/Manual/profiler-counters-reference.html) — counter definitions and release-build availability
 - [Incremental garbage collection](https://docs.unity3d.com/6000.3/Documentation/Manual/performance-incremental-garbage-collection.html)
-- [Physics performance issues](https://docs.unity3d.com/Manual/physics-performance-issues.html) — 호출 수 10 임계
-- [Choose a method for optimizing draw calls](https://docs.unity3d.com/6000.0/Documentation/Manual/optimizing-draw-calls-choose-method.html) — 파이프라인별 배칭 권고표
-- [Camera.main](https://docs.unity3d.com/ScriptReference/Camera-main.html) — 캐시됨
-- [Performance Testing package](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.1/manual/writing-tests.html) — 1ms/5% 가드레일, warmup 기본값
+- [Physics performance issues](https://docs.unity3d.com/Manual/physics-performance-issues.html) — call-count threshold of 10
+- [Choose a method for optimizing draw calls](https://docs.unity3d.com/6000.0/Documentation/Manual/optimizing-draw-calls-choose-method.html) — batching advice by pipeline
+- [Camera.main](https://docs.unity3d.com/ScriptReference/Camera-main.html) — cached
+- [Performance Testing package](https://docs.unity3d.com/Packages/com.unity.test-framework.performance@3.1/manual/writing-tests.html) — 1 ms / 5% guardrails, default warmup
