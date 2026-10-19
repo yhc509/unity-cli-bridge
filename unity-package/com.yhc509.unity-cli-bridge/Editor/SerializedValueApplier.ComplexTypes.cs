@@ -18,7 +18,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return member;
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "필수 필드를 찾지 못했습니다: " + propertyPath + "." + memberName);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find required field: " + propertyPath + "." + memberName);
         }
 
         private static JArray ReadArray(JToken token, string propertyPath)
@@ -28,7 +28,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return (JArray)token;
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "array 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Array value required: " + propertyPath);
         }
 
         private static JArray ReadRequiredArrayMember(JObject obj, string memberName, string propertyPath)
@@ -40,7 +40,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (obj[memberName] == null)
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "필수 숫자 필드를 찾지 못했습니다: " + propertyPath + "." + memberName);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find required numeric field: " + propertyPath + "." + memberName);
             }
 
             return ReadFloatMember(obj, memberName, propertyPath);
@@ -116,7 +116,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!Enum.TryParse(ReadString(modeToken, propertyPath + ".mode"), true, out GradientMode mode))
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "지원하지 않는 Gradient mode입니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Unsupported Gradient mode: " + propertyPath);
             }
 
             gradient.SetKeys(serializedColorKeys, serializedAlphaKeys);
@@ -134,7 +134,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "Hash128 hex string 형식이 올바르지 않습니다: " + propertyPath + " (" + ex.Message + ")",
+                    "Hash128 hex string is invalid: " + propertyPath + " (" + ex.Message + ")",
                     ex.Message);
             }
         }
@@ -174,7 +174,7 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         throw new CommandFailureException(
                             "PREFAB_FIELD_INVALID",
-                            "managed reference 인스턴스를 생성하지 못했습니다: " + propertyPath + " (" + typeName + ", " + ex.Message + ")",
+                            "Could not create managed reference instance: " + propertyPath + " (" + typeName + ", " + ex.Message + ")",
                             ex.Message);
                     }
 
@@ -186,14 +186,14 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         throw new CommandFailureException(
                             "PREFAB_FIELD_INVALID",
-                            "managed reference 타입을 할당하지 못했습니다: " + propertyPath + " (" + typeName + ", " + ex.Message + ")",
+                            "Could not assign managed reference type: " + propertyPath + " (" + typeName + ", " + ex.Message + ")",
                             ex.Message);
                     }
                 }
             }
             else if (property.managedReferenceValue == null || string.IsNullOrWhiteSpace(property.managedReferenceFullTypename))
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "managed reference 값이 비어 있어 $type 없이 패치할 수 없습니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Managed reference value is empty, so it cannot be patched without $type: " + propertyPath);
             }
 
             SerializedProperty refreshedProperty = property.serializedObject.FindProperty(property.propertyPath);
@@ -217,7 +217,7 @@ namespace UnityCliBridge.Bridge.Editor
                 SerializedProperty childProperty = property.FindPropertyRelative(child.Name);
                 if (childProperty == null)
                 {
-                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "serialized field를 찾지 못했습니다: " + propertyPath + "." + child.Name);
+                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find serialized field: " + propertyPath + "." + child.Name);
                 }
 
                 EnsurePatchableProperty(childProperty, propertyPath + "." + child.Name);
@@ -225,8 +225,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
-        // NOTE: SerializeReference의 shared reference 및 순환 참조는 보존되지 않습니다.
-        // 동일 인스턴스를 여러 필드가 공유하는 경우 patch 후 별개 객체로 분리됩니다.
+        // NOTE: SerializeReference shared references and cycles are not preserved.
+        // If several fields share one instance, the patch splits them into distinct objects.
         private static bool TrySerializeManagedReference(SerializedProperty property, out JToken token)
         {
             token = null;
@@ -353,7 +353,7 @@ namespace UnityCliBridge.Bridge.Editor
             string fullName = type.FullName;
             if (string.IsNullOrWhiteSpace(fullName))
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "managed reference 타입 이름을 구성하지 못했습니다: " + type.Name);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not build the managed reference type name: " + type.Name);
             }
 
             return fullName + ", " + type.Assembly.GetName().Name;
@@ -378,7 +378,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return resolvedType;
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "managed reference 타입을 찾지 못했습니다: " + propertyPath + " (" + typeName + ")");
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find managed reference type: " + propertyPath + " (" + typeName + ")");
         }
 
         private static Type ResolveCurrentManagedReferenceType(SerializedProperty property, System.Reflection.Assembly[] assemblies)
@@ -489,21 +489,21 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "SerializeReference는 UnityEngine.Object 파생 타입을 지원하지 않습니다: " + propertyPath + " (" + typeName + ")");
+                    "SerializeReference does not support types derived from UnityEngine.Object: " + propertyPath + " (" + typeName + ")");
             }
 
             if (type.IsAbstract || type.IsInterface)
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "managed reference 타입은 추상 클래스나 interface일 수 없습니다: " + propertyPath + " (" + typeName + ")");
+                    "Managed reference type cannot be an abstract class or interface: " + propertyPath + " (" + typeName + ")");
             }
 
             if (!type.IsValueType && type.GetConstructor(Type.EmptyTypes) == null)
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "managed reference 타입은 public parameterless 생성자가 필요합니다: " + propertyPath + " (" + typeName + ")");
+                    "Managed reference type needs a public parameterless constructor: " + propertyPath + " (" + typeName + ")");
             }
         }
 
@@ -530,14 +530,14 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "managed reference 선언 타입을 찾지 못했습니다: " + propertyPath + " (" + declaredFieldTypeName + ")");
+                    "Could not find the managed reference declared type: " + propertyPath + " (" + declaredFieldTypeName + ")");
             }
 
             if (!declaredFieldType.IsAssignableFrom(type))
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "managed reference 타입이 필드 선언 타입과 호환되지 않습니다: "
+                    "Managed reference type is not compatible with the field's declared type: "
                     + propertyPath
                     + " ($type: "
                     + typeName
@@ -563,7 +563,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             throw new CommandFailureException(
                 "PREFAB_FIELD_INVALID",
-                "지원하지 않는 AnimationCurve wrap mode입니다: " + propertyPath + "." + memberName + " (" + wrapModeName + ")");
+                "Unsupported AnimationCurve wrap mode: " + propertyPath + "." + memberName + " (" + wrapModeName + ")");
         }
     }
 }

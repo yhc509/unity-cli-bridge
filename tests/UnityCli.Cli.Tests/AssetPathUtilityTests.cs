@@ -31,7 +31,7 @@ public sealed class AssetPathUtilityTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             AssetPathUtility.Normalize("Packages/com.test/Runtime/Foo.asset"));
 
-        Assert.Equal("asset 경로는 `Assets/...` 형식이어야 합니다.", exception.Message);
+        Assert.Equal("Asset paths must use the `Assets/...` form.", exception.Message);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class AssetPathUtilityTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             AssetPathUtility.Normalize("ProjectSettings/TagManager.asset", allowPackages: true));
 
-        Assert.Equal("asset 경로는 `Assets/...` 또는 `Packages/...` 형식이어야 합니다.", exception.Message);
+        Assert.Equal("Asset paths must use the `Assets/...` or `Packages/...` form.", exception.Message);
     }
 
     [Theory]

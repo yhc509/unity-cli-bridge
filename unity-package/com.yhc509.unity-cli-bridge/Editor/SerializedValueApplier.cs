@@ -44,26 +44,26 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         throw new CommandFailureException(
                             "COMPONENT_VALUE_KEY_INVALID",
-                            "serialized field를 찾지 못했습니다: "
+                            "Could not find serialized field: "
                             + property.Name
-                            + " (시도한 키: alias="
+                            + " (tried keys: alias="
                             + FormatAliasPathList(attemptedAliasPaths)
                             + ", '"
                             + property.Name
                             + "', '"
                             + fallbackKey
-                            + "'). list-components로 유효한 property 이름을 확인하세요.");
+                            + "'). Check list-components for a valid property name.");
                     }
 
                     throw new CommandFailureException(
                         "COMPONENT_VALUE_KEY_INVALID",
-                        "serialized field를 찾지 못했습니다: "
+                        "Could not find serialized field: "
                         + property.Name
-                        + " (시도한 키: '"
+                        + " (tried keys: '"
                         + property.Name
                         + "', '"
                         + fallbackKey
-                        + "'). list-components로 유효한 property 이름을 확인하세요.");
+                        + "'). Check list-components for a valid property name.");
                 }
 
                 EnsurePatchableProperty(serializedProperty, property.Name);
@@ -117,9 +117,9 @@ namespace UnityCliBridge.Bridge.Editor
 
             throw new CommandFailureException(
                 "COMPONENT_VALUE_KEY_INVALID",
-                "필드 '"
+                "Field '"
                 + keyOrPath
-                + "'는 inspect에 노출되지 않아 patch할 수 없습니다 (path: "
+                + "' is not exposed to inspect, so it cannot be patched (path: "
                 + property.propertyPath
                 + ").");
         }
@@ -360,7 +360,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (token.Type != JTokenType.Array)
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "배열 값은 JSON array여야 합니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Array value must be a JSON array: " + propertyPath);
             }
 
             JArray array = (JArray)token;
@@ -376,7 +376,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (token.Type != JTokenType.Object)
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "객체 값은 JSON object여야 합니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "Object value must be a JSON object: " + propertyPath);
             }
 
             JObject jobject = (JObject)token;
@@ -385,7 +385,7 @@ namespace UnityCliBridge.Bridge.Editor
                 SerializedProperty childProperty = property.FindPropertyRelative(child.Name);
                 if (childProperty == null)
                 {
-                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "serialized field를 찾지 못했습니다: " + propertyPath + "." + child.Name);
+                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find serialized field: " + propertyPath + "." + child.Name);
                 }
 
                 EnsurePatchableProperty(childProperty, propertyPath + "." + child.Name);
@@ -657,7 +657,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             else
             {
-                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "object reference는 null, string, 또는 {assetPath/guid} object여야 합니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "Object reference must be null, a string, or an {assetPath/guid} object: " + propertyPath);
             }
 
             if (string.IsNullOrWhiteSpace(assetPath) && !string.IsNullOrWhiteSpace(guid))
@@ -667,13 +667,13 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (string.IsNullOrWhiteSpace(assetPath))
             {
-                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "assetPath 또는 guid를 찾지 못했습니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "Could not find assetPath or guid: " + propertyPath);
             }
 
             UnityEngine.Object[] assets = AssetDatabase.LoadAllAssetsAtPath(assetPath);
             if (assets == null || assets.Length == 0)
             {
-                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "참조 asset을 찾지 못했습니다: " + assetPath);
+                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "Could not find the referenced asset: " + assetPath);
             }
 
             string expectedTypeName = ExtractObjectReferenceTypeName(property);
@@ -701,7 +701,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (match == null)
             {
-                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "참조 asset을 로드하지 못했습니다: " + assetPath);
+                throw new CommandFailureException("PREFAB_REFERENCE_INVALID", "Could not load the referenced asset: " + assetPath);
             }
 
             return match;
@@ -730,7 +730,7 @@ namespace UnityCliBridge.Bridge.Editor
                 int index = token.Value<int>();
                 if (index < 0 || index >= property.enumNames.Length)
                 {
-                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "enum index 범위를 벗어났습니다: " + propertyPath);
+                    throw new CommandFailureException("PREFAB_FIELD_INVALID", "Enum index is out of range: " + propertyPath);
                 }
 
                 return index;
@@ -749,7 +749,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return displayIndex;
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "enum 값을 찾지 못했습니다: " + propertyPath + " (" + enumName + ")");
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Could not find enum value: " + propertyPath + " (" + enumName + ")");
         }
 
         private static int FindStringIndex(string[] values, string target)
@@ -772,7 +772,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return token.Value<long>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "정수 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Integer value required: " + propertyPath);
         }
 
         private static int ReadInt(JToken token, string propertyPath)
@@ -787,7 +787,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return token.Value<double>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "숫자 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Numeric value required: " + propertyPath);
         }
 
         private static bool ReadBool(JToken token, string propertyPath)
@@ -797,7 +797,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return token.Value<bool>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "bool 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Bool value required: " + propertyPath);
         }
 
         private static string ReadString(JToken token, string propertyPath)
@@ -807,7 +807,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return token.Value<string>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "string 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "String value required: " + propertyPath);
         }
 
         private static int ReadChar(JToken token, string propertyPath)
@@ -826,14 +826,14 @@ namespace UnityCliBridge.Bridge.Editor
                 return token.Value<int>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "char 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Char value required: " + propertyPath);
         }
 
         private static JObject ReadObject(JToken token, string propertyPath)
         {
             if (token == null || token.Type == JTokenType.Null)
             {
-                throw new CommandFailureException("PREFAB_FIELD_INVALID", "object 값이 필요합니다: " + propertyPath);
+                throw new CommandFailureException("PREFAB_FIELD_INVALID", "object value is required: " + propertyPath);
             }
 
             if (token.Type == JTokenType.Object)
@@ -841,7 +841,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return (JObject)token;
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "object 값이 필요합니다: " + propertyPath);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "object value is required: " + propertyPath);
         }
 
         /// <summary>
@@ -861,11 +861,11 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "배열 값은 숫자 "
+                    "Array value must contain "
                     + (requiredCount == defaults.Length
                         ? requiredCount.ToString()
                         : requiredCount + "~" + defaults.Length)
-                    + "개여야 합니다: " + propertyPath);
+                    + " numbers: " + propertyPath);
             }
 
             var values = (float[])defaults.Clone();
@@ -876,7 +876,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         "PREFAB_FIELD_INVALID",
-                        "숫자 값이 필요합니다: " + propertyPath + "[" + index + "]");
+                        "Numeric value required: " + propertyPath + "[" + index + "]");
                 }
 
                 values[index] = element.Value<float>();
@@ -891,7 +891,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "PREFAB_FIELD_INVALID",
-                    "배열 값은 정수 " + count + "개여야 합니다: " + propertyPath);
+                    "Array value must contain " + count + " integers: " + propertyPath);
             }
 
             var values = new int[count];
@@ -902,7 +902,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         "PREFAB_FIELD_INVALID",
-                        "정수 값이 필요합니다: " + propertyPath + "[" + index + "]");
+                        "Integer value required: " + propertyPath + "[" + index + "]");
                 }
 
                 values[index] = element.Value<int>();
@@ -930,7 +930,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return member.Value<float>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "숫자 값이 필요합니다: " + propertyPath + "." + memberName);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Numeric value required: " + propertyPath + "." + memberName);
         }
 
         private static int ReadIntMember(JObject obj, string memberName, string propertyPath, int fallback = 0)
@@ -946,7 +946,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return member.Value<int>();
             }
 
-            throw new CommandFailureException("PREFAB_FIELD_INVALID", "정수 값이 필요합니다: " + propertyPath + "." + memberName);
+            throw new CommandFailureException("PREFAB_FIELD_INVALID", "Integer value required: " + propertyPath + "." + memberName);
         }
 
         private static Color ReadColor(JToken token, string propertyPath)

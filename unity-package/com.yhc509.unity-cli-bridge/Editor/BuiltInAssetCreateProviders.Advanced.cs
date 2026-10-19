@@ -22,14 +22,14 @@ namespace UnityCliBridge.Bridge.Editor
                 AnimatorOverrideControllerCreateOptions options = request.GetOptions<AnimatorOverrideControllerCreateOptions>();
                 if (string.IsNullOrWhiteSpace(options.BaseController))
                 {
-                    throw new CommandFailureException("ASSET_OPTION_INVALID", "`--base-controller`가 필요합니다.");
+                    throw new CommandFailureException("ASSET_OPTION_INVALID", "`--base-controller` is required.");
                 }
 
                 string baseControllerPath = AssetCommandSupport.RequireExistingAssetPath(options.BaseController, "asset-create");
                 RuntimeAnimatorController baseController = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(baseControllerPath);
                 if (baseController == null)
                 {
-                    throw new CommandFailureException("ASSET_OPTION_INVALID", "유효한 RuntimeAnimatorController가 아닙니다: " + baseControllerPath);
+                    throw new CommandFailureException("ASSET_OPTION_INVALID", "Not a valid RuntimeAnimatorController: " + baseControllerPath);
                 }
 
                 var asset = new AnimatorOverrideController
@@ -57,12 +57,12 @@ namespace UnityCliBridge.Bridge.Editor
                 Type assetType = RequireType(
                     "UnityEngine.InputSystem.InputActionAsset",
                     "ASSET_DEPENDENCY_MISSING",
-                    "Input System 패키지가 없어서 InputActionAsset을 만들 수 없습니다.");
+                    "Cannot create an InputActionAsset because the Input System package is missing.");
 
                 ScriptableObject asset = ScriptableObject.CreateInstance(assetType);
                 if (asset == null)
                 {
-                    throw new CommandFailureException("ASSET_CREATE_FAILED", "InputActionAsset 인스턴스를 만들지 못했습니다.");
+                    throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not create an InputActionAsset instance.");
                 }
 
                 asset.name = Path.GetFileNameWithoutExtension(request.AssetPath);
@@ -72,7 +72,7 @@ namespace UnityCliBridge.Bridge.Editor
                     Type extensionsType = RequireType(
                         "UnityEngine.InputSystem.InputActionSetupExtensions",
                         "ASSET_DEPENDENCY_MISSING",
-                        "Input System setup API를 찾지 못했습니다.");
+                        "Could not find the Input System setup API.");
 
                     MethodInfo addActionMap = null;
                     MethodInfo[] methods = extensionsType.GetMethods(BindingFlags.Public | BindingFlags.Static);
@@ -96,7 +96,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                     if (addActionMap == null)
                     {
-                        throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "InputActionAsset API를 찾지 못했습니다.");
+                        throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "Could not find the InputActionAsset API.");
                     }
 
                     addActionMap.Invoke(null, new object[] { asset, options.InitialMap.Trim() });
@@ -120,12 +120,12 @@ namespace UnityCliBridge.Bridge.Editor
                 Type assetType = RequireType(
                     "UnityEngine.Rendering.VolumeProfile",
                     "ASSET_DEPENDENCY_MISSING",
-                    "Render Pipelines Core 패키지가 없어서 VolumeProfile을 만들 수 없습니다.");
+                    "Cannot create a VolumeProfile because the Render Pipelines Core package is missing.");
 
                 ScriptableObject asset = ScriptableObject.CreateInstance(assetType);
                 if (asset == null)
                 {
-                    throw new CommandFailureException("ASSET_CREATE_FAILED", "VolumeProfile 인스턴스를 만들지 못했습니다.");
+                    throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not create a VolumeProfile instance.");
                 }
 
                 asset.name = Path.GetFileNameWithoutExtension(request.AssetPath);
@@ -148,7 +148,7 @@ namespace UnityCliBridge.Bridge.Editor
                 ScriptableObject asset = ScriptableObject.CreateInstance(scriptType);
                 if (asset == null)
                 {
-                    throw new CommandFailureException("ASSET_CREATE_FAILED", "ScriptableObject 인스턴스를 만들지 못했습니다: " + scriptType.FullName);
+                    throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not create a ScriptableObject instance: " + scriptType.FullName);
                 }
 
                 asset.name = Path.GetFileNameWithoutExtension(request.AssetPath);
@@ -164,13 +164,13 @@ namespace UnityCliBridge.Bridge.Editor
             MethodInfo toJson = inputActionsAsset.GetType().GetMethod("ToJson", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
             if (toJson == null || toJson.ReturnType != typeof(string))
             {
-                throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "InputActionAsset JSON 저장 API를 찾지 못했습니다.");
+                throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "Could not find the InputActionAsset JSON save API.");
             }
 
             string json = toJson.Invoke(inputActionsAsset, null) as string;
             if (string.IsNullOrWhiteSpace(json))
             {
-                throw new CommandFailureException("ASSET_CREATE_FAILED", "InputActionAsset JSON을 만들지 못했습니다.");
+                throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not create InputActionAsset JSON.");
             }
 
             string physicalPath = AssetCommandSupport.GetPhysicalPath(assetPath);
@@ -183,7 +183,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "ASSET_CREATE_FAILED",
-                    "InputActionAsset 파일을 쓰지 못했습니다: " + assetPath,
+                    "Could not write the InputActionAsset file: " + assetPath,
                     exception.Message);
             }
             finally
@@ -198,7 +198,7 @@ namespace UnityCliBridge.Bridge.Editor
             bool hasTypeName = !string.IsNullOrWhiteSpace(typeName);
             if (!hasScriptPath && !hasTypeName)
             {
-                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`--script` 또는 `--type-name`이 필요합니다.");
+                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`--script` or `--type-name` is required.");
             }
 
             Type typeFromName = hasTypeName ? ResolveTypeByName(typeName.Trim()) : null;
@@ -209,7 +209,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (typeFromName != typeFromScript && !IsNestedWithin(typeFromName, typeFromScript))
                 {
-                    throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`--script`와 `--type-name`이 같은 타입을 가리키지 않습니다.");
+                    throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`--script` and `--type-name` do not refer to the same type.");
                 }
 
                 resolvedType = typeFromName;
@@ -221,12 +221,12 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (resolvedType == null)
             {
-                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "ScriptableObject 타입을 찾지 못했습니다.");
+                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "Could not find a ScriptableObject type.");
             }
 
             if (!IsValidScriptableObjectType(resolvedType))
             {
-                throw new CommandFailureException("ASSET_SCRIPT_INVALID", "유효한 ScriptableObject 타입이 아닙니다: " + resolvedType.FullName);
+                throw new CommandFailureException("ASSET_SCRIPT_INVALID", "Not a valid ScriptableObject type: " + resolvedType.FullName);
             }
 
             return resolvedType;
@@ -238,13 +238,13 @@ namespace UnityCliBridge.Bridge.Editor
             MonoScript monoScript = AssetDatabase.LoadAssetAtPath<MonoScript>(normalizedScriptPath);
             if (monoScript == null)
             {
-                throw new CommandFailureException("ASSET_SCRIPT_NOT_FOUND", "script를 찾지 못했습니다: " + normalizedScriptPath);
+                throw new CommandFailureException("ASSET_SCRIPT_NOT_FOUND", "Could not find script: " + normalizedScriptPath);
             }
 
             Type scriptType = monoScript.GetClass();
             if (scriptType == null)
             {
-                throw new CommandFailureException("ASSET_SCRIPT_INVALID", "스크립트 타입을 확인하지 못했습니다: " + normalizedScriptPath);
+                throw new CommandFailureException("ASSET_SCRIPT_INVALID", "Could not resolve the script type: " + normalizedScriptPath);
             }
 
             return scriptType;
@@ -255,7 +255,7 @@ namespace UnityCliBridge.Bridge.Editor
             Type exactMatch = FindSingleScriptableObjectType(
                 TypeDiscoveryUtility.FindTypesByFullName(typeName),
                 "ASSET_TYPE_AMBIGUOUS",
-                "동일한 full name의 타입이 여러 개 있습니다: " + typeName);
+                "More than one type has this full name: " + typeName);
             if (exactMatch != null)
             {
                 return exactMatch;
@@ -264,13 +264,13 @@ namespace UnityCliBridge.Bridge.Editor
             Type shortMatch = FindSingleScriptableObjectType(
                 TypeDiscoveryUtility.FindTypesByShortName(typeName),
                 "ASSET_TYPE_AMBIGUOUS",
-                "짧은 이름이 같은 타입이 여러 개 있습니다. full name을 사용하세요: " + typeName);
+                "More than one type shares this short name. Use the full name: " + typeName);
             if (shortMatch != null)
             {
                 return shortMatch;
             }
 
-            throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "타입을 찾지 못했습니다: " + typeName);
+            throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "Could not find type: " + typeName);
         }
 
         private static Type FindSingleScriptableObjectType(

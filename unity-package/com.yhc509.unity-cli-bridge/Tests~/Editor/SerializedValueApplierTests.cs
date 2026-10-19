@@ -126,7 +126,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 () => Apply("{\"vector3Value\":\"[1,2,\"}"))!;
 
             Assert.That(failure.ErrorCode, Is.EqualTo("PREFAB_FIELD_INVALID"));
-            Assert.That(failure.Message, Does.Contain("object 값이 필요합니다"));
+            Assert.That(failure.Message, Does.Contain("object value is required"));
         }
 
         [Test]

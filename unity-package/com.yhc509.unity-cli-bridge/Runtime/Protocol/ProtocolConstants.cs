@@ -33,7 +33,7 @@ namespace UnityCli.Protocol
         public const string ErrorPrefabStageDirty = "PREFAB_STAGE_DIRTY";
         public const string ErrorPackageForceRequired = "PACKAGE_FORCE_REQUIRED";
         public const string ErrorPackageBusy = "PACKAGE_BUSY";
-        public const string PackageBusyMessage = "다른 패키지 명령이 진행 중입니다. 완료 후 다시 시도하세요.";
+        public const string PackageBusyMessage = "Another package command is in progress. Try again when it finishes.";
         public const string ErrorPackageTimeout = "PACKAGE_TIMEOUT";
         public const string ErrorTestBusy = "TEST_RUN_IN_PROGRESS";
         public const string ErrorTestTimeout = "TEST_RUN_TIMEOUT";
@@ -236,7 +236,7 @@ namespace UnityCli.Protocol
 
         public static string BuildPackageRequestTimeoutMessage(int timeoutSeconds)
         {
-            return $"패키지 명령이 {timeoutSeconds}초 안에 완료되지 않았습니다. Editor의 Package Manager 상태를 확인해 주세요.";
+            return $"The package command did not finish within {timeoutSeconds} seconds. Check Package Manager in the Editor.";
         }
 
         public static string ComputeProjectHash(string projectRoot)
