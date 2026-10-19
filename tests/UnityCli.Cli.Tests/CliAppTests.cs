@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -228,7 +229,7 @@ public sealed class CliAppTests
         string hashB = ProtocolConstants.ComputeProjectHash(canonicalB);
         string registryContents =
             $$"""
-            {"activeProjectRoot":"","instances":[{"projectRoot":"{{canonicalB.Replace("\\", "\\\\")}}","projectName":"ProjectB","projectHash":"{{hashB}}","pipeName":"{{ProtocolConstants.BuildPipeName(hashB).Replace("\\", "\\\\")}}","editorProcessId":1234,"unityVersion":"6000.3.10f1","state":"idle","lastSeenUtc":"{{DateTimeOffset.UtcNow.ToString("O")}}","capabilities":[]},{"projectRoot":"{{ProtocolConstants.GetCanonicalPath(projectA).Replace("\\", "\\\\")}}","projectName":"ProjectA","projectHash":"{{ProtocolConstants.ComputeProjectHash(projectA)}}","pipeName":"pipe-a","editorProcessId":0,"unityVersion":"6000.3.10f1","state":"offline","lastSeenUtc":"{{DateTimeOffset.UtcNow.ToString("O")}}","capabilities":[]}]}
+            {"activeProjectRoot":"","instances":[{"projectRoot":"{{canonicalB.Replace("\\", "\\\\")}}","projectName":"ProjectB","projectHash":"{{hashB}}","pipeName":"{{ProtocolConstants.BuildPipeName(hashB).Replace("\\", "\\\\")}}","editorProcessId":{{Environment.ProcessId}},"unityVersion":"6000.3.10f1","state":"idle","lastSeenUtc":"{{DateTimeOffset.UtcNow.ToString("O")}}","capabilities":[]},{"projectRoot":"{{ProtocolConstants.GetCanonicalPath(projectA).Replace("\\", "\\\\")}}","projectName":"ProjectA","projectHash":"{{ProtocolConstants.ComputeProjectHash(projectA)}}","pipeName":"pipe-a","editorProcessId":0,"unityVersion":"6000.3.10f1","state":"offline","lastSeenUtc":"{{DateTimeOffset.UtcNow.ToString("O")}}","capabilities":[]}]}
             """;
 
         var result = await InvokeAsync(
@@ -241,6 +242,38 @@ public sealed class CliAppTests
 
         JsonElement data = ParseResponse(result.Stdout).data!.Value;
         Assert.Equal(canonicalB, data.GetProperty("currentProjectRoot").GetString());
+    }
+
+    [Fact]
+    public async Task RunAsync_JsonStatus_DeadRegistryProcess_DoesNotDisambiguate()
+    {
+        using var temp = new TempDirectory();
+        string projectA = CreateUnityProject(temp.Path, "ProjectA");
+        string projectB = CreateUnityProject(temp.Path, "ProjectB");
+        string canonicalB = ProtocolConstants.GetCanonicalPath(projectB);
+        int deadPid = StartAndKillProcess();
+        string missingPipe = OperatingSystem.IsWindows()
+            ? "unity-cli-missing-" + Guid.NewGuid().ToString("N")
+            : Path.Combine(Path.GetTempPath(), "ucb-missing-" + Guid.NewGuid().ToString("N") + ".sock");
+        string registryContents =
+            $$"""
+            {"activeProjectRoot":"","instances":[{"projectRoot":"{{canonicalB.Replace("\\", "\\\\")}}","projectName":"ProjectB","projectHash":"{{ProtocolConstants.ComputeProjectHash(canonicalB)}}","pipeName":"{{missingPipe.Replace("\\", "\\\\")}}","editorProcessId":{{deadPid}},"unityVersion":"6000.3.10f1","state":"idle","lastSeenUtc":"{{DateTimeOffset.UtcNow.ToString("O")}}","capabilities":[]}]}
+            """;
+
+        var result = await InvokeAsync(
+            ["--json", "status"],
+            registryContents: registryContents,
+            currentDirectory: temp.Path);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.Stderr);
+        Assert.DoesNotContain("liveReachable", result.Stdout);
+
+        var response = ParseResponse(result.Stdout);
+        Assert.Equal(AmbiguousProjectException.ErrorCode, response.error?.code);
+        Assert.Contains("--project", response.error?.message);
+        Assert.Contains(canonicalB, response.error?.message);
+        Assert.Contains(ProtocolConstants.GetCanonicalPath(projectA), response.error?.message);
     }
 
     [Fact]
@@ -718,6 +751,31 @@ public sealed class CliAppTests
         {
             ConsoleLock.Release();
         }
+    }
+
+    private static int StartAndKillProcess()
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sleep",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        if (OperatingSystem.IsWindows())
+        {
+            start.ArgumentList.Add("/c");
+            start.ArgumentList.Add("ping -n 30 127.0.0.1 > nul");
+        }
+        else
+        {
+            start.ArgumentList.Add("30");
+        }
+
+        using Process process = Process.Start(start)!;
+        int pid = process.Id;
+        process.Kill(entireProcessTree: true);
+        process.WaitForExit();
+        return pid;
     }
 
     private static string CreateUnityProject(string root, string name)

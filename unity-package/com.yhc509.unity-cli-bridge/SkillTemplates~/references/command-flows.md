@@ -30,7 +30,7 @@ When `--project` is omitted, resolution order is:
 
 1. Walk upward from the working directory to the nearest folder that contains both `Assets/` and `Packages/`.
 2. When the walk does not find a project, search descendant directories up to 3 levels deep. Skip `Library`, `Temp`, `Logs`, `obj`, `bin`, `node_modules`, `Build`, `Builds`, and hidden directories (including `.git`). Sort matches by canonical path.
-3. Use the match when there is exactly one. When several remain, use one only when it is uniquely implied: the `instances use` pin if that Editor is live, or the single candidate with a running Editor. Otherwise the command fails with `AMBIGUOUS_PROJECT`, lists the candidate paths, and tells you to pass `--project`.
+3. Use the match when there is exactly one. When several remain, use one only when it is uniquely implied: the `instances use` pin if that Editor is reachable, or the single candidate with a reachable Editor. A registry row counts only when its process is alive or its pipe or socket accepts a connection. Otherwise the command fails with `AMBIGUOUS_PROJECT`, lists the candidate paths, and tells you to pass `--project`.
 4. When the disk search finds nothing, use the pinned live instance, then the single running Editor. If two or more Editors are live and none is pinned, the command fails with `CLI_USAGE` and lists them.
 
 When several projects are open, or `AMBIGUOUS_PROJECT` lists more than one path, ask which project to use and pass it explicitly:

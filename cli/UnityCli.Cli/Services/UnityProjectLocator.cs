@@ -65,9 +65,10 @@ public sealed class UnityProjectLocator
     /// <summary>
     /// Picks one project from <paramref name="candidates"/>. A single candidate wins on its own.
     /// Several candidates resolve to the explicit <c>instances use</c> pin when that Editor is
-    /// live, or to the only candidate with a non-offline registry instance. Otherwise this throws
-    /// <see cref="AmbiguousProjectException"/>. An empty list returns null so the caller can fall
-    /// back to the single running Editor.
+    /// reachable, or to the only candidate with a reachable Editor. Reachable means the recorded
+    /// process is alive or the pipe/socket accepts a connection — a non-offline registry row is
+    /// not enough. Otherwise this throws <see cref="AmbiguousProjectException"/>. An empty list
+    /// returns null so the caller can fall back to the single running Editor.
     /// </summary>
     public static string? SelectProjectRoot(IReadOnlyList<string> candidates, InstanceRegistry registry)
     {
@@ -86,8 +87,7 @@ public sealed class UnityProjectLocator
         registry.instances ??= Array.Empty<InstanceRecord>();
         foreach (InstanceRecord instance in registry.instances)
         {
-            if (string.IsNullOrWhiteSpace(instance.projectRoot)
-                || string.Equals(instance.state, "offline", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(instance.projectRoot) || !EditorReachability.IsReachable(instance))
             {
                 continue;
             }

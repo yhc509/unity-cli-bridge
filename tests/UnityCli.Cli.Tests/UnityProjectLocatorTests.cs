@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.IO.Pipes;
+using System.Net.Sockets;
 using UnityCli.Cli.Services;
 using UnityCli.Protocol;
 
@@ -154,7 +157,7 @@ public sealed class UnityProjectLocatorTests
         {
             instances =
             [
-                Instance(live, "idle"),
+                Instance(live, "idle", Environment.ProcessId),
                 Instance(idle, "offline"),
             ],
         };
@@ -176,8 +179,8 @@ public sealed class UnityProjectLocatorTests
             activeProjectRootPinned = true,
             instances =
             [
-                Instance(pinned, "idle"),
-                Instance(other, "playing"),
+                Instance(pinned, "idle", Environment.ProcessId),
+                Instance(other, "playing", Environment.ProcessId),
             ],
         };
 
@@ -223,7 +226,7 @@ public sealed class UnityProjectLocatorTests
             instances =
             [
                 Instance(pinned, "offline"),
-                Instance(live, "idle"),
+                Instance(live, "idle", Environment.ProcessId),
             ],
         };
 
@@ -246,19 +249,140 @@ public sealed class UnityProjectLocatorTests
         Assert.Equal(only, UnityProjectLocator.SelectProjectRoot([only], registry));
     }
 
+    [Fact]
+    public void SelectProjectRoot_WhenRegistryProcessIsDead_DoesNotDisambiguate()
+    {
+        using var temp = new TempDirectory();
+        string dead = Canonical(temp.Path, "Dead");
+        string other = Canonical(temp.Path, "Other");
+        int deadPid = StartAndKillProcess();
+        var registry = new InstanceRegistry
+        {
+            instances =
+            [
+                Instance(dead, "idle", deadPid, pipeName: MissingEndpoint()),
+            ],
+        };
+
+        AmbiguousProjectException exception = Assert.Throws<AmbiguousProjectException>(() =>
+            UnityProjectLocator.SelectProjectRoot([dead, other], registry));
+
+        Assert.Contains(dead, exception.Candidates);
+        Assert.Contains(other, exception.Candidates);
+        Assert.Contains("--project", exception.Message);
+    }
+
+    [Fact]
+    public void SelectProjectRoot_WhenProcessIsDeadButEndpointAcceptsConnections_ReturnsThatCandidate()
+    {
+        using var temp = new TempDirectory();
+        string live = Canonical(temp.Path, "Live");
+        string other = Canonical(temp.Path, "Other");
+        using IDisposable endpoint = StartEndpoint(out string endpointName);
+        var registry = new InstanceRegistry
+        {
+            instances =
+            [
+                Instance(live, "idle", pid: 0, pipeName: endpointName),
+            ],
+        };
+
+        string? selected = UnityProjectLocator.SelectProjectRoot([other, live], registry);
+
+        Assert.Equal(live, selected);
+    }
+
     private static string Canonical(string root, string name)
     {
         return ProtocolConstants.GetCanonicalPath(Path.Combine(root, name));
     }
 
-    private static InstanceRecord Instance(string projectRoot, string state)
+    private static InstanceRecord Instance(string projectRoot, string state, int pid = 0, string? pipeName = null)
     {
         return new InstanceRecord
         {
             projectRoot = projectRoot,
             projectName = Path.GetFileName(projectRoot),
             state = state,
+            editorProcessId = pid,
+            pipeName = pipeName ?? string.Empty,
         };
+    }
+
+    private static string MissingEndpoint()
+    {
+        return OperatingSystem.IsWindows()
+            ? "unity-cli-missing-" + Guid.NewGuid().ToString("N")
+            : Path.Combine(Path.GetTempPath(), "ucb-missing-" + Guid.NewGuid().ToString("N") + ".sock");
+    }
+
+    private static int StartAndKillProcess()
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sleep",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        if (OperatingSystem.IsWindows())
+        {
+            start.ArgumentList.Add("/c");
+            start.ArgumentList.Add("ping -n 30 127.0.0.1 > nul");
+        }
+        else
+        {
+            start.ArgumentList.Add("30");
+        }
+
+        using Process process = Process.Start(start)!;
+        int pid = process.Id;
+        process.Kill(entireProcessTree: true);
+        process.WaitForExit();
+        Assert.False(EditorLauncher.IsProcessAlive(pid));
+        return pid;
+    }
+
+    private static IDisposable StartEndpoint(out string endpointName)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            endpointName = "ucb-reach-" + Guid.NewGuid().ToString("N");
+            var server = new NamedPipeServerStream(
+                endpointName,
+                PipeDirection.InOut,
+                1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous);
+            _ = server.WaitForConnectionAsync();
+            return server;
+        }
+
+        endpointName = Path.Combine(Path.GetTempPath(), "ucb-reach-" + Guid.NewGuid().ToString("N") + ".sock");
+        var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        listener.Bind(new UnixDomainSocketEndPoint(endpointName));
+        listener.Listen(1);
+        return new UnixListener(listener, endpointName);
+    }
+
+    private sealed class UnixListener : IDisposable
+    {
+        private readonly Socket _listener;
+        private readonly string _path;
+
+        public UnixListener(Socket listener, string path)
+        {
+            _listener = listener;
+            _path = path;
+        }
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+        }
     }
 
     private static void CreateProject(string projectRoot)
