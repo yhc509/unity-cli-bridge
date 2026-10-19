@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Scene examples that add an object with `--parent "/Environment[0]"` now follow up with that object's real `createdPath` (`/Environment[0]/Cube[0]` or `/Environment[0]/Floor[0]`). The old `--node "/Cube[0]"` returns `SCENE_NODE_NOT_FOUND`.
 - `profile memory snapshot` compiles on Unity 2021.3. That editor exposes the snapshot API as `UnityEngine.Profiling.Memory.Experimental`; Unity 2022.2 and newer use `Unity.Profiling.Memory`.
 - Projects without the Input System no longer get an unreachable-code warning from `qa key` and `qa swipe`.
+- A Unity 2021.3 project that runs `-batchmode -quit -executeMethod` with this package installed no longer waits 300 seconds and then exits with a failure. The bridge's connection listener was keeping an unfinished background operation that this editor refuses to quit while it is still open. Editors that stay open, including a normal window and a headless editor without `-quit`, still accept CLI commands. Unity 6 already quit cleanly; that path uses the same scheduling now.
 
 ## [0.5.4] - 2026-08-18
 
