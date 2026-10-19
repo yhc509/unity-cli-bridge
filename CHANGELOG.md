@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- A Unity 2021.3 project that runs `-batchmode -quit -executeMethod` with this package installed no longer waits 300 seconds and then exits with a failure. The bridge's connection listener was keeping an unfinished background operation that this editor refuses to quit while it is still open. Editors that stay open, including a normal window and a headless editor without `-quit`, still accept CLI commands. Unity 6 already quit cleanly; that path uses the same scheduling now.
+
 ## [0.5.4] - 2026-08-18
 
 ### Added
