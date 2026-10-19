@@ -346,11 +346,12 @@ public static class PucExecuteWrapper
 
         private static string MergeOutput(string consoleOutput, IEnumerable<string> logEntries)
         {
-            string[] segments = new[] { consoleOutput.Trim(), string.Join(Environment.NewLine, logEntries).Trim() }
-                .Where(segment => !string.IsNullOrWhiteSpace(segment))
-                .ToArray();
-
-            return segments.Length == 0 ? string.Empty : string.Join(Environment.NewLine, segments);
+            IEnumerable<string> cleaned = new[] { consoleOutput }
+                .Concat(logEntries)
+                .SelectMany(segment => (segment ?? string.Empty).Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0 && !IsCompilerNoise(line));
+            return string.Join(Environment.NewLine, cleaned);
         }
     }
 
