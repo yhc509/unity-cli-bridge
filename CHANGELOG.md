@@ -6,14 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-- **Window > Unity CLI Manager** leads the AI Agent Skill section with copyable plugin install commands. Copying the skill into a folder is under **Advanced: copy skill files into a folder**.
-
 ## [0.5.5] - 2026-10-19
+
+### Added
+- The repository is now a plugin marketplace for Claude Code, Codex CLI, and Grok Build. A user-scoped install of the `unity-cli-bridge` plugin loads the AI-agent skill from any folder, including a monorepo root above the Unity project. See the README install section for the commands.
+- **Window > Unity CLI Manager** leads the AI Agent Skill section with copyable plugin install commands for Claude Code, Codex, and Grok Build. Copying the skill into a folder is under **Advanced: copy skill files into a folder**.
+- **Window > Unity CLI Manager** has a new look: a navy header with the Unity CLI Bridge icon and version, an orange marker on each section, and badges for installed, update available, and not installed. The window tab shows the same icon.
 
 ### Changed
 - User-facing text is now English: CLI messages, Editor bridge messages, and the installed AI-agent skill. Error codes, JSON field names, placeholders, and exit codes are unchanged. Reinstall the skill from **Window > Unity CLI Manager** to pick up the English copy.
 - The package now supports Unity 2021.3 LTS through Unity 6. It was checked on 2021.3.45f2, the latest public 2021.3 patch; later 2021.3 updates are paid extended-LTS releases. Gradient property edits still need Unity 2022.1 or newer. `record` compiles only when Unity Recorder 3.0.0 or newer is installed. On Unity 6000.4 and newer, Recorder 5.1.6 or later is still required or Recorder itself does not compile.
+- Codex skill installs now go to `.agents/skills/unity-cli-bridge` (Unity project or git root) and `~/.agents/skills/unity-cli-bridge` (home) instead of the deprecated `.codex/skills`.
+- The skill file copy can target the Unity project, the git repository root (found by walking up for `.git`, or a folder you pick), or your home directory. The window shows the resolved path.
+- Omitting `--project` now also searches up to three levels below the working directory for a Unity project (a folder with both `Assets/` and `Packages/`), skipping heavy and hidden folders. When several projects are found and neither a reachable Editor nor an `instances use` pin picks one, the command fails with `AMBIGUOUS_PROJECT` and lists the candidate paths. The installed skill follows the same rule.
 
 ### Fixed
 - Scene examples that add an object with `--parent "/Environment[0]"` now follow up with that object's real `createdPath` (`/Environment[0]/Cube[0]` or `/Environment[0]/Floor[0]`). The old `--node "/Cube[0]"` returns `SCENE_NODE_NOT_FOUND`.
@@ -21,6 +26,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Projects without the Input System no longer get an unreachable-code warning from `qa key` and `qa swipe`.
 - A Unity 2021.3 project that runs `-batchmode -quit -executeMethod` with this package installed no longer waits 300 seconds and then exits with a failure. The bridge's connection listener was keeping an unfinished background operation that this editor refuses to quit while it is still open. Editors that stay open, including a normal window and a headless editor without `-quit`, still accept CLI commands. Unity 6 already quit cleanly; that path uses the same scheduling now.
 - `test run` no longer reports success while the Test Framework is still restoring the open scenes. The finish callback runs before that restore, so a `play` command in the gap threw `InvalidOperationException` from scene restore ("This cannot be used during play mode") on both Unity 2021.3 and Unity 6. Edit Mode and Play Mode `--wait` now return only after that cleanup has finished. Until then, `play`, `pause`, `stop`, and scene commands fail with the existing retryable `TEST_RUN_IN_PROGRESS` code. Result JSON is unchanged.
+- Auto-detected project selection no longer depends on directory enumeration order, a directory symlink to a project is not counted twice, and a force-killed Editor's stale registry row no longer selects its project.
+- **Window > Unity CLI Manager** finds deprecated `.codex/skills/unity-cli-bridge` copies and removes them when you confirm. Removing a skill also removes the empty folders the installer created, never the agent root (`.claude`, `.agents`, `.grok`, `.codex`).
+- **Window > Unity CLI Manager** warns when a skill copied into the Unity project would be invisible to an agent opened at a parent git root, and when Claude, Grok, and Codex copies at the same root would show up twice for one agent.
+- **Window > Unity CLI Manager** fits its 420px minimum width without a horizontal scrollbar.
 
 ## [0.5.4] - 2026-08-18
 
