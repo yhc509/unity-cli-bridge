@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - CodeDOM "Script 'Foo.cs' will not be compiled…" warnings are filtered out of the `execute` `output` field.
 - The AI-agent skill `SKILL.md` is about 5 KB (was about 22 KB). It keeps the workflow, wait-by-default, `execute`, `PucFrameLoop`, and QA input rules; the long rule list, component and convenience commands, and the profile loop moved to `references/operating-rules.md` and `references/profiling.md`.
 
+### Docs
+- The README opens with the project icon and a short definition, dates the v0.1.0 timing and payload figures (2026-04-05), and adds Requirements, a sourced comparison, an FAQ, and `llms.txt`.
+
 ## [0.5.5] - 2026-10-19
 
 ### Added
