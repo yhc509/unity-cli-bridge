@@ -39,6 +39,9 @@ When several projects are open, or `AMBIGUOUS_PROJECT` lists more than one path,
 ucli instances list --brief
 ```
 
+The command name is `instances list`. `unity-cli` and `ucli` are the same executable.
+
+- Use `PROJECT="$(pwd -P)"` only when this directory or a parent contains both `Assets/` and `Packages/`. Otherwise that path is not the Unity project. Run `instances list` and pass `--project` with the `projectRoot` or `projectName` you want.
 - `--project` accepts a project name or a full path.
 - On macOS, pass the real path from `pwd -P`, not a symlink path.
 - Pin a default for repeated work with `ucli instances use <projectPath|projectName>`.
