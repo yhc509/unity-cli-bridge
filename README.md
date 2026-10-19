@@ -27,6 +27,8 @@ CLI ──── local IPC ──── Unity Editor (bridge)
 
 ## Quick Start
 
+Unity 2021.3 LTS or newer, including Unity 6. Checked on 2021.3.45f2, the latest public 2021.3 patch. Later 2021.3 releases are paid extended-LTS builds.
+
 ### 1. Add the Unity Package
 
 **Option A: Unity Package Manager**
@@ -53,7 +55,7 @@ The bridge starts automatically when the Editor opens. No configuration needed.
 
 `#main` always tracks the latest release. For a build you need to reproduce later, pin a release tag instead — `...#v0.5.4` — and commit `Packages/packages-lock.json`.
 
-Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
+Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` 3.0.0 or newer if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
 
 > **Upgrading from 0.3.x?** `0.4.0` bumps the wire protocol to `5`, so a `0.3.x` CLI cannot talk to a `0.4.0` package. From `0.4.1` on you no longer have to choose: install the CLI from each project's **Window > Unity CLI Manager**, and the `unity-cli` on your PATH hands off to the version that matches whichever project you are pointing at.
 
@@ -181,7 +183,7 @@ Assign a value to `__pucResult` when the caller needs a structured return value.
 
 `record start` captures the Play Mode Game View as mp4 via Unity Recorder. It returns `STARTED` plus a `recordingId` immediately; add `--duration N --wait` to auto-stop and poll until the mp4 is finalized. Without `--duration`, stop manually with `record stop`. Outputs default to `Library/com.yhc509.unity-cli-bridge/recordings/`; pass `--path` to move the finalized mp4.
 
-Recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
+Recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` 3.0.0 or newer if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
 
 ### Assets
 

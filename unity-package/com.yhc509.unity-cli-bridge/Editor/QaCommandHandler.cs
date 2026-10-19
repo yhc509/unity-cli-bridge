@@ -140,10 +140,10 @@ namespace UnityCliBridge.Bridge.Editor
             {
 #if ENABLE_INPUT_SYSTEM
                 StartSwipeDeferred(argumentsJson, completion, projectHash, requestId);
+                return;
 #else
                 throw CreateInputSystemRequiredException("qa swipe");
 #endif
-                return;
             }
 
             throw new InvalidOperationException("Unhandled deferred QA command: " + command);
@@ -904,13 +904,13 @@ namespace UnityCliBridge.Bridge.Editor
 
 #if ENABLE_INPUT_SYSTEM
             QaInputSimulator.SimulateKey(args.key);
-#else
-            throw CreateInputSystemRequiredException("qa key");
-#endif
             return ProtocolJson.Serialize(new QaKeyPayload
             {
                 completed = true,
             });
+#else
+            throw CreateInputSystemRequiredException("qa key");
+#endif
         }
 
         private static void StartWaitUntilDeferred(
