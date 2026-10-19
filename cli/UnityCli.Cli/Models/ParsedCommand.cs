@@ -130,6 +130,8 @@ public sealed class ParsedCommand
     public int? TestTimeoutSeconds { get; set; }
     public bool TestWait { get; set; }
     public bool Wait { get; set; }
+    /// <summary>Command path for `<command...> --help` (e.g. "qa key"); null for global help.</summary>
+    public string? HelpTopic { get; set; }
     public string? TestRunId { get; set; }
     public string? RecordPath { get; set; }
     public int? RecordDuration { get; set; }
