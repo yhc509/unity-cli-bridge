@@ -335,14 +335,14 @@ namespace UnityCli.Protocol
     [Serializable]
     public sealed class ProfileMemorySnapshotArgs
     {
-        // 옵션 예약. CaptureFlags는 브릿지 고정값을 쓴다.
+        // Reserved option. CaptureFlags uses the bridge's fixed value.
     }
 
     [Serializable]
     public sealed class ProfileMemorySnapshotPayload
     {
         public string snapshotId = string.Empty;
-        public string path = string.Empty; // 절대 경로. 파일은 전송하지 않는다.
+        public string path = string.Empty; // Absolute path. The file itself is not transferred.
         public long sizeBytes;
         public string captureFlags = string.Empty;
         public long elapsedMs;

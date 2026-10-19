@@ -48,7 +48,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (token.Type != JTokenType.Integer)
             {
-                throw new CommandFailureException(errorCode, "`--max-depth`는 정수여야 합니다.");
+                throw new CommandFailureException(errorCode, "`--max-depth` must be an integer.");
             }
 
             return token.Value<int>();

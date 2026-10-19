@@ -89,7 +89,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     ProtocolConstants.ErrorTestBusy,
-                    "이미 실행 중인 테스트 run이 있습니다 (runId=" + activeRunId + ", mode=" + activeMode + ").",
+                    "A test run is already in progress (runId=" + activeRunId + ", mode=" + activeMode + ").",
                     true,
                     0,
                     ProtocolConstants.TransportLive,
@@ -117,7 +117,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     ProtocolConstants.ErrorTestInvalidMode,
-                    "test run --mode는 edit, play 중 하나여야 합니다: '" + args.mode + "'",
+                    "test run --mode must be edit or play: '" + args.mode + "'",
                     false,
                     0,
                     ProtocolConstants.TransportLive,
@@ -148,7 +148,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     ProtocolConstants.ErrorTestInvalidMode,
-                    "test list --mode는 edit, play, all 중 하나여야 합니다: '" + args.mode + "'",
+                    "test list --mode must be edit, play, or all: '" + args.mode + "'",
                     false,
                     0,
                     ProtocolConstants.TransportLive,
@@ -231,7 +231,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     ProtocolConstants.ErrorTestListTimeout,
-                    "test list가 " + TestListTimeoutSeconds + "초 내 완료되지 않았습니다.",
+                    "test list did not finish within " + TestListTimeoutSeconds + " seconds.",
                     false,
                     stopwatch.ElapsedMilliseconds,
                     ProtocolConstants.TransportLive,
@@ -533,7 +533,7 @@ namespace UnityCliBridge.Bridge.Editor
                         requestId,
                         projectHash,
                         "TEST_RUN_START_FAILED",
-                        "test run을 시작할 수 없습니다: " + exception.Message,
+                        "Could not start the test run: " + exception.Message,
                         false,
                         stopwatch.ElapsedMilliseconds,
                         ProtocolConstants.TransportLive,
@@ -572,7 +572,7 @@ namespace UnityCliBridge.Bridge.Editor
                 requestId,
                 projectHash,
                 ProtocolConstants.ErrorTestCancelled,
-                "test run이 시작되기 전에 취소되었습니다.",
+                "The test run was cancelled before it started.",
                 false,
                 stopwatch.ElapsedMilliseconds,
                 ProtocolConstants.TransportLive,
@@ -588,7 +588,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "INVALID_ARGS",
-                    "runId는 32자리 16진수여야 합니다.");
+                    "runId must be 32 hex characters.");
             }
 
             if (string.IsNullOrEmpty(runId))
@@ -605,7 +605,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorTestRunNotFound,
-                        "조회할 test run이 없습니다 (last-run.json 미존재).");
+                        "No test run to query (last-run.json does not exist).");
                 }
 
                 // last-run.json is on disk, so a corrupted or hand-edited file must not
@@ -614,7 +614,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorTestRunNotFound,
-                        "조회할 test run이 없습니다 (기록된 runId 형식이 올바르지 않습니다).");
+                        "No test run to query (the recorded runId is not valid).");
                 }
             }
 
@@ -660,7 +660,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             throw new CommandFailureException(
                 ProtocolConstants.ErrorTestRunNotFound,
-                "runId '" + runId + "'에 해당하는 test run이 없습니다.");
+                "runId '" + runId + "' does not match a test run.");
         }
 
         private static string HandleCancel()
@@ -676,7 +676,7 @@ namespace UnityCliBridge.Bridge.Editor
                         cancelled = false,
                         runId = string.Empty,
                         mode = string.Empty,
-                        message = "취소할 진행 중인 test run이 없습니다.",
+                        message = "There is no in-progress test run to cancel.",
                     });
                 }
 
@@ -698,7 +698,7 @@ namespace UnityCliBridge.Bridge.Editor
                         cancelled = true,
                         runId = string.Empty,
                         mode = activeMode,
-                        message = "시작 준비 중이던 test run을 취소했습니다.",
+                        message = "Cancelled the test run that was still starting.",
                     });
                 }
             }
@@ -726,7 +726,7 @@ namespace UnityCliBridge.Bridge.Editor
                         cancelled = false,
                         runId = activeRunId,
                         mode = activeMode,
-                        message = "test run이 취소 요청 직전에 이미 종료되었습니다 (runId=" + activeRunId + ").",
+                        message = "The test run had already finished just before the cancel request (runId=" + activeRunId + ").",
                     });
                 }
             }
@@ -758,7 +758,7 @@ namespace UnityCliBridge.Bridge.Editor
                 cancelled = true,
                 runId = activeRunId,
                 mode = activeMode,
-                message = "test run이 취소되었습니다 (runId=" + activeRunId + ").",
+                message = "The test run was cancelled (runId=" + activeRunId + ").",
             });
         }
 

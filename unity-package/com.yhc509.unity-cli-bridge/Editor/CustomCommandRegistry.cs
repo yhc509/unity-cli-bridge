@@ -36,7 +36,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "CUSTOM_COMMAND_NOT_FOUND",
-                    $"등록된 커스텀 명령을 찾지 못했습니다: {name}",
+                    $"Could not find a registered custom command: {name}",
                     false,
                     null);
             }
@@ -50,7 +50,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "CUSTOM_COMMAND_FAILED",
-                    $"커스텀 명령 실행 실패: {ex.InnerException.Message}",
+                    $"Custom command failed: {ex.InnerException.Message}",
                     false,
                     ex.InnerException.ToString());
             }
@@ -75,13 +75,13 @@ namespace UnityCliBridge.Bridge.Editor
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[UnityCliBridge] 어셈블리 스캔 실패: {assembly.FullName} - {ex.Message}");
+                    Debug.LogWarning($"[UnityCliBridge] Assembly scan failed: {assembly.FullName} - {ex.Message}");
                 }
             }
 
             if (_commands.Count > 0)
             {
-                Debug.Log($"[UnityCliBridge] 커스텀 명령 {_commands.Count}개 등록됨: {string.Join(", ", GetRegisteredNames())}");
+                Debug.Log($"[UnityCliBridge] Registered {_commands.Count} custom commands: {string.Join(", ", GetRegisteredNames())}");
             }
         }
 
@@ -118,7 +118,7 @@ namespace UnityCliBridge.Bridge.Editor
                     ParameterInfo[] parameters = method.GetParameters();
                     if (string.IsNullOrWhiteSpace(attr.Name))
                     {
-                        Debug.LogWarning($"[UnityCliBridge] {type.FullName}.{method.Name}의 [PucCommand] 이름이 비어 있습니다.");
+                        Debug.LogWarning($"[UnityCliBridge] {type.FullName}.{method.Name} has an empty [PucCommand] name.");
                         continue;
                     }
 
@@ -126,13 +126,13 @@ namespace UnityCliBridge.Bridge.Editor
                         || parameters[0].ParameterType != typeof(string)
                         || method.ReturnType != typeof(string))
                     {
-                        Debug.LogWarning($"[UnityCliBridge] [PucCommand(\"{attr.Name}\")] 메서드 {type.FullName}.{method.Name}의 시그니처가 올바르지 않습니다. static string Method(string argumentsJson)이어야 합니다.");
+                        Debug.LogWarning($"[UnityCliBridge] [PucCommand(\"{attr.Name}\")] method {type.FullName}.{method.Name} has the wrong signature. It must be static string Method(string argumentsJson).");
                         continue;
                     }
 
                     if (_commands.ContainsKey(attr.Name))
                     {
-                        Debug.LogWarning($"[UnityCliBridge] 중복된 커스텀 명령 이름: {attr.Name}");
+                        Debug.LogWarning($"[UnityCliBridge] Duplicate custom command name: {attr.Name}");
                         continue;
                     }
 

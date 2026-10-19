@@ -18,7 +18,7 @@ namespace UnityCliBridge.Bridge.Editor
             AssetCommandSupport.EnsureParentFolderExists(path);
             if (!args.force && AssetCommandSupport.AssetExists(path))
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "asset 덮어쓰기 또는 삭제에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "Overwriting or deleting an asset requires --force.");
             }
 
             var request = new AssetCreateRequest(args, createType, path);
@@ -40,8 +40,8 @@ namespace UnityCliBridge.Bridge.Editor
             artifact.SaveAction();
 
             AssetDatabase.SaveAssets();
-            // Unity 6+: SaveScene/SavePrefab 후 ImportAsset 대신 Refresh를 써야
-            // file watcher가 변경을 동기 인식하여 "modified externally" 대화상자가 뜨지 않음.
+            // Unity 6+: after SaveScene/SavePrefab, Refresh instead of ImportAsset so the
+            // file watcher sees the change and does not show "modified externally".
             AssetDatabase.Refresh();
             ValidateCreatedAsset(path, artifact.ExpectedMainAssetType);
 
@@ -66,7 +66,7 @@ namespace UnityCliBridge.Bridge.Editor
             string normalizedPath = AssetCommandSupport.NormalizeAssetPath(path);
             if (string.Equals(normalizedPath, "Assets", StringComparison.Ordinal))
             {
-                throw new CommandFailureException("ASSET_CREATE_FAILED", "asset 파일 경로는 `Assets/...` 형식이어야 합니다.");
+                throw new CommandFailureException("ASSET_CREATE_FAILED", "Asset file path must use the `Assets/...` form.");
             }
 
             string currentExtension = Path.GetExtension(normalizedPath);
@@ -79,7 +79,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "ASSET_CREATE_FAILED",
-                    "이 타입은 " + extension + " 확장자를 사용해야 합니다: " + normalizedPath);
+                    "This type must use the " + extension + " extension: " + normalizedPath);
             }
 
             return normalizedPath;
@@ -94,7 +94,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!descriptor.supportsDataPatch || artifact.DataPatchTarget == null)
             {
-                throw new CommandFailureException("ASSET_DATA_PATCH_FAILED", request.TypeId + " 타입은 `--data-json`을 지원하지 않습니다.");
+                throw new CommandFailureException("ASSET_DATA_PATCH_FAILED", request.TypeId + " type does not support `--data-json`.");
             }
 
             try
@@ -105,7 +105,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "ASSET_DATA_PATCH_FAILED",
-                    "초기값 JSON 적용에 실패했습니다: " + request.TypeId,
+                    "Failed to apply the initial JSON values: " + request.TypeId,
                     exception.Message);
             }
         }
@@ -115,14 +115,14 @@ namespace UnityCliBridge.Bridge.Editor
             UnityEngine.Object mainAsset = AssetDatabase.LoadMainAssetAtPath(path);
             if (mainAsset == null)
             {
-                throw new CommandFailureException("ASSET_CREATE_FAILED", "asset 생성 후 메인 asset을 읽지 못했습니다: " + path);
+                throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not read the main asset after creating it: " + path);
             }
 
             if (!expectedMainAssetType.IsInstanceOfType(mainAsset))
             {
                 throw new CommandFailureException(
                     "ASSET_CREATE_FAILED",
-                    "생성된 asset 타입이 예상과 다릅니다: " + path,
+                    "Created asset type was not the expected type: " + path,
                     "expected=" + expectedMainAssetType.FullName + ", actual=" + mainAsset.GetType().FullName);
             }
         }

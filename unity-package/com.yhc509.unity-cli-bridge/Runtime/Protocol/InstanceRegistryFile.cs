@@ -625,12 +625,12 @@ namespace UnityCli.Protocol
                     process = Process.Start(startInfo);
                     if (process == null || !process.WaitForExit(1000))
                     {
-                        UnityEngine.Debug.LogWarning("Unity CLI bridge registry 권한 보정 실패: chmod timed out.");
+                        UnityEngine.Debug.LogWarning("Unity CLI bridge registry permission fix failed: chmod timed out.");
                     }
                     else if (process.ExitCode != 0)
                     {
                         UnityEngine.Debug.LogWarning(string.Format(
-                            "Unity CLI bridge registry 권한 보정 실패: chmod exited with {0}.",
+                            "Unity CLI bridge registry permission fix failed: chmod exited with {0}.",
                             process.ExitCode));
                     }
                 }
@@ -645,7 +645,7 @@ namespace UnityCli.Protocol
             catch (Exception exception)
             {
                 UnityEngine.Debug.LogWarning(string.Format(
-                    "Unity CLI bridge registry 권한 보정 실패: {0}",
+                    "Unity CLI bridge registry permission fix failed: {0}",
                     exception.Message));
             }
         }

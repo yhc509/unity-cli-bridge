@@ -94,7 +94,7 @@ namespace UnityCliBridge.Bridge.Editor
                             requestId,
                             projectHash,
                             ProtocolConstants.ErrorProfileTimeout,
-                            $"profile memory가 {ProtocolConstants.ProfileStatsTimeoutSeconds}초 안에 {frames}프레임을 수집하지 못했습니다.",
+                            $"profile memory did not collect {frames} frames within {ProtocolConstants.ProfileStatsTimeoutSeconds} seconds.",
                             true,
                             stopwatch.ElapsedMilliseconds,
                             ProtocolConstants.TransportLive));
@@ -199,7 +199,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorProfileFailed,
-                        "Memory Profiler 패키지가 설치되어 있지 않습니다. `unity-cli package add --name com.unity.memoryprofiler`로 설치한 뒤 다시 실행하세요.");
+                        "The Memory Profiler package is not installed. Install it with `unity-cli package add --name com.unity.memoryprofiler`, then try again.");
                 }
 
                 lock (_captureLock)
@@ -208,14 +208,14 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         throw new CommandFailureException(
                             ProtocolConstants.ErrorProfileInProgress,
-                            "profile capture가 진행 중입니다. 캡처를 끝낸 뒤 snapshot을 실행하세요.");
+                            "A profile capture is in progress. Stop it before taking a snapshot.");
                     }
 
                     if (_snapshotInFlight)
                     {
                         throw new CommandFailureException(
                             ProtocolConstants.ErrorProfileInProgress,
-                            "다른 memory snapshot이 진행 중입니다.");
+                            "Another memory snapshot is in progress.");
                     }
 
                     _snapshotInFlight = true;
@@ -257,7 +257,7 @@ namespace UnityCliBridge.Bridge.Editor
                 completion.TrySetResult(build());
             }
 
-            // TakeSnapshot 콜백이 영영 오지 않는 경우를 대비한 워치독.
+            // Watchdog for a TakeSnapshot callback that never arrives.
             void Watchdog()
             {
                 if (finished)
@@ -276,7 +276,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     ProtocolConstants.ErrorProfileTimeout,
-                    $"memory snapshot이 {ProtocolConstants.ProfileMemorySnapshotTimeoutSeconds}초 안에 끝나지 않았습니다.",
+                    $"Memory snapshot did not finish within {ProtocolConstants.ProfileMemorySnapshotTimeoutSeconds} seconds.",
                     true,
                     stopwatch.ElapsedMilliseconds,
                     ProtocolConstants.TransportLive));
@@ -298,7 +298,7 @@ namespace UnityCliBridge.Bridge.Editor
                                 requestId,
                                 projectHash,
                                 ProtocolConstants.ErrorProfileFailed,
-                                "MemoryProfiler.TakeSnapshot이 실패를 보고했습니다.",
+                                "MemoryProfiler.TakeSnapshot reported a failure.",
                                 false,
                                 stopwatch.ElapsedMilliseconds,
                                 ProtocolConstants.TransportLive));
@@ -312,7 +312,7 @@ namespace UnityCliBridge.Bridge.Editor
                         }
                         catch (Exception)
                         {
-                            // 메타 수집 실패는 스냅샷 성공을 뒤집지 않는다.
+                            // A metadata collection failure does not undo a successful snapshot.
                         }
 
                         var payload = new ProfileMemorySnapshotPayload
@@ -322,7 +322,7 @@ namespace UnityCliBridge.Bridge.Editor
                             sizeBytes = sizeBytes,
                             captureFlags = flags.ToString(),
                             elapsedMs = stopwatch.ElapsedMilliseconds,
-                            guidance = "Memory Profiler 패키지(Window > Analysis > Memory Profiler)에서 이 .snap 파일을 여세요.",
+                            guidance = "Open this .snap file in the Memory Profiler package (Window > Analysis > Memory Profiler).",
                         };
                         Finish(() => CreateSuccessResponse(requestId, projectHash, payload, stopwatch.ElapsedMilliseconds));
                     },

@@ -132,10 +132,10 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             }
             finally
             {
-                // 의도적으로 만든 nested dirty stack을 결정적으로 unwind한다(단언 실패 시에도).
-                // 공용 teardown의 CloseCurrentPrefabStage는 current stage 하나만 정리하므로,
-                // dirty 부모가 GoToMainStage의 undocumented 동작(save prompt/누수)에 의존하지 않도록
-                // 자식·부모 stage의 dirty를 직접 비우고 main으로 복귀해 다음 테스트로의 누수를 막는다.
+                // Unwind the nested dirty stack we built on purpose, even if an assertion failed.
+                // Shared teardown's CloseCurrentPrefabStage only closes the current stage,
+                // so clear dirty on the child and parent stages and return to main instead of
+                // relying on GoToMainStage's undocumented save-prompt behavior.
                 if (childStage != null)
                 {
                     childStage.ClearDirtiness();
@@ -224,7 +224,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(failure.ErrorCode, Is.EqualTo(ProtocolConstants.ErrorPrefabStageDirty));
             Assert.That(failure.Message, Does.Contain(prefabPath));
             Assert.That(failure.Message, Does.Contain("Prefab Stage"));
-            Assert.That(failure.Message, Does.Contain("저장하지 않은 변경"));
+            Assert.That(failure.Message, Does.Contain("unsaved changes"));
         }
 
         private static void AssertPrefabHasChild(string prefabPath, string childName)

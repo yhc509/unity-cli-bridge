@@ -27,7 +27,7 @@ namespace UnityCliBridge.Bridge.Editor
                 int layerIndex = token.Value<int>();
                 if (layerIndex < 0 || layerIndex > 31)
                 {
-                    throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "layer index가 범위를 벗어났습니다: " + layerIndex);
+                    throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "Layer index is out of range: " + layerIndex);
                 }
 
                 return layerIndex;
@@ -35,13 +35,13 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (token.Type != JTokenType.String)
             {
-                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "layer는 string 또는 int여야 합니다.");
+                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "Layer must be a string or an int.");
             }
 
             string? layerName = token.Value<string>();
             if (string.IsNullOrWhiteSpace(layerName))
             {
-                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "layer string이 비어 있습니다.");
+                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "Layer string is empty.");
             }
 
             if (int.TryParse(layerName, out int numericLayer))
@@ -52,7 +52,7 @@ namespace UnityCliBridge.Bridge.Editor
             int resolvedLayer = LayerMask.NameToLayer(layerName);
             if (resolvedLayer < 0)
             {
-                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "layer를 찾지 못했습니다: " + layerName);
+                throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "Could not find layer: " + layerName);
             }
 
             return resolvedLayer;
@@ -96,7 +96,7 @@ namespace UnityCliBridge.Bridge.Editor
                 string normalizedTag = tag.Trim();
                 if (string.IsNullOrWhiteSpace(normalizedTag))
                 {
-                    throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "tag가 비어 있습니다.");
+                    throw new CommandFailureException(errorPrefix + "_NODE_INVALID", "Tag is empty.");
                 }
 
                 target.tag = normalizedTag;

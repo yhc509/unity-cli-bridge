@@ -29,7 +29,7 @@ namespace UnityCliBridge.Bridge.Editor
                 throw new InvalidOperationException("Deferred package command must be started through StartDeferred: " + command);
             }
 
-            throw new InvalidOperationException("지원하지 않는 package 명령입니다: " + command);
+            throw new InvalidOperationException("Unsupported package command: " + command);
         }
 
         // argumentsJson is retained for interface compatibility with BridgeHost command dispatch.
@@ -76,7 +76,7 @@ namespace UnityCliBridge.Bridge.Editor
                         request,
                         completedRequest => CreateListPayloadJson(completedRequest, args),
                         "PACKAGE_LIST_FAILED",
-                        "패키지 목록 조회에 실패했습니다.",
+                        "Failed to list packages.",
                         completion,
                         projectHash,
                         requestId,
@@ -89,7 +89,7 @@ namespace UnityCliBridge.Bridge.Editor
                     PackageAddArgs args = ProtocolJson.Deserialize<PackageAddArgs>(argumentsJson) ?? new PackageAddArgs();
                     if (string.IsNullOrWhiteSpace(args.name))
                     {
-                        throw new CommandFailureException("INVALID_ARGS", "패키지 이름이 필요합니다.", false, null);
+                        throw new CommandFailureException("INVALID_ARGS", "A package name is required.", false, null);
                     }
 
                     string identifier = !string.IsNullOrWhiteSpace(args.version)
@@ -101,7 +101,7 @@ namespace UnityCliBridge.Bridge.Editor
                         request,
                         CreateAddPayloadJson,
                         "PACKAGE_ADD_FAILED",
-                        $"패키지 추가에 실패했습니다: {identifier}",
+                        $"Failed to add package: {identifier}",
                         completion,
                         projectHash,
                         requestId,
@@ -114,12 +114,12 @@ namespace UnityCliBridge.Bridge.Editor
                     PackageRemoveArgs args = ProtocolJson.Deserialize<PackageRemoveArgs>(argumentsJson) ?? new PackageRemoveArgs();
                     if (!args.force)
                     {
-                        throw new CommandFailureException(ProtocolConstants.ErrorPackageForceRequired, "패키지 제거에는 --force가 필요합니다.");
+                        throw new CommandFailureException(ProtocolConstants.ErrorPackageForceRequired, "Removing a package requires --force.");
                     }
 
                     if (string.IsNullOrWhiteSpace(args.name))
                     {
-                        throw new CommandFailureException("INVALID_ARGS", "패키지 이름이 필요합니다.", false, null);
+                        throw new CommandFailureException("INVALID_ARGS", "A package name is required.", false, null);
                     }
 
                     RemoveRequest request = Client.Remove(args.name);
@@ -127,7 +127,7 @@ namespace UnityCliBridge.Bridge.Editor
                         request,
                         _ => CreateRemovePayloadJson(args.name),
                         "PACKAGE_REMOVE_FAILED",
-                        $"패키지 제거에 실패했습니다: {args.name}",
+                        $"Failed to remove package: {args.name}",
                         completion,
                         projectHash,
                         requestId,
@@ -140,7 +140,7 @@ namespace UnityCliBridge.Bridge.Editor
                     PackageSearchArgs args = ProtocolJson.Deserialize<PackageSearchArgs>(argumentsJson) ?? new PackageSearchArgs();
                     if (string.IsNullOrWhiteSpace(args.query))
                     {
-                        throw new CommandFailureException("INVALID_ARGS", "검색 키워드가 필요합니다.", false, null);
+                        throw new CommandFailureException("INVALID_ARGS", "A search query is required.", false, null);
                     }
 
                     string query = args.query.Trim();
@@ -149,7 +149,7 @@ namespace UnityCliBridge.Bridge.Editor
                         request,
                         completedRequest => CreateSearchPayloadJson(completedRequest, query),
                         "PACKAGE_SEARCH_FAILED",
-                        $"패키지 검색에 실패했습니다: {query}",
+                        $"Package search failed: {query}",
                         completion,
                         projectHash,
                         requestId,
@@ -157,7 +157,7 @@ namespace UnityCliBridge.Bridge.Editor
                     return;
                 }
 
-                throw new InvalidOperationException("지원하지 않는 package 명령입니다: " + command);
+                throw new InvalidOperationException("Unsupported package command: " + command);
             }
             catch
             {

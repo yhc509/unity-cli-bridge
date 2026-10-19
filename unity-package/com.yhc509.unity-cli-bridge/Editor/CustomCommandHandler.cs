@@ -18,7 +18,7 @@ namespace UnityCliBridge.Bridge.Editor
             CustomCommandArgs args = ProtocolJson.Deserialize<CustomCommandArgs>(argumentsJson) ?? new CustomCommandArgs();
             if (string.IsNullOrWhiteSpace(args.commandName))
             {
-                throw new CommandFailureException("INVALID_ARGS", "커스텀 명령 이름이 비어 있습니다.", false, null);
+                throw new CommandFailureException("INVALID_ARGS", "Custom command name is empty.", false, null);
             }
 
             string resultJson = _registry.Invoke(args.commandName, args.argumentsJson ?? "{}");

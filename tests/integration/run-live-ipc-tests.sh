@@ -1335,7 +1335,7 @@ EOF
 test_editor_refresh() {
   run_cli_main refresh
   assert_success_response || return 1
-  assert_output_contains "AssetDatabase.Refresh 완료" || return 1
+  assert_output_contains "AssetDatabase.Refresh completed" || return 1
   TEST_MESSAGE="refresh completed through the live bridge"
 }
 
@@ -1526,7 +1526,7 @@ test_package_remove_local() {
 test_editor_compile() {
   run_cli_main compile
   assert_success_response || return 1
-  assert_output_contains "script compilation 요청 완료" || return 1
+  assert_output_contains "script compilation requested" || return 1
   wait_for_live_ready 60 1 || return 1
   TEST_MESSAGE="compile triggered a script compilation request and the bridge recovered"
 }

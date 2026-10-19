@@ -61,12 +61,12 @@ public static class PucExecuteWrapper
             ExecuteCodeArgs args = ProtocolJson.Deserialize<ExecuteCodeArgs>(argumentsJson) ?? new ExecuteCodeArgs();
             if (!args.force)
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorExecuteForceRequired, "코드 실행에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorExecuteForceRequired, "Running code requires --force.");
             }
 
             if (string.IsNullOrWhiteSpace(args.code))
             {
-                throw new CommandFailureException("INVALID_ARGS", "실행할 코드가 비어 있습니다.");
+                throw new CommandFailureException("INVALID_ARGS", "The code to run is empty.");
             }
 
             int effectiveTimeoutMs = ResolveEffectiveTimeoutMs(args.timeoutMs);
@@ -81,13 +81,13 @@ public static class PucExecuteWrapper
                 Type? wrapperType = assembly.GetType("PucExecuteWrapper");
                 if (wrapperType == null)
                 {
-                    throw new CommandFailureException("EXECUTE_FAILED", "래퍼 타입을 찾지 못했습니다.");
+                    throw new CommandFailureException("EXECUTE_FAILED", "Could not find the wrapper type.");
                 }
 
                 MethodInfo? executeMethod = wrapperType.GetMethod("Execute", BindingFlags.Public | BindingFlags.Static);
                 if (executeMethod == null)
                 {
-                    throw new CommandFailureException("EXECUTE_FAILED", "Execute 메서드를 찾지 못했습니다.");
+                    throw new CommandFailureException("EXECUTE_FAILED", "Could not find the Execute method.");
                 }
 
                 var logEntries = new List<string>();
@@ -133,13 +133,13 @@ public static class PucExecuteWrapper
             {
                 throw new CommandFailureException(
                     ProtocolConstants.ErrorExecuteTimeout,
-                    $"코드 실행이 {effectiveTimeoutMs}ms 안에 완료되지 않아 cancel 되었습니다.");
+                    $"Code execution did not finish within {effectiveTimeoutMs} ms and was cancelled.");
             }
             catch (OperationCanceledException)
             {
                 throw new CommandFailureException(
                     ProtocolConstants.ErrorExecuteTimeout,
-                    $"코드 실행이 {effectiveTimeoutMs}ms 안에 완료되지 않아 cancel 되었습니다.");
+                    $"Code execution did not finish within {effectiveTimeoutMs} ms and was cancelled.");
             }
             catch (TargetInvocationException ex) when (ex.InnerException != null)
             {
@@ -190,7 +190,7 @@ public static class PucExecuteWrapper
             {
                 throw new CommandFailureException(
                     "EXECUTE_FAILED",
-                    "wrapper template placeholder가 치환되지 않았습니다. 템플릿 들여쓰기가 변경되었는지 확인하세요.");
+                    "A wrapper template placeholder was not substituted. Check whether the template indentation changed.");
             }
 
             return usingBlock + Environment.NewLine + Environment.NewLine + built;
@@ -262,7 +262,7 @@ public static class PucExecuteWrapper
 
                 throw new CommandFailureException(
                     "COMPILE_FAILED",
-                    "코드 컴파일에 실패했습니다:\n" + errors.ToString().TrimEnd());
+                    "Code compilation failed:\n" + errors.ToString().TrimEnd());
             }
 
             return result.CompiledAssembly;

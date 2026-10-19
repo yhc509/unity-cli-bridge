@@ -35,7 +35,7 @@ namespace UnityCliBridge.Bridge.Editor
                 case ProtocolConstants.CommandSceneListComponents:
                     return HandleListComponents(argumentsJson);
                 default:
-                    throw new InvalidOperationException("지원하지 않는 scene 명령입니다: " + command);
+                    throw new InvalidOperationException("Unsupported scene command: " + command);
             }
         }
 
@@ -49,7 +49,7 @@ namespace UnityCliBridge.Bridge.Editor
             Scene scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
             if (!scene.IsValid() || !scene.isLoaded)
             {
-                throw new CommandFailureException("SCENE_OPEN_FAILED", "scene를 열지 못했습니다: " + path);
+                throw new CommandFailureException("SCENE_OPEN_FAILED", "Could not open scene: " + path);
             }
 
             SceneManager.SetActiveScene(scene);
@@ -69,7 +69,7 @@ namespace UnityCliBridge.Bridge.Editor
             string path = RequireExistingScenePath(args.path, "scene-inspect");
             if (maxDepth.HasValue && maxDepth.Value <= 0)
             {
-                throw new CommandFailureException("SCENE_INSPECT_INVALID", "`--max-depth`는 1 이상의 정수여야 합니다.");
+                throw new CommandFailureException("SCENE_INSPECT_INVALID", "`--max-depth` must be an integer >= 1.");
             }
 
             return WithLoadedScene(path, "scene-inspect", scene =>
@@ -89,13 +89,13 @@ namespace UnityCliBridge.Bridge.Editor
             ValidateVersion(spec.Version, "scene-patch");
             if (spec.Operations == null || spec.Operations.Length == 0)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", "`operations`가 비어 있습니다.");
+                throw new CommandFailureException("SCENE_SPEC_INVALID", "`operations` is empty.");
             }
 
             NormalizeOperationNames(spec.Operations);
             if (HasDestructiveOperation(spec) && !args.force)
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorSceneForceRequired, "`delete-gameobject` 또는 `remove-component`를 쓰려면 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorSceneForceRequired, "--force is required to use `delete-gameobject` or `remove-component`.");
             }
 
             LoadedSceneSnapshot loadedSceneSnapshot = CaptureLoadedSceneSnapshot(path);
@@ -130,10 +130,10 @@ namespace UnityCliBridge.Bridge.Editor
                 EditorSceneManager.MarkSceneDirty(scene);
                 if (!EditorSceneManager.SaveScene(scene))
                 {
-                    throw new CommandFailureException("SCENE_SAVE_FAILED", "scene를 저장하지 못했습니다: " + path);
+                    throw new CommandFailureException("SCENE_SAVE_FAILED", "Could not save scene: " + path);
                 }
-                // Unity 6+: SaveScene 후 ImportAsset 대신 Refresh를 써야
-                // file watcher가 변경을 동기 인식하여 "modified externally" 대화상자가 뜨지 않음.
+                // Unity 6+: after SaveScene, Refresh instead of ImportAsset so the
+                // file watcher sees the change and does not show "modified externally".
                 AssetDatabase.Refresh();
                 return ProtocolJson.Serialize(new SceneMutationPayload
                 {
@@ -155,7 +155,7 @@ namespace UnityCliBridge.Bridge.Editor
             MeshRenderer meshRenderer = node.GetComponent<MeshRenderer>();
             if (meshRenderer == null)
             {
-                throw new CommandFailureException("SCENE_COMPONENT_NOT_FOUND", "scene assign-material 대상 node에 MeshRenderer가 없습니다: " + SceneInspector.BuildNodePath(node));
+                throw new CommandFailureException("SCENE_COMPONENT_NOT_FOUND", "scene assign-material target node has no MeshRenderer: " + SceneInspector.BuildNodePath(node));
             }
 
             (Material material, string materialPath) = LoadMaterialAsset(args.material, "scene assign-material");
@@ -176,7 +176,7 @@ namespace UnityCliBridge.Bridge.Editor
             EditorSceneManager.MarkSceneDirty(scene);
             if (!EditorSceneManager.SaveScene(scene))
             {
-                throw new CommandFailureException("SCENE_SAVE_FAILED", "scene를 저장하지 못했습니다: " + scene.path);
+                throw new CommandFailureException("SCENE_SAVE_FAILED", "Could not save scene: " + scene.path);
             }
 
             AssetDatabase.Refresh();
@@ -196,7 +196,7 @@ namespace UnityCliBridge.Bridge.Editor
                 ?? new SceneListComponentsArgs();
             if (string.IsNullOrWhiteSpace(args.node))
             {
-                throw new CommandFailureException("SCENE_LIST_COMPONENTS_INVALID", "`--node`가 필요합니다.");
+                throw new CommandFailureException("SCENE_LIST_COMPONENTS_INVALID", "`--node` is required.");
             }
 
             Scene scene = RequireActiveSavedScene("scene-list-components");
@@ -215,7 +215,7 @@ namespace UnityCliBridge.Bridge.Editor
             SceneSetTransformArgs args = ProtocolJson.Deserialize<SceneSetTransformArgs>(argumentsJson) ?? new SceneSetTransformArgs();
             if (args.position == null && args.rotation == null && args.scale == null)
             {
-                throw new CommandFailureException("SCENE_TRANSFORM_INVALID", "scene set-transform에는 position, rotation, scale 중 하나 이상이 필요합니다.");
+                throw new CommandFailureException("SCENE_TRANSFORM_INVALID", "scene set-transform requires at least one of position, rotation, or scale.");
             }
 
             Scene scene = RequireActiveSavedScene("scene set-transform", requireClean: true);
@@ -226,7 +226,7 @@ namespace UnityCliBridge.Bridge.Editor
             EditorSceneManager.MarkSceneDirty(scene);
             if (!EditorSceneManager.SaveScene(scene))
             {
-                throw new CommandFailureException("SCENE_SAVE_FAILED", "scene를 저장하지 못했습니다: " + scene.path);
+                throw new CommandFailureException("SCENE_SAVE_FAILED", "Could not save scene: " + scene.path);
             }
 
             AssetDatabase.Refresh();
@@ -252,7 +252,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorSceneDirty,
-                        commandName + " 대상 scene에 저장되지 않은 변경이 있습니다. 먼저 저장하거나 변경을 버리세요: " + path);
+                        commandName + " target scene has unsaved changes. Save or discard them first: " + path);
                 }
             }
             else
@@ -288,7 +288,7 @@ namespace UnityCliBridge.Bridge.Editor
                         string sceneName = string.IsNullOrWhiteSpace(scene.path) ? scene.name : scene.path;
                         throw new CommandFailureException(
                             ProtocolConstants.ErrorSceneDirty,
-                            "저장되지 않은 scene 변경이 있습니다. 버리고 열려면 --force를 사용하세요: " + sceneName);
+                            "There are unsaved scene changes. Pass --force to discard them and open: " + sceneName);
                     }
                 }
             }
@@ -307,7 +307,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     ProtocolConstants.ErrorSceneDirty,
-                    commandName + " 대상 '" + path + "' scene에 저장하지 않은 변경이 있어 진행할 수 없습니다. 먼저 저장하거나 폐기한 뒤 다시 시도하세요.");
+                    commandName + " cannot continue because '" + path + "' has unsaved changes. Save or discard them, then try again.");
             }
         }
 
@@ -358,14 +358,14 @@ namespace UnityCliBridge.Bridge.Editor
                 Scene scene = SceneManager.GetSceneByPath(path);
                 if (scene.IsValid() && scene.isLoaded && !EditorSceneManager.CloseScene(scene, removeScene: true))
                 {
-                    Debug.LogWarning("scene patch 실패 후 target scene reload를 위해 scene을 닫지 못했습니다: " + path);
+                    Debug.LogWarning("After a failed scene patch, could not close the scene to reload it: " + path);
                     return;
                 }
 
                 Scene reloadedScene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
                 if (!reloadedScene.IsValid() || !reloadedScene.isLoaded)
                 {
-                    Debug.LogWarning("scene patch 실패 후 target scene reload에 실패했습니다: " + path);
+                    Debug.LogWarning("After a failed scene patch, reloading the target scene failed: " + path);
                     return;
                 }
 
@@ -376,7 +376,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             catch (Exception reloadException)
             {
-                Debug.LogWarning("scene patch 실패 후 dirty 폐기를 위한 reload에 실패했습니다: " + path + " (" + reloadException.Message + ")");
+                Debug.LogWarning("After a failed scene patch, the reload that discards dirty state failed: " + path + " (" + reloadException.Message + ")");
             }
         }
 
@@ -396,7 +396,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (string.IsNullOrWhiteSpace(specJson))
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec이 비어 있습니다.");
+                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec is empty.");
             }
 
             try
@@ -405,14 +405,14 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (spec == null)
                 {
-                    throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec을 해석하지 못했습니다.");
+                    throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec could not be parsed.");
                 }
 
                 return spec;
             }
             catch (JsonException exception)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec JSON이 잘못되었습니다.", exception.Message);
+                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec JSON is invalid.", exception.Message);
             }
         }
 
@@ -420,7 +420,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (version > 1)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec version을 지원하지 않습니다: " + version);
+                throw new CommandFailureException("SCENE_SPEC_INVALID", commandName + " spec version is not supported: " + version);
             }
         }
 
@@ -429,12 +429,12 @@ namespace UnityCliBridge.Bridge.Editor
             Scene scene = EditorSceneManager.GetActiveScene();
             if (!scene.IsValid() || !scene.isLoaded)
             {
-                throw new CommandFailureException("SCENE_NOT_OPEN", commandName + " 대상 active scene이 없습니다.");
+                throw new CommandFailureException("SCENE_NOT_OPEN", commandName + " target has no active scene.");
             }
 
             if (string.IsNullOrWhiteSpace(scene.path))
             {
-                throw new CommandFailureException("SCENE_PATH_INVALID", commandName + " 대상 active scene이 저장되지 않았습니다. 먼저 scene asset으로 저장하세요.");
+                throw new CommandFailureException("SCENE_PATH_INVALID", commandName + " target active scene has not been saved. Save it as a scene asset first.");
             }
 
             if (requireClean)
@@ -460,7 +460,7 @@ namespace UnityCliBridge.Bridge.Editor
             Material material = AssetDatabase.LoadAssetAtPath<Material>(normalizedPath);
             if (material == null)
             {
-                throw new CommandFailureException("MATERIAL_NOT_FOUND", commandName + " 머티리얼을 찾지 못했습니다: " + normalizedPath);
+                throw new CommandFailureException("MATERIAL_NOT_FOUND", commandName + " could not find material: " + normalizedPath);
             }
 
             return (material, normalizedPath);
@@ -501,7 +501,7 @@ namespace UnityCliBridge.Bridge.Editor
             SerializedProperty property = serializedObject.FindProperty(propertyPath);
             if (property == null)
             {
-                throw new CommandFailureException("SCENE_COMPONENT_INVALID", "Transform serialized field를 찾지 못했습니다: " + propertyPath);
+                throw new CommandFailureException("SCENE_COMPONENT_INVALID", "Could not find Transform serialized field: " + propertyPath);
             }
 
             return property;
@@ -532,7 +532,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!string.Equals(extension, ".unity", StringComparison.OrdinalIgnoreCase))
             {
-                throw new CommandFailureException("SCENE_PATH_INVALID", "scene 경로는 `.unity` 확장자를 사용해야 합니다: " + normalizedPath);
+                throw new CommandFailureException("SCENE_PATH_INVALID", "Scene path must use the `.unity` extension: " + normalizedPath);
             }
 
             return normalizedPath;
@@ -543,13 +543,13 @@ namespace UnityCliBridge.Bridge.Editor
             string scenePath = ResolveScenePath(path);
             if (!AssetCommandSupport.AssetExists(scenePath))
             {
-                throw new CommandFailureException("SCENE_PATH_INVALID", commandName + " 대상 scene이 없습니다: " + scenePath);
+                throw new CommandFailureException("SCENE_PATH_INVALID", commandName + " target scene does not exist: " + scenePath);
             }
 
             Type? mainType = AssetDatabase.GetMainAssetTypeAtPath(scenePath);
             if (mainType != typeof(SceneAsset))
             {
-                throw new CommandFailureException("SCENE_PATH_INVALID", "scene asset이 아닙니다: " + scenePath);
+                throw new CommandFailureException("SCENE_PATH_INVALID", "Not a scene asset: " + scenePath);
             }
 
             return scenePath;
