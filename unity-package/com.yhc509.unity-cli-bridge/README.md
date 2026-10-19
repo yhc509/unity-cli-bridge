@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- Unity `2023.1` or newer
+- Unity `2021.3` LTS or newer, including Unity 6. Checked on `2021.3.45f2`, the latest public 2021.3 patch. Later 2021.3 releases are paid extended-LTS builds.
 - the companion CLI `unity-cli`
 
 ## What This Package Provides
@@ -51,7 +51,7 @@ By default, the skill installs into the current Unity project under `<project-ro
 ## Notes
 
 - This package includes `Newtonsoft.Json.dll` in `Editor/Plugins` for scene/prefab spec parsing.
-- Play Mode recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
+- Play Mode recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` `3.0.0` or newer if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
 - In Play Mode, `screenshot --view game` uses `ScreenCapture.CaptureScreenshotAsTexture()`. `--width` and `--height` can downscale the native Game View capture, but larger requests log a warning and save the native capture without upscaling.
 - `input-actions` assets are created as JSON files that Unity's Input System importer reads.
 - `scene inspect --with-values` is meant to be used as the source of truth when authoring `scene patch` specs.
