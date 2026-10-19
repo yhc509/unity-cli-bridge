@@ -34,12 +34,12 @@ Commands for editor state, compilation, play state, menus, arbitrary code execut
 | Command | Synopsis | Modes | Force Rule | Summary |
 | --- | --- | --- | --- | --- |
 | `status` | `status` | local, live | `None` | Reports the selected project and live editor state when a running bridge is reachable, with a local fallback when it is not. |
-| `compile` | `compile [--wait]` | live | `None` | Triggers a script compile in the running editor. Add --wait to block until compiling/importing finishes and the bridge is reachable again. |
-| `refresh` | `refresh [--wait]` | live | `None` | Refreshes the AssetDatabase in the running editor. Add --wait to block until compiling/importing finishes and the bridge is reachable again. |
+| `compile` | `compile [--no-wait]` | live | `None` | Triggers a script compile in the running editor and waits until compiling/importing finishes and the bridge is reachable again. Add --no-wait to return right after the request. |
+| `refresh` | `refresh [--no-wait]` | live | `None` | Refreshes the AssetDatabase in the running editor and waits until the resulting compile/import finishes and the bridge is reachable again. Add --no-wait to return right after the refresh. |
 | `read-console` | `read-console [--limit N] [--type log\|warning\|error] [--no-stacktrace]` | live | `None` | Reads recent editor console entries from a running editor; add --no-stacktrace to omit stack traces from the response while keeping them in the editor buffer. |
-| `play` | `play` | live | `None` | Starts Play Mode in a running editor. |
+| `play` | `play [--no-wait]` | live | `None` | Starts Play Mode in a running editor and returns once Play Mode has fully entered and the bridge is reachable again after the domain reload. Add --no-wait to return right after the request. |
 | `pause` | `pause` | live | `None` | Pauses Play Mode in a running editor. |
-| `stop` | `stop` | live | `None` | Stops Play Mode in a running editor. |
+| `stop` | `stop [--no-wait]` | live | `None` | Stops Play Mode in a running editor and returns once Edit Mode is back. Add --no-wait to return right after the request. |
 | `editor launch` | `editor launch [--gui] [--nographics] [--no-wait] [--timeout <sec>] [--editor-path <path>]` | local | `None` | Launches the Unity Editor for the selected project (headless -batchmode by default, GPU kept for rendering commands). Idempotent: reuses a live instance when one is already running. Waits for bridge readiness unless --no-wait. |
 | `editor stop` | `editor stop [--force] [--no-wait] [--timeout <sec>]` | live | `OnDestructiveOp` | Gracefully quits the running editor for the selected project. Refuses with EDITOR_DIRTY when unsaved scene/prefab-stage changes exist; --force discards them. Waits for process exit unless --no-wait. |
 | `execute-menu` | `execute-menu (--path "Menu/Item" \| --list "Prefix")` | live | `None` | Executes a Unity menu item or lists registered menu items matching a prefix in a running editor. |

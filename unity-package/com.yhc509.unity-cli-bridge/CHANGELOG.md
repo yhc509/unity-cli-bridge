@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0` (cold compile is still ~0.5 s). Changing values should go through `--args` so the source stays identical.
+- `PucFrameLoop` (available inside `execute` as `PucFrameLoop.Start` / `Status` / `Stop` / `Running`) runs agent code once per editor frame for Play Mode autopilots and watchers. Prefer it over a shell loop of `execute` calls. The skill documents the pattern.
+- `status` reports `isChangingPlayMode` and `domainId` so the CLI can tell when a Play Mode enter/exit (and its domain reload) has finished.
+
+### Changed
+- `compile`, `refresh`, `play`, and `stop` wait until Unity has settled by default (`--no-wait` opts out; `--wait` stays accepted). `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload.
+- The `execute` wrapper aliases `Object` to `UnityEngine.Object`, so `Object.FindFirstObjectByType<T>()` compiles without an ambiguous-reference error. A user alias with the same name wins.
+- CodeDOM "Script 'Foo.cs' will not be compiled…" warnings are filtered out of the `execute` `output` field.
+
 ## [0.5.5] - 2026-10-19
 
 ### Added

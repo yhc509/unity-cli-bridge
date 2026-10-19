@@ -99,7 +99,7 @@ public sealed class CliAppDispatchTests
         var dispatcher = new FakeCliVersionDispatcher(installedVersions: [Installed("0.3.5", "4")]);
 
         var result = await InvokeAgainstBridgeAsync(
-            ["--json", "compile"],
+            ["--json", "compile", "--no-wait"],
             ResponseEnvelope.Success("req-1", "hash", data: null, durationMs: 1, transport: ProtocolConstants.TransportLive),
             dispatcher);
 

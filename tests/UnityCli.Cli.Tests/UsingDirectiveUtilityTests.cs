@@ -48,4 +48,22 @@ Debug.Log(Vec3.one);
         Assert.Equal(["using Vec3 = UnityEngine.Vector3;"], usings);
         Assert.Equal("Debug.Log(Vec3.one);", stripped);
     }
+
+    [Fact]
+    public void RemoveShadowedAliases_UserAliasWithSameNameWins()
+    {
+        string[] template = ["using System;", "using Object = UnityEngine.Object;"];
+        string[] user = ["using Object = System.Object;"];
+
+        Assert.Equal(["using System;"], UsingDirectiveUtility.RemoveShadowedAliases(template, user));
+    }
+
+    [Fact]
+    public void RemoveShadowedAliases_KeepsIdenticalAndUnrelatedAliases()
+    {
+        string[] template = ["using Object = UnityEngine.Object;", "using PucFrameLoop = UnityCliBridge.Bridge.Editor.PucFrameLoop;"];
+        string[] user = ["using Object = UnityEngine.Object;", "using Vec3 = UnityEngine.Vector3;"];
+
+        Assert.Equal(template, UsingDirectiveUtility.RemoveShadowedAliases(template, user));
+    }
 }

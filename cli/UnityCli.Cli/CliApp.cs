@@ -505,7 +505,8 @@ public static class CliApp
                         (statusCommand, timeoutMs, cancellationToken) =>
                             sendCommandAsync(target, statusCommand, timeoutMs, cancellationToken),
                         cts.Token,
-                        timeout: waitTimeout);
+                        timeout: waitTimeout,
+                        pollInterval: ResolveEditorReadyPollInterval(parsed.Kind));
                 }
 
                 return NormalizeResultEnvelope(parsed.Kind, response);
@@ -754,7 +755,7 @@ public static class CliApp
 
     private static int ResolveCommandCancellationTimeoutMs(ParsedCommand parsed, int liveTimeoutMs)
     {
-        if (parsed.Wait && parsed.Kind is CommandKind.Compile or CommandKind.Refresh)
+        if (parsed.Wait && parsed.Kind is CommandKind.Compile or CommandKind.Refresh or CommandKind.Play or CommandKind.Stop)
         {
             double totalMs = liveTimeoutMs + ResolveEditorReadyWaitTimeout(parsed).TotalMilliseconds;
             return totalMs >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(totalMs));
@@ -811,8 +812,21 @@ public static class CliApp
     private static bool ShouldPollEditorReady(ParsedCommand parsed, ResponseEnvelope response)
     {
         return parsed.Wait
-            && parsed.Kind is CommandKind.Compile or CommandKind.Refresh
+            && parsed.Kind is CommandKind.Compile or CommandKind.Refresh or CommandKind.Play or CommandKind.Stop
             && string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Play/stop transitions finish in well under a second when no domain reload is involved, so they
+    /// poll quickly; compile/refresh keep a coarser interval.
+    /// </summary>
+    internal static TimeSpan ResolveEditorReadyPollInterval(CommandKind kind)
+    {
+        // compile/refresh keep the original 2s: a compile can start a few frames after the request,
+        // and polling sooner could catch the Editor before it reports isCompiling.
+        return kind is CommandKind.Play or CommandKind.Stop
+            ? TimeSpan.FromMilliseconds(200)
+            : TimeSpan.FromSeconds(2);
     }
 
     private static TimeSpan ResolveEditorReadyWaitTimeout(ParsedCommand parsed)
@@ -1170,6 +1184,13 @@ public static class CliApp
         const int maxConsecutiveTransportFailures = 6;
         int consecutiveTransportFailures = 0;
         bool hadPermanentTransportFailure = false;
+        // Entering Play Mode reloads the domain: the bridge socket goes away for a few seconds and
+        // comes back. Play/stop therefore tolerate transport failures for a time window instead of a
+        // fixed count, which would run out in ~1s at their short poll interval.
+        bool isPlayModeWait = original.Kind is CommandKind.Play or CommandKind.Stop;
+        TimeSpan transportGrace = TimeSpan.FromSeconds(30);
+        long? firstTransportFailureMs = null;
+        PlayStatePayload? playStarted = original.Kind == CommandKind.Play ? TryDeserializeData<PlayStatePayload>(startedResponse) : null;
 
         while (stopwatch.Elapsed < waitTimeout)
         {
@@ -1194,16 +1215,28 @@ public static class CliApp
                 int timeoutMs = Math.Max(1, (int)Math.Min(ProtocolConstants.DefaultLiveTimeoutMs, remaining.TotalMilliseconds));
                 var poll = await sendAsync(BuildStatusCommand(), timeoutMs, pollCts.Token);
 
-                switch (GetStatusPollResult(poll))
+                switch (GetStatusPollResult(poll, original.Kind, playStarted))
                 {
                     case StatusPollResult.Ready:
                         return BuildEditorReadyResponse(startedResponse, stopwatch.ElapsedMilliseconds);
                     case StatusPollResult.StillBusy:
                         consecutiveTransportFailures = 0;
                         hadPermanentTransportFailure = false;
+                        firstTransportFailureMs = null;
                         break;
                     case StatusPollResult.InvalidStatusPayload:
                         return BuildInvalidStatusPayloadResponse(startedResponse, stopwatch.ElapsedMilliseconds);
+                    case StatusPollResult.TransientFailure when isPlayModeWait:
+                        firstTransportFailureMs ??= stopwatch.ElapsedMilliseconds;
+                        if (stopwatch.ElapsedMilliseconds - firstTransportFailureMs.Value > transportGrace.TotalMilliseconds)
+                        {
+                            return BuildStatusUnavailableResponse(
+                                startedResponse,
+                                stopwatch.ElapsedMilliseconds,
+                                "The bridge did not come back within " + transportGrace.TotalSeconds + "s after the Play Mode change.");
+                        }
+
+                        break;
                     case StatusPollResult.TransientFailure:
                         consecutiveTransportFailures++;
                         if (consecutiveTransportFailures >= maxConsecutiveTransportFailures)
@@ -1229,6 +1262,14 @@ public static class CliApp
                 }
 
                 break;
+            }
+            catch (Exception ex) when (isPlayModeWait)
+            {
+                firstTransportFailureMs ??= stopwatch.ElapsedMilliseconds;
+                if (stopwatch.ElapsedMilliseconds - firstTransportFailureMs.Value > transportGrace.TotalMilliseconds)
+                {
+                    return BuildStatusUnavailableResponse(startedResponse, stopwatch.ElapsedMilliseconds, ex.Message);
+                }
             }
             catch (Exception ex)
             {
@@ -1273,7 +1314,53 @@ public static class CliApp
         NonRetryableFailure,
     }
 
-    private static StatusPollResult GetStatusPollResult(ResponseEnvelope response)
+    private static T? TryDeserializeData<T>(ResponseEnvelope response)
+        where T : class
+    {
+        try
+        {
+            return DeserializeData<T>(response);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Readiness after compile/refresh: not compiling or importing. After play: Play Mode has fully
+    /// entered (no pending transition) and, when entering reloads the domain, the bridge answering is
+    /// the post-reload one (its domain id differs from the one `play` reported). After stop: Play Mode
+    /// has fully exited. Older bridges that do not report the transition fields fall back to isPlaying.
+    /// </summary>
+    internal static bool IsSettledFor(CommandKind kind, StatusPayload status, PlayStatePayload? playStarted)
+    {
+        if (status.isCompiling || status.isUpdating)
+        {
+            return false;
+        }
+
+        switch (kind)
+        {
+            case CommandKind.Play:
+                if (!status.isPlaying || status.isChangingPlayMode)
+                {
+                    return false;
+                }
+
+                bool domainKnown = playStarted != null
+                    && !string.IsNullOrEmpty(playStarted.domainId)
+                    && !string.IsNullOrEmpty(status.domainId);
+                return !(domainKnown && playStarted!.reloadsDomain
+                    && string.Equals(playStarted.domainId, status.domainId, StringComparison.Ordinal));
+            case CommandKind.Stop:
+                return !status.isPlaying && !status.isChangingPlayMode;
+            default:
+                return true;
+        }
+    }
+
+    private static StatusPollResult GetStatusPollResult(ResponseEnvelope response, CommandKind kind, PlayStatePayload? playStarted)
     {
         if (!string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal))
         {
@@ -1297,9 +1384,9 @@ public static class CliApp
             return StatusPollResult.InvalidStatusPayload;
         }
 
-        return status.isCompiling || status.isUpdating
-            ? StatusPollResult.StillBusy
-            : StatusPollResult.Ready;
+        return IsSettledFor(kind, status, playStarted)
+            ? StatusPollResult.Ready
+            : StatusPollResult.StillBusy;
     }
 
     private static bool IsTransientStatusPollFailure(ResponseEnvelope response)
@@ -1319,6 +1406,9 @@ public static class CliApp
     private static ResponseEnvelope BuildEditorReadyResponse(ResponseEnvelope startedResponse, long waitedMs)
     {
         JsonObject data = CloneDataObject(startedResponse.data);
+        // Internal handshake fields from `play`; not useful to callers.
+        data.Remove("domainId");
+        data.Remove("reloadsDomain");
         data["ready"] = true;
         data["readyMessage"] = "ready";
         data["waitedMs"] = waitedMs;
@@ -1366,10 +1456,20 @@ public static class CliApp
         long waitedMs,
         TimeSpan waitTimeout)
     {
-        string code = original.Kind == CommandKind.Compile
-            ? ProtocolConstants.ErrorCompileWaitTimeout
-            : ProtocolConstants.ErrorRefreshWaitTimeout;
-        string command = original.Kind == CommandKind.Compile ? "compile" : "refresh";
+        string code = original.Kind switch
+        {
+            CommandKind.Compile => ProtocolConstants.ErrorCompileWaitTimeout,
+            CommandKind.Play => ProtocolConstants.ErrorPlayWaitTimeout,
+            CommandKind.Stop => ProtocolConstants.ErrorStopWaitTimeout,
+            _ => ProtocolConstants.ErrorRefreshWaitTimeout,
+        };
+        string command = original.Kind switch
+        {
+            CommandKind.Compile => "compile",
+            CommandKind.Play => "play",
+            CommandKind.Stop => "stop",
+            _ => "refresh",
+        };
         string timeoutSeconds = FormatSeconds(waitTimeout);
 
         var details = new
@@ -1383,9 +1483,11 @@ public static class CliApp
             startedResponse.requestId,
             startedResponse.target,
             code,
-            command + " --wait timed out after "
+            command + " timed out after "
                 + timeoutSeconds
-                + " seconds waiting for the Editor to finish compiling/importing and become reachable.",
+                + (original.Kind is CommandKind.Play or CommandKind.Stop
+                    ? " seconds waiting for the Play Mode change to finish and the bridge to become reachable. Use --no-wait to return immediately."
+                    : " seconds waiting for the Editor to finish compiling/importing and become reachable. Use --no-wait to return immediately."),
             retryable: true,
             durationMs: waitedMs,
             transport: "cli",
