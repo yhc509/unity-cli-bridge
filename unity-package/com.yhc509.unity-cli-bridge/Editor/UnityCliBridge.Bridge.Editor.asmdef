@@ -27,7 +27,7 @@
     },
     {
       "name": "com.unity.recorder",
-      "expression": "",
+      "expression": "3.0.0",
       "define": "UNITY_CLI_BRIDGE_RECORDER"
     }
   ],

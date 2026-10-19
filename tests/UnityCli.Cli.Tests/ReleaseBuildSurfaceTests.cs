@@ -132,9 +132,12 @@ public sealed class ReleaseBuildSurfaceTests
 
         bool hasRecorderDefine = asmdef.GetProperty("versionDefines").EnumerateArray().Any(entry =>
             entry.GetProperty("name").GetString() == "com.unity.recorder"
+            && entry.GetProperty("expression").GetString() == "3.0.0"
             && entry.GetProperty("define").GetString() == "UNITY_CLI_BRIDGE_RECORDER");
 
-        Assert.True(hasRecorderDefine, "com.unity.recorder must map to UNITY_CLI_BRIDGE_RECORDER.");
+        Assert.True(
+            hasRecorderDefine,
+            "com.unity.recorder 3.0.0 or newer must map to UNITY_CLI_BRIDGE_RECORDER. An empty expression would compile record code against unverified 2.x releases.");
     }
 
     [Fact]

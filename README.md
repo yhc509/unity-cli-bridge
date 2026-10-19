@@ -27,6 +27,8 @@ CLI ──── local IPC ──── Unity Editor (bridge)
 
 ## Quick Start
 
+Unity 2021.3 LTS or newer, including Unity 6. Checked on 2021.3.45f2, the latest public 2021.3 patch. Later 2021.3 releases are paid extended-LTS builds.
+
 ### 1. Add the Unity Package
 
 **Option A: Unity Package Manager**
@@ -53,7 +55,7 @@ The bridge starts automatically when the Editor opens. No configuration needed.
 
 `#main` always tracks the latest release. For a build you need to reproduce later, pin a release tag instead — `...#v0.5.4` — and commit `Packages/packages-lock.json`.
 
-Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
+Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` 3.0.0 or newer if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
 
 > **Upgrading from 0.3.x?** `0.4.0` bumps the wire protocol to `5`, so a `0.3.x` CLI cannot talk to a `0.4.0` package. From `0.4.1` on you no longer have to choose: install the CLI from each project's **Window > Unity CLI Manager**, and the `unity-cli` on your PATH hands off to the version that matches whichever project you are pointing at.
 
@@ -123,7 +125,7 @@ unity-cli status --project /path/to/your-project --json
 
 > If two worktrees happen to collide on the same 12-character SHA256 prefix, the bridge still listens on separate socket/pipe names. Use `--project <path>` to route by canonical project root.
 
-When `--project` is omitted, the CLI first uses the current Unity project directory, then an explicit default set with `unity-cli instances use <projectPath|projectName>`, then the single live Editor if exactly one is running. If multiple live Editors remain and none is pinned, the command fails with a usage error that lists candidates instead of guessing.
+When `--project` is omitted, the CLI walks up from the working directory to the nearest Unity project (a folder that contains both `Assets/` and `Packages/`). If that walk does not find one, it searches up to three levels of subdirectories, skipping heavy and hidden folders (`Library`, `Temp`, `Logs`, `obj`, `bin`, `node_modules`, `Build`, `Builds`, and names starting with `.`), and uses a single match. If several projects remain, a reachable Editor connected to exactly one of them selects that project, and an explicit `unity-cli instances use` pin does the same when that Editor is reachable. A registry row counts only when its process is alive or its pipe or socket accepts a connection. Otherwise the command fails with `AMBIGUOUS_PROJECT`, lists the candidate paths, and asks for `--project`. If no project is found on disk, the CLI uses the pinned live Editor, then the single live Editor. If multiple live Editors remain and none is pinned, the command fails with a usage error that lists candidates.
 
 ## What You Can Do
 
@@ -187,7 +189,7 @@ Assign a value to `__pucResult` when the caller needs a structured return value.
 
 `record start` captures the Play Mode Game View as mp4 via Unity Recorder. It returns `STARTED` plus a `recordingId` immediately; add `--duration N --wait` to auto-stop and poll until the mp4 is finalized. Without `--duration`, stop manually with `record stop`. Outputs default to `Library/com.yhc509.unity-cli-bridge/recordings/`; pass `--path` to move the finalized mp4.
 
-Recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
+Recording depends on Unity Recorder, which this package does not install. Add `com.unity.recorder` 3.0.0 or newer if you want `record` or `qa run-sequence --record`. On Unity `6000.4` and newer, use Recorder `5.1.6` or later — older Recorder releases fail to compile there.
 
 ### Assets
 
@@ -282,7 +284,7 @@ unity-cli test results --run-id <runId> --failures-only
 unity-cli test cancel
 ```
 
-`test run --mode edit` returns a synchronous result payload. `test run --mode play` starts the run and returns `STARTED` plus a `runId`; add `--wait` when the CLI should poll until the PlayMode result is ready. `--filter` is a case-insensitive substring match against each test's full name (`Namespace.Class.Method`), so a value like `Smoke` also matches every method on a `SmokeTests` class — when the class and method share a prefix, narrow it with a more specific fragment such as `Smoke_`. Cached results are stored under `Library/com.yhc509.unity-cli-bridge/test-runs/<runId>.json` and can be retrieved with `test results`. A non-`Completed` cached run result returns an error envelope and CLI exit code 1. Add `--failures-only` to `test run` or `test results` to keep summary counts intact while trimming `tests[]` to non-passed entries; add `--no-detail` to `test list` to return only `fullName` and `mode`. `test cancel` releases a stuck test-run lock: it attempts a graceful `TestRunnerApi` cancel then always clears the lock, returning the cancelled `runId`, or a no-op success when no run is active.
+`test run --mode edit` returns a synchronous result payload. `test run --mode play` starts the run and returns `STARTED` plus a `runId`; add `--wait` when the CLI should poll until the PlayMode result is ready. The result is not returned until the Test Framework has finished restoring the editor, including the open scenes — a following `play` or scene command is then safe. While that cleanup is still running, `play`, `pause`, `stop`, and scene commands return retryable `TEST_RUN_IN_PROGRESS`. `--filter` is a case-insensitive substring match against each test's full name (`Namespace.Class.Method`), so a value like `Smoke` also matches every method on a `SmokeTests` class — when the class and method share a prefix, narrow it with a more specific fragment such as `Smoke_`. Cached results are stored under `Library/com.yhc509.unity-cli-bridge/test-runs/<runId>.json` and can be retrieved with `test results`. A non-`Completed` cached run result returns an error envelope and CLI exit code 1. Add `--failures-only` to `test run` or `test results` to keep summary counts intact while trimming `tests[]` to non-passed entries; add `--no-detail` to `test list` to return only `fullName` and `mode`. `test cancel` releases a stuck test-run lock: it attempts a graceful `TestRunnerApi` cancel then clears the lock, returning the cancelled `runId`, or a no-op success when no run is active. A run that has already finished and is only restoring scenes keeps that lock until the restore finishes.
 
 `--no-domain-reload` is an opt-in PlayMode-only speed option. It can avoid 30-120 seconds of domain reload overhead, but static state can leak between runs, so only use it for suites that reset their own state:
 

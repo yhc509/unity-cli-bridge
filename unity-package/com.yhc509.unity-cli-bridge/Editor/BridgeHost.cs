@@ -229,20 +229,18 @@ namespace UnityCliBridge.Bridge.Editor
 #endif
             // Unity 2021-2023 (Mono): NamedPipeServerStream on non-Windows creates a Unix
             // domain socket at the exact _pipeName path, so the CLI's UnixDomainSocketEndPoint
-            // connection works transparently. Verified on Unity 2021.3.57f2 + macOS (Mono).
+            // connection works transparently. Verified on Unity 2021.3.45f2 + macOS (Mono).
             StartNamedPipeListener();
         }
 
-        private async void StartNamedPipeListener()
+        private void StartNamedPipeListener()
         {
-            try
-            {
-                await RunNamedPipeLoopAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                ReportBackgroundException("named pipe listener", exception);
-            }
+            // Not an async-void method. Unity 2021.3 batchmode -quit waits until every
+            // async-void operation on the editor synchronization context finishes, and this
+            // accept loop does not finish until quit cancels it — which cannot happen until
+            // quit is allowed to proceed. A Task is not tracked. Continuations already use
+            // ConfigureAwait(false), so normal editor and headless sessions behave as before.
+            TrackListener(RunNamedPipeLoopAsync(_cancellationTokenSource.Token), "named pipe listener");
         }
 
         private static NamedPipeServerStream CreateNamedPipeServerStream(string pipeName)
@@ -359,16 +357,11 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
 #if !UNITY_5_3_OR_NEWER || UNITY_6000_0_OR_NEWER
-        private async void StartUnixSocketListener()
+        private void StartUnixSocketListener()
         {
-            try
-            {
-                await RunUnixSocketLoopAsync(_cancellationTokenSource.Token).ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                ReportBackgroundException("unix socket listener", exception);
-            }
+            // Same scheduling as the named-pipe listener. Unity 6 does not wait the way
+            // 2021.3 does, and keeping this a Task means a later editor that does will still quit.
+            TrackListener(RunUnixSocketLoopAsync(_cancellationTokenSource.Token), "unix socket listener");
         }
 #endif
 
@@ -631,7 +624,12 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
 #if !UNITY_5_3_OR_NEWER || UNITY_6000_0_OR_NEWER
-        private async void HandleSocketClient(Socket client, CancellationToken cancellationToken)
+        private void HandleSocketClient(Socket client, CancellationToken cancellationToken)
+        {
+            TrackListener(ObserveSocketClientAsync(client, cancellationToken), "unix socket client");
+        }
+
+        private async Task ObserveSocketClientAsync(Socket client, CancellationToken cancellationToken)
         {
             try
             {
@@ -1223,6 +1221,8 @@ namespace UnityCliBridge.Bridge.Editor
                     stopwatch.Stop();
                     return BuildBusyResponse(command, stopwatch.ElapsedMilliseconds);
                 }
+
+                TestCommandHandler.ThrowIfEditorBusyWithTestRun(command.command);
 
                 if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null
                     && CliCommandCatalog.RequiresGraphics(command.command))
@@ -1849,6 +1849,24 @@ namespace UnityCliBridge.Bridge.Editor
             _unixListener = null;
         }
 #endif
+
+        private void TrackListener(Task listener, string operation)
+        {
+            listener.ContinueWith(
+                task =>
+                {
+                    AggregateException? aggregate = task.Exception;
+                    if (aggregate == null)
+                    {
+                        return;
+                    }
+
+                    ReportBackgroundException(operation, aggregate.GetBaseException());
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
 
         private void ReportBackgroundException(string operation, Exception exception)
         {

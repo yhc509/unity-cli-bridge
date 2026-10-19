@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using UnityCli.Protocol;
@@ -17,6 +18,12 @@ namespace UnityCliBridge.Bridge.Editor
     {
         private static readonly object _activeLock = new object();
         private static bool _hasActiveRun;
+        private static EditorApplication.CallbackFunction? _settlementPoll;
+        private static int _settlementUpdates;
+        private static int _settlementQuiescentUpdates;
+        private static bool _frameworkRunProbeResolved;
+        private static bool _loggedMissingRunProbe;
+        private static Func<bool>? _frameworkRunActiveProbe;
 
         /// <summary>
         /// Bumped whenever a cancel releases the run lock before the run id was persisted.
@@ -705,9 +712,9 @@ namespace UnityCliBridge.Bridge.Editor
 
             bool isPlayMode = string.Equals(activeMode, "play", StringComparison.Ordinal);
 
-            // Attempt a graceful TestRunnerApi cancel first; MarkCancelled() below always
-            // releases the lock (via TestCommandHandler.EndRun() in its finally block) even
-            // if the graceful cancel fails or the run guid is stale.
+            // Attempt a graceful TestRunnerApi cancel first. Cancel/timeout/failure marks still
+            // release the lock immediately. A Completed result that is only waiting for scene
+            // restore keeps the lock until that restore finishes, so this must not overwrite it.
             TryCancelActiveUnityTestRun();
 
             lock (_activeLock)
@@ -715,7 +722,9 @@ namespace UnityCliBridge.Bridge.Editor
                 string currentRunId = SessionState.GetString(
                     ProtocolConstants.TestSessionKeyActiveRunId,
                     string.Empty);
-                if (!_hasActiveRun || !string.Equals(currentRunId, activeRunId, StringComparison.Ordinal))
+                if (!_hasActiveRun
+                    || !string.Equals(currentRunId, activeRunId, StringComparison.Ordinal)
+                    || HasPendingSettlement(activeRunId))
                 {
                     // CancelTestRun forces a play-mode exit and can pump the editor loop, so
                     // Unity's RunFinished may have landed in that gap and already written the real
@@ -854,6 +863,7 @@ namespace UnityCliBridge.Bridge.Editor
 
         internal static void EndRun()
         {
+            DisarmSettlement();
             lock (_activeLock)
             {
                 _hasActiveRun = false;
@@ -866,9 +876,40 @@ namespace UnityCliBridge.Bridge.Editor
                 SessionState.EraseBool(ProtocolConstants.TestSessionKeyActiveFailuresOnly);
                 SessionState.EraseInt(ProtocolConstants.TestSessionKeyProgressCompleted);
                 SessionState.EraseInt(ProtocolConstants.TestSessionKeyProgressTotal);
+                SessionState.EraseString(ProtocolConstants.TestSessionKeySettlementArmedAt);
                 UnityObjectIdentity.EraseSessionObject(ProtocolConstants.TestSessionKeyCallbacksInstanceId);
                 StopRestoredEditModeWatchdog();
             }
+        }
+
+        internal static void ThrowIfEditorBusyWithTestRun(string command)
+        {
+            if (!ProtocolHelpers.IsBlockedWhileTestRunActive(command))
+            {
+                return;
+            }
+
+            string runId;
+            string mode;
+            lock (_activeLock)
+            {
+                if (!_hasActiveRun)
+                {
+                    return;
+                }
+
+                runId = SessionState.GetString(ProtocolConstants.TestSessionKeyActiveRunId, string.Empty);
+                mode = SessionState.GetString(ProtocolConstants.TestSessionKeyActiveMode, string.Empty);
+            }
+
+            string identity = string.IsNullOrEmpty(runId)
+                ? string.Empty
+                : " (runId=" + runId + ", mode=" + mode + ")";
+            throw new CommandFailureException(
+                ProtocolConstants.ErrorTestBusy,
+                "A test run is still finishing" + identity
+                    + ". Play mode and scene commands are refused until the editor is idle.",
+                true);
         }
 
         internal static void RestoreLockFromSession()
@@ -878,6 +919,17 @@ namespace UnityCliBridge.Bridge.Editor
             string activeRunId = SessionState.GetString(ProtocolConstants.TestSessionKeyActiveRunId, string.Empty);
             if (string.IsNullOrEmpty(activeRunId))
             {
+                return;
+            }
+
+            if (HasPendingSettlement(activeRunId))
+            {
+                lock (_activeLock)
+                {
+                    _hasActiveRun = true;
+                }
+
+                ArmSettlement();
                 return;
             }
 
@@ -1115,6 +1167,244 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             return ProtocolJson.Serialize(TestResultProjectionUtility.ApplyFailuresOnly(result, failuresOnly));
+        }
+
+        internal static bool HasPendingSettlement(string runId)
+        {
+            return !string.IsNullOrEmpty(runId) && File.Exists(PendingSettlementPath(runId));
+        }
+
+        internal static void WritePendingSettlement(string runId, string json)
+        {
+            AtomicFileUtility.WriteAllText(PendingSettlementPath(runId), json);
+            if (string.IsNullOrEmpty(SessionState.GetString(ProtocolConstants.TestSessionKeySettlementArmedAt, string.Empty)))
+            {
+                SessionState.SetString(
+                    ProtocolConstants.TestSessionKeySettlementArmedAt,
+                    DateTime.UtcNow.ToString("O"));
+            }
+        }
+
+        internal static void ArmSettlement()
+        {
+            if (string.IsNullOrEmpty(SessionState.GetString(ProtocolConstants.TestSessionKeySettlementArmedAt, string.Empty)))
+            {
+                SessionState.SetString(
+                    ProtocolConstants.TestSessionKeySettlementArmedAt,
+                    DateTime.UtcNow.ToString("O"));
+            }
+
+            if (_settlementPoll != null)
+            {
+                return;
+            }
+
+            _settlementUpdates = 0;
+            _settlementQuiescentUpdates = 0;
+            _settlementPoll = PollSettlement;
+            EditorTickPump.Add(_settlementPoll);
+        }
+
+        private static void DisarmSettlement()
+        {
+            if (_settlementPoll == null)
+            {
+                return;
+            }
+
+            EditorTickPump.Remove(_settlementPoll);
+            _settlementPoll = null;
+            _settlementUpdates = 0;
+            _settlementQuiescentUpdates = 0;
+        }
+
+        private static void PollSettlement()
+        {
+            string runId = SessionState.GetString(ProtocolConstants.TestSessionKeyActiveRunId, string.Empty);
+            if (string.IsNullOrEmpty(runId) || !HasPendingSettlement(runId))
+            {
+                DisarmSettlement();
+                return;
+            }
+
+            TestRunSettlementObservation observation = ObserveSettlement();
+            if (!TestRunSettlementPolicy.ShouldPublish(observation))
+            {
+                return;
+            }
+
+            if ((observation.ProbeAvailable && observation.FrameworkRunActive)
+                || observation.PlayingOrChangingPlayMode)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[unity-cli-bridge] Publishing test run "
+                    + runId
+                    + " after waiting "
+                    + (int)observation.Elapsed.TotalSeconds
+                    + "s for the editor to become idle.");
+            }
+
+            if (!TryPublishPendingSettlement(runId)
+                && observation.Elapsed < TestRunSettlementPolicy.ForcePublishAfter)
+            {
+                return;
+            }
+
+            EndRun();
+        }
+
+        private static TestRunSettlementObservation ObserveSettlement()
+        {
+            _settlementUpdates++;
+            bool playing = EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode;
+            if (playing)
+            {
+                _settlementQuiescentUpdates = 0;
+            }
+            else
+            {
+                _settlementQuiescentUpdates++;
+            }
+
+            bool probeAvailable = TryProbeFrameworkRunActive(out bool frameworkRunActive);
+            return new TestRunSettlementObservation(
+                probeAvailable,
+                frameworkRunActive,
+                playing,
+                _settlementUpdates,
+                _settlementQuiescentUpdates,
+                SettlementElapsed());
+        }
+
+        private static TimeSpan SettlementElapsed()
+        {
+            string stored = SessionState.GetString(ProtocolConstants.TestSessionKeySettlementArmedAt, string.Empty);
+            if (!DateTime.TryParse(
+                    stored,
+                    null,
+                    System.Globalization.DateTimeStyles.RoundtripKind,
+                    out DateTime armedAtUtc))
+            {
+                return TimeSpan.Zero;
+            }
+
+            TimeSpan elapsed = DateTime.UtcNow - armedAtUtc.ToUniversalTime();
+            return elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed;
+        }
+
+        private static bool TryPublishPendingSettlement(string runId)
+        {
+            string pendingPath = PendingSettlementPath(runId);
+            if (!File.Exists(pendingPath))
+            {
+                return false;
+            }
+
+            try
+            {
+                string json = File.ReadAllText(pendingPath);
+                string projectRoot = Path.Combine(Application.dataPath, "..");
+                AtomicFileUtility.WriteAllText(FinalSettlementPath(runId), json);
+                AtomicFileUtility.WriteAllText(
+                    Path.Combine(projectRoot, ProtocolConstants.TestLastRunFileRelative),
+                    ProtocolJson.Serialize(new TestRunnerCallbacks_LastRunPointer { lastRunId = runId }));
+                File.Delete(pendingPath);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[unity-cli-bridge] Failed to publish test run " + runId + ": " + exception.Message);
+                return false;
+            }
+        }
+
+        private static bool TryProbeFrameworkRunActive(out bool active)
+        {
+            active = false;
+            if (!_frameworkRunProbeResolved)
+            {
+                _frameworkRunProbeResolved = true;
+                _frameworkRunActiveProbe = BindFrameworkRunProbe();
+                if (_frameworkRunActiveProbe == null && !_loggedMissingRunProbe)
+                {
+                    _loggedMissingRunProbe = true;
+                    UnityEngine.Debug.LogWarning(
+                        "[unity-cli-bridge] Test Framework run-state probe is unavailable. "
+                        + "test run will wait until the editor has left Play Mode and stayed idle "
+                        + "before it returns.");
+                }
+            }
+
+            if (_frameworkRunActiveProbe == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                active = _frameworkRunActiveProbe();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[unity-cli-bridge] Test Framework run-state probe failed: " + exception.Message);
+                return false;
+            }
+        }
+
+        private static Func<bool>? BindFrameworkRunProbe()
+        {
+            const BindingFlags flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+            MethodInfo? selected = null;
+            foreach (MethodInfo candidate in typeof(TestRunnerApi).GetMethods(flags))
+            {
+                if (candidate.ReturnType != typeof(bool) || candidate.GetParameters().Length != 0)
+                {
+                    continue;
+                }
+
+                if (string.Equals(candidate.Name, "IsAnyRunActive", StringComparison.Ordinal))
+                {
+                    selected = candidate;
+                    break;
+                }
+
+                if (selected == null && string.Equals(candidate.Name, "IsRunActive", StringComparison.Ordinal))
+                {
+                    selected = candidate;
+                }
+            }
+
+            if (selected == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), selected);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private static string PendingSettlementPath(string runId)
+        {
+            return Path.Combine(TestRunsDirectory(), runId + ProtocolConstants.TestPendingResultSuffix);
+        }
+
+        private static string FinalSettlementPath(string runId)
+        {
+            return Path.Combine(TestRunsDirectory(), runId + ".json");
+        }
+
+        private static string TestRunsDirectory()
+        {
+            return Path.Combine(Application.dataPath, "..", ProtocolConstants.TestRunsDirectoryRelative);
         }
 
         private static void CleanupStaleTestRunTempFiles()

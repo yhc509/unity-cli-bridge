@@ -14,8 +14,8 @@ namespace UnityCliBridge.Bridge.Editor
     /// <summary>
     /// Unity Recorder is an optional dependency: the package does not force it on projects that
     /// never record, so every Recorder API touch sits behind <c>UNITY_CLI_BRIDGE_RECORDER</c>
-    /// (a versionDefine on com.unity.recorder). Without it, `record start` fails with an install
-    /// hint while `record stop`/`record status` keep working against existing sidecars.
+    /// (a versionDefine on com.unity.recorder 3.0.0 or newer). Without it, `record start` fails
+    /// with an install hint while `record stop`/`record status` keep working against existing sidecars.
     /// </summary>
     internal sealed class RecordCommandHandler
     {

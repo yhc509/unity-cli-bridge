@@ -92,6 +92,20 @@ public static class CliApp
             WriteUsageError(outputMode, response, presentation);
             return 2;
         }
+        catch (AmbiguousProjectException ex)
+        {
+            var response = ResponseEnvelope.Failure(
+                Guid.NewGuid().ToString("N"),
+                null,
+                AmbiguousProjectException.ErrorCode,
+                ex.Message,
+                retryable: false,
+                details: ex.ToDetailsJson(),
+                transport: "cli");
+
+            WriteErrorResponse(outputMode, response);
+            return 2;
+        }
         catch (Exception ex)
         {
             var response = ResponseEnvelope.Failure(
@@ -125,7 +139,13 @@ public static class CliApp
             return registryStore.ResolveProjectRootOverride(registry, projectOverride);
         }
 
-        return locator.TryFindProjectRoot(Environment.CurrentDirectory);
+        IReadOnlyList<string> candidates = locator.FindCandidateProjectRoots(Environment.CurrentDirectory);
+        if (candidates.Count <= 1)
+        {
+            return candidates.Count == 0 ? null : candidates[0];
+        }
+
+        return UnityProjectLocator.SelectProjectRoot(candidates, registryStore.Load());
     }
 
     private static ResponseEnvelope ListInstances(InstanceRegistryStore registryStore, string? projectRoot, ParsedCommand parsed)

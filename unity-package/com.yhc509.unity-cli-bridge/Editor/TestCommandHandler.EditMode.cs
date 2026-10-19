@@ -105,6 +105,13 @@ namespace UnityCliBridge.Bridge.Editor
                     return;
                 }
 
+                // The tests finished, but the Test Framework is still restoring scenes.
+                // Cancelling or timing out here would drop that result and release the lock early.
+                if (HasPendingSettlement(runId))
+                {
+                    return;
+                }
+
                 if (cancelRequested)
                 {
                     double cancelSeconds = (DateTime.UtcNow - cancelRequestedAt).TotalSeconds;
