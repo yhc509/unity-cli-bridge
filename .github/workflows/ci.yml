@@ -24,10 +24,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Filesystem-independent check; running it once is enough.
+      # Filesystem-independent checks; running each once is enough.
       - name: Verify UPM .meta files
         if: matrix.os == 'ubuntu-latest'
         run: scripts/check-unity-meta.sh
+
+      - name: Verify plugin skill sync
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: scripts/sync-plugin-skill.sh --check
 
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5

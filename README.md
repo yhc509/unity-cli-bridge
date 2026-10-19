@@ -99,11 +99,63 @@ Extract and add the binary to your PATH. A manually placed binary carries no ver
 
 > **Tip:** A short, fixed install path (`~/.unity-cli-bridge/unity-cli/`) saves tokens when AI agents invoke the CLI repeatedly — every character in the path is repeated on each call.
 
-### 3. Install AI Agent Skill
+### 3. Install the agent skill
 
-In the Unity Editor, open `Window > Unity CLI Manager`. Select your AI tool (Claude Code, Codex, or Grok Build), choose an install location, and click **Install Skill**.
+Install the skill as a plugin, at user scope, so it loads no matter which folder you open the agent in. A copy under the Unity project is only visible when the agent is opened at that project or a subfolder.
 
-**Unity project** writes under the open project. **Git repository** walks up from that project to the nearest `.git` directory, or uses a folder you pick, so an agent opened at a monorepo root can see the skill. **User (home)** writes one copy under your home directory. The window shows the resolved path before it installs.
+**Claude Code**
+
+```text
+/plugin marketplace add yhc509/unity-cli-bridge
+/plugin install unity-cli-bridge@unity-cli-bridge
+```
+
+The shell form pins user scope (the default for `claude plugin install` is already user):
+
+```bash
+claude plugin marketplace add yhc509/unity-cli-bridge
+claude plugin install unity-cli-bridge@unity-cli-bridge --scope user
+```
+
+**Codex CLI**
+
+This repo ships `.agents/plugins/marketplace.json`, which Codex reads ahead of the Claude marketplace file.
+
+```bash
+codex plugin marketplace add yhc509/unity-cli-bridge
+```
+
+Install `unity-cli-bridge` from `/plugins` in the Codex TUI, or from the Plugins directory in the ChatGPT desktop app. When the installed CLI has `codex plugin add`, the same install is:
+
+```bash
+codex plugin add unity-cli-bridge@unity-cli-bridge
+```
+
+A full checkout is required. `--sparse` omits `plugins/unity-cli-bridge` unless that path is included too.
+
+**Grok Build**
+
+Grok reads this repo's Claude Code marketplace. Trust the plugin so the skill loads:
+
+```bash
+grok plugin marketplace add yhc509/unity-cli-bridge
+grok plugin install unity-cli-bridge --trust
+```
+
+`/marketplace` in Grok browses the same source. A plugin already enabled in Claude Code is also visible to Grok.
+
+**Also, without the plugin catalog**
+
+```bash
+gh skill install yhc509/unity-cli-bridge plugins/unity-cli-bridge/skills/unity-cli-bridge --agent claude-code --scope user
+npx skills add yhc509/unity-cli-bridge --skill unity-cli-bridge -g -a claude-code
+```
+
+Pass that path or skill name. The repo also contains a maintainer skill (`unity-cli-operator`) and the package template under `SkillTemplates~`, which still has a `{{PACKAGE_VERSION}}` placeholder. `gh skill install` needs `--agent`; its non-interactive default is GitHub Copilot. Repeat `--agent` for Codex (`codex`) or Grok (`grok`).
+
+**Alternative: copy from the Unity Editor**
+
+Open `Window > Unity CLI Manager`, choose Claude Code, Codex, or Grok Build, choose an install location, and click **Install Skill**. **Unity project** writes under the open project. **Git repository** walks up to the nearest `.git` directory, or uses a folder you pick, so an agent opened at a monorepo root can see the skill. **User (home)** writes one copy under your home directory. The window shows the resolved path before it installs.
 
 | Tool | Folder under the chosen root |
 |------|------------------------------|
@@ -111,9 +163,9 @@ In the Unity Editor, open `Window > Unity CLI Manager`. Select your AI tool (Cla
 | Codex | `.agents/skills/unity-cli-bridge/` |
 | Grok Build | `.grok/skills/unity-cli-bridge/` |
 
-Codex installs under `.agents/skills/`. It no longer writes `.codex/skills/`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens.
+Codex installs under `.agents/skills/`. It no longer writes `.codex/skills/`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens. The same section offers **Remove Skill**. If the plugin and a project copy are both installed, the agent can show the skill twice; remove the project copy when you only want the plugin.
 
-The skill teaches AI agents how to pick the right commands, run them safely, and verify results with `read-console`. The installed `SKILL.md` records the package version it came from, so the CLI Manager can tell you when the skill needs an update.
+The plugin command is `/unity-cli-bridge:unity-cli-bridge` (bare `/unity-cli-bridge` when the name is free). Third-party marketplaces do not auto-update. Refresh with `/plugin marketplace update unity-cli-bridge`, `codex plugin marketplace upgrade unity-cli-bridge`, or `grok plugin marketplace update unity-cli-bridge`.
 
 ### 4. Verify
 
@@ -449,9 +501,7 @@ A disabled bridge constructs nothing and logs one line saying so.
 
 ## AI Agent Skill
 
-The `unity-cli-bridge` skill teaches AI agents how to use the CLI safely: pick the right command, verify with `read-console`, follow inspect-before-patch patterns.
-
-Install from **Window > Unity CLI Manager** in the Unity Editor — select your AI tool and location, then click **Install Skill**. Once installed, use **Remove Skill** from the same section to remove that copy. The default location is the Unity project. Git repository (detected by walking up for `.git`, or a folder you pick) and User (home) are the other choices. Claude Code writes `.claude/skills/unity-cli-bridge/`, Codex writes `.agents/skills/unity-cli-bridge/`, and Grok Build writes `.grok/skills/unity-cli-bridge/`.
+The `unity-cli-bridge` skill teaches agents how to pick commands, verify with `read-console`, and follow inspect-before-patch. Install it as a plugin so it loads from any folder — see [Install the agent skill](#3-install-the-agent-skill). Copying the skill from **Window > Unity CLI Manager** remains available when you want a copy that matches that project's package version. The default location is the Unity project. Git repository (walk up for `.git`, or a folder you pick) and User (home) are the other choices. Claude Code writes `.claude/skills/unity-cli-bridge/`, Codex writes `.agents/skills/unity-cli-bridge/`, and Grok Build writes `.grok/skills/unity-cli-bridge/`.
 
 ## Development
 

@@ -1,0 +1,20 @@
+{
+  "name": "unity-cli-bridge",
+  "interface": {
+    "displayName": "Unity CLI Bridge"
+  },
+  "plugins": [
+    {
+      "name": "unity-cli-bridge",
+      "source": {
+        "source": "local",
+        "path": "./plugins/unity-cli-bridge"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

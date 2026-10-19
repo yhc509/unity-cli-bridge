@@ -1,0 +1,13 @@
+{
+  "name": "unity-cli-bridge",
+  "version": "0.5.4",
+  "description": "Agent skill for Unity CLI Bridge (unity-cli / ucli): scenes, prefabs, assets, Play Mode QA, and profiling.",
+  "author": {
+    "name": "yhc509",
+    "url": "https://github.com/yhc509"
+  },
+  "homepage": "https://github.com/yhc509/unity-cli-bridge",
+  "repository": "https://github.com/yhc509/unity-cli-bridge",
+  "license": "Apache-2.0",
+  "keywords": ["unity", "gamedev", "cli", "skill"]
+}
