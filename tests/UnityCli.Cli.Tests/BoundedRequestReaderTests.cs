@@ -88,7 +88,7 @@ public class BoundedRequestReaderTests
     [Fact]
     public async Task Counts_multibyte_utf8_in_bytes_not_chars()
     {
-        // "한글" is 2 chars but 6 UTF-8 bytes.
+        // Two Hangul syllables are 2 chars but 6 UTF-8 bytes.
         var payload = "한글";
         Assert.Equal(2, payload.Length);
         Assert.Equal(6, Encoding.UTF8.GetByteCount(payload));

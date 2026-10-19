@@ -69,7 +69,7 @@ internal static class CliUsageHelp
     {
         var context = CliInputContext.From(args, parsed);
 
-        if (TryExtractValue(message, "알 수 없는 명령입니다: ", out var invalidCommand))
+        if (TryExtractValue(message, "Unknown command: ", out var invalidCommand))
         {
             var suggestions = Suggest(
                 invalidCommand,
@@ -78,9 +78,9 @@ internal static class CliUsageHelp
                 message,
                 usage: GlobalUsage,
                 suggestions: suggestions,
-                suggestionsLabel: "유사한 명령:",
+                suggestionsLabel: "Similar commands:",
                 availableCommands: GetTopLevelCommands(),
-                availableCommandsLabel: "사용 가능한 명령:",
+                availableCommandsLabel: "Available commands:",
                 fallbackToGlobalHelp: false);
         }
 
@@ -99,9 +99,9 @@ internal static class CliUsageHelp
                 message,
                 usage: BuildRootUsage(context.RootCommand!),
                 suggestions: suggestions,
-                suggestionsLabel: $"유사한 `{context.RootCommand}` 하위 명령:",
+                suggestionsLabel: $"Similar `{context.RootCommand}` subcommands:",
                 availableCommands: availableCommands,
-                availableCommandsLabel: $"사용 가능한 `{context.RootCommand}` 하위 명령:",
+                availableCommandsLabel: $"Available `{context.RootCommand}` subcommands:",
                 fallbackToGlobalHelp: false);
         }
 
@@ -109,7 +109,7 @@ internal static class CliUsageHelp
             ? TryBuildCommandUsage(context.CommandPath)
             : GlobalUsage;
 
-        if (TryExtractValue(message, "지원하지 않는 옵션입니다: ", out var invalidOption) && context.CommandPath is not null)
+        if (TryExtractValue(message, "Unsupported option: ", out var invalidOption) && context.CommandPath is not null)
         {
             var optionSuggestions = Suggest(
                 invalidOption,
@@ -118,7 +118,7 @@ internal static class CliUsageHelp
                 message,
                 usage: usage,
                 suggestions: optionSuggestions,
-                suggestionsLabel: "유사한 옵션:",
+                suggestionsLabel: "Similar options:",
                 fallbackToGlobalHelp: false);
         }
 
@@ -141,7 +141,7 @@ internal static class CliUsageHelp
         if (presentation.Suggestions.Length > 0)
         {
             writer.WriteLine();
-            writer.WriteLine(presentation.SuggestionsLabel ?? "유사한 항목:");
+            writer.WriteLine(presentation.SuggestionsLabel ?? "Similar items:");
             foreach (var suggestion in presentation.Suggestions)
             {
                 writer.WriteLine("  " + suggestion);
@@ -151,7 +151,7 @@ internal static class CliUsageHelp
         if (presentation.AvailableCommands.Length > 0)
         {
             writer.WriteLine();
-            writer.WriteLine(presentation.AvailableCommandsLabel ?? "사용 가능한 명령:");
+            writer.WriteLine(presentation.AvailableCommandsLabel ?? "Available commands:");
             foreach (var command in presentation.AvailableCommands)
             {
                 writer.WriteLine("  " + command);

@@ -64,7 +64,7 @@ public sealed class ProfileAnalyzerTests : IDisposable
         var payload = CliApp.DeserializeData<ProfileAnalyzeMarkerPayload>(response);
         Assert.Equal("MyGame.Update", payload!.marker.m);
         Assert.Equal(2, payload.appearances.Length);
-        // appearances는 selfMs 내림차순 정렬 — [0]이 spike 프레임(33.0ms)
+        // appearances are sorted by selfMs descending — [0] is the spike frame (33.0ms)
         Assert.Equal(33.0, payload.appearances[0].selfMs);
         Assert.Equal(1, payload.appearances[0].frame);
     }

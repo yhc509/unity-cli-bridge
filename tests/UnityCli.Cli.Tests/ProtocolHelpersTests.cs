@@ -118,7 +118,7 @@ public sealed class ProtocolHelpersTests
         Assert.True(ProtocolHelpers.IsCommandAllowedWhileBusy(ProtocolConstants.CommandTestCancel));
 
         CliCommandDescriptor descriptor = CliCommandCatalog.FindByCommand("test cancel")
-            ?? throw new InvalidOperationException("test cancel descriptor를 찾지 못했습니다.");
+            ?? throw new InvalidOperationException("Could not find the test cancel descriptor.");
         Assert.True(descriptor.IsAllowedWhileBusy);
         Assert.Equal(ForceRule.None, descriptor.ForceRule);
         Assert.Equal(ProtocolConstants.CommandTestCancel, descriptor.ProtocolCommand);

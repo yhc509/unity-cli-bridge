@@ -81,7 +81,7 @@ public static partial class CliArgumentParser
             "doctor" => new ParsedCommand(CommandKind.Doctor),
             "raw" => new ParsedCommand(CommandKind.Raw),
             "help" or "--help" or "-h" => new ParsedCommand(CommandKind.Help),
-            _ => throw new CliUsageException($"알 수 없는 명령입니다: {command}"),
+            _ => throw new CliUsageException($"Unknown command: {command}"),
         };
 
         parsed.OutputMode = outputMode;
@@ -200,7 +200,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`instances` 다음에는 `list` 또는 `use`가 필요합니다.");
+            throw new CliUsageException("`instances` requires `list` or `use`.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -211,7 +211,7 @@ public static partial class CliArgumentParser
             {
                 InstanceTarget = tokens.Count > 0 ? tokens.Dequeue() : null,
             },
-            _ => throw new CliUsageException($"알 수 없는 instances 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown instances subcommand: {subCommand}"),
         };
     }
 
@@ -219,7 +219,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`asset` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException("`asset` requires a subcommand.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -234,7 +234,7 @@ public static partial class CliArgumentParser
             "rename" => new ParsedCommand(CommandKind.AssetRename),
             "delete" => new ParsedCommand(CommandKind.AssetDelete),
             "create" => new ParsedCommand(CommandKind.AssetCreate),
-            _ => throw new CliUsageException($"알 수 없는 asset 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown asset subcommand: {subCommand}"),
         };
     }
 
@@ -242,7 +242,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`scene` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException("`scene` requires a subcommand.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -257,7 +257,7 @@ public static partial class CliArgumentParser
             "remove-component" => new ParsedCommand(CommandKind.SceneRemoveComponent),
             "list-components" => new ParsedCommand(CommandKind.SceneListComponents),
             "assign-material" => new ParsedCommand(CommandKind.SceneAssignMaterial),
-            _ => throw new CliUsageException($"알 수 없는 scene 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown scene subcommand: {subCommand}"),
         };
     }
 
@@ -265,7 +265,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`prefab` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException("`prefab` requires a subcommand.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -277,7 +277,7 @@ public static partial class CliArgumentParser
             "add-component" => new ParsedCommand(CommandKind.PrefabAddComponent),
             "remove-component" => new ParsedCommand(CommandKind.PrefabRemoveComponent),
             "list-components" => new ParsedCommand(CommandKind.PrefabListComponents),
-            _ => throw new CliUsageException($"알 수 없는 prefab 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown prefab subcommand: {subCommand}"),
         };
     }
 
@@ -285,7 +285,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`package` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException("`package` requires a subcommand.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -295,7 +295,7 @@ public static partial class CliArgumentParser
             "add" => new ParsedCommand(CommandKind.PackageAdd),
             "remove" => new ParsedCommand(CommandKind.PackageRemove),
             "search" => new ParsedCommand(CommandKind.PackageSearch),
-            _ => throw new CliUsageException($"알 수 없는 package 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown package subcommand: {subCommand}"),
         };
     }
 
@@ -303,7 +303,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`test` 다음에는 `list`, `run`, `results`, `cancel` 중 하나가 필요합니다.");
+            throw new CliUsageException("`test` requires one of `list`, `run`, `results`, or `cancel`.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -313,7 +313,7 @@ public static partial class CliArgumentParser
             "run" => ParseTestRun(),
             "results" => ParseTestResults(),
             "cancel" => ParseTestCancel(),
-            _ => throw new CliUsageException($"알 수 없는 test 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown test subcommand: {subCommand}"),
         };
     }
 
@@ -344,7 +344,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`record` 다음에는 `start`, `stop`, `status` 중 하나가 필요합니다.");
+            throw new CliUsageException("`record` requires one of `start`, `stop`, or `status`.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -353,7 +353,7 @@ public static partial class CliArgumentParser
             "start" => new ParsedCommand(CommandKind.RecordStart),
             "stop" => new ParsedCommand(CommandKind.RecordStop),
             "status" => new ParsedCommand(CommandKind.RecordStatus),
-            _ => throw new CliUsageException($"알 수 없는 record 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown record subcommand: {subCommand}"),
         };
     }
 
@@ -361,7 +361,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`editor` 다음에는 `launch` 또는 `stop`이 필요합니다.");
+            throw new CliUsageException("`editor` requires `launch` or `stop`.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -369,7 +369,7 @@ public static partial class CliArgumentParser
         {
             "launch" => new ParsedCommand(CommandKind.EditorLaunch),
             "stop" => new ParsedCommand(CommandKind.EditorStop),
-            _ => throw new CliUsageException($"알 수 없는 editor 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown editor subcommand: {subCommand}"),
         };
     }
 
@@ -377,7 +377,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`profile` 다음에는 `stats`, `capture`, `status`, `analyze`, `compare`, `memory` 중 하나가 필요합니다.");
+            throw new CliUsageException("`profile` requires one of `stats`, `capture`, `status`, `analyze`, `compare`, or `memory`.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -389,7 +389,7 @@ public static partial class CliArgumentParser
             {
                 if (tokens.Count == 0)
                 {
-                    throw new CliUsageException("`profile capture` 다음에는 `start` 또는 `stop`이 필요합니다.");
+                    throw new CliUsageException("`profile capture` requires `start` or `stop`.");
                 }
 
                 var captureSub = tokens.Dequeue().ToLowerInvariant();
@@ -397,7 +397,7 @@ public static partial class CliArgumentParser
                 {
                     "start" => new ParsedCommand(CommandKind.ProfileCaptureStart),
                     "stop" => new ParsedCommand(CommandKind.ProfileCaptureStop),
-                    _ => throw new CliUsageException($"알 수 없는 profile capture 하위 명령입니다: {captureSub}"),
+                    _ => throw new CliUsageException($"Unknown profile capture subcommand: {captureSub}"),
                 };
             }
             case "status":
@@ -414,7 +414,7 @@ public static partial class CliArgumentParser
             {
                 if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
                 {
-                    throw new CliUsageException("`profile analyze`에는 <captureId>가 필요합니다.");
+                    throw new CliUsageException("`profile analyze` requires <captureId>.");
                 }
 
                 var parsed = new ParsedCommand(CommandKind.ProfileAnalyze)
@@ -427,7 +427,7 @@ public static partial class CliArgumentParser
             {
                 if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
                 {
-                    throw new CliUsageException("`profile compare`에는 <baseCaptureId>와 <headCaptureId>가 필요합니다.");
+                    throw new CliUsageException("`profile compare` requires <baseCaptureId> and <headCaptureId>.");
                 }
 
                 var parsed = new ParsedCommand(CommandKind.ProfileCompare)
@@ -436,7 +436,7 @@ public static partial class CliArgumentParser
                 };
                 if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
                 {
-                    throw new CliUsageException("`profile compare`에는 비교 대상인 <headCaptureId>도 필요합니다.");
+                    throw new CliUsageException("`profile compare` also requires the comparison target <headCaptureId>.");
                 }
 
                 parsed.ProfileCompareHeadId = tokens.Dequeue();
@@ -453,7 +453,7 @@ public static partial class CliArgumentParser
                         {
                             if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
                             {
-                                throw new CliUsageException("`profile memory compare`에는 <baseReportId>와 <headReportId>가 필요합니다.");
+                                throw new CliUsageException("`profile memory compare` requires <baseReportId> and <headReportId>.");
                             }
 
                             var parsed = new ParsedCommand(CommandKind.ProfileMemoryCompare)
@@ -462,7 +462,7 @@ public static partial class CliArgumentParser
                             };
                             if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
                             {
-                                throw new CliUsageException("`profile memory compare`에는 비교 대상인 <headReportId>도 필요합니다.");
+                                throw new CliUsageException("`profile memory compare` also requires the comparison target <headReportId>.");
                             }
 
                             parsed.ProfileCompareHeadId = tokens.Dequeue();
@@ -473,7 +473,7 @@ public static partial class CliArgumentParser
                             return new ParsedCommand(CommandKind.ProfileMemorySnapshot);
 
                         default:
-                            throw new CliUsageException($"알 수 없는 profile memory 하위 명령입니다: {memorySub}");
+                            throw new CliUsageException($"Unknown profile memory subcommand: {memorySub}");
                     }
                 }
 
@@ -481,7 +481,7 @@ public static partial class CliArgumentParser
             }
 
             default:
-                throw new CliUsageException($"알 수 없는 profile 하위 명령입니다: {subCommand}");
+                throw new CliUsageException($"Unknown profile subcommand: {subCommand}");
         }
     }
 
@@ -489,7 +489,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`material` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException("`material` requires a subcommand.");
         }
 
         var subCommand = tokens.Dequeue().ToLowerInvariant();
@@ -497,7 +497,7 @@ public static partial class CliArgumentParser
         {
             "info" => new ParsedCommand(CommandKind.MaterialInfo),
             "set" => new ParsedCommand(CommandKind.MaterialSet),
-            _ => throw new CliUsageException($"알 수 없는 material 하위 명령입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown material subcommand: {subCommand}"),
         };
     }
 
@@ -515,7 +515,7 @@ public static partial class CliArgumentParser
             "wait" => new ParsedCommand(CommandKind.QaWait),
             "wait-until" => new ParsedCommand(CommandKind.QaWaitUntil),
             "run-sequence" => new ParsedCommand(CommandKind.QaRunSequence),
-            _ => throw new CliUsageException($"알 수 없는 qa 서브커맨드입니다: {subCommand}"),
+            _ => throw new CliUsageException($"Unknown qa subcommand: {subCommand}"),
         };
     }
 
@@ -523,7 +523,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException("`custom` 다음에는 명령 이름이 필요합니다.");
+            throw new CliUsageException("`custom` requires a command name.");
         }
 
         var commandName = tokens.Dequeue();
@@ -860,7 +860,7 @@ public static partial class CliArgumentParser
                     string preset = RequireValue(tokens, "--preset").ToLowerInvariant();
                     if (preset is not ("frame" or "render" or "gc" or "memory" or "all"))
                     {
-                        throw new CliUsageException("--preset 값은 frame|render|gc|memory|all 중 하나여야 합니다.");
+                        throw new CliUsageException("--preset must be one of frame, render, gc, memory, or all.");
                     }
 
                     parsed.ProfilePreset = preset;
@@ -877,7 +877,7 @@ public static partial class CliArgumentParser
                     string rawBudget = RequireValue(tokens, "--budget-ms");
                     if (!double.TryParse(rawBudget, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double budget) || budget <= 0)
                     {
-                        throw new CliUsageException("--budget-ms 값은 양수(ms)여야 합니다.");
+                        throw new CliUsageException("--budget-ms must be a positive number of milliseconds.");
                     }
 
                     parsed.ProfileBudgetMs = budget;
@@ -907,7 +907,7 @@ public static partial class CliArgumentParser
                     string rawThreshold = RequireValue(tokens, "--threshold");
                     if (!double.TryParse(rawThreshold, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double threshold))
                     {
-                        throw new CliUsageException("--threshold 값은 퍼센트 숫자여야 합니다.");
+                        throw new CliUsageException("--threshold must be a numeric percent.");
                     }
 
                     parsed.ProfileThresholdPercent = threshold;
@@ -1130,7 +1130,7 @@ public static partial class CliArgumentParser
                         break;
                     }
 
-                    throw new CliUsageException($"지원하지 않는 옵션입니다: {token}");
+                    throw new CliUsageException($"Unsupported option: {token}");
             }
         }
 
@@ -1158,7 +1158,7 @@ public static partial class CliArgumentParser
 
         if (parsed.Kind == CommandKind.Raw && string.IsNullOrWhiteSpace(parsed.RawJson))
         {
-            throw new CliUsageException("`raw`에는 `--json` payload가 필요합니다.");
+            throw new CliUsageException("`raw` requires a `--json` payload.");
         }
     }
 
@@ -1172,7 +1172,7 @@ public static partial class CliArgumentParser
             || exception is UnauthorizedAccessException
             || exception is NotSupportedException)
         {
-            throw new CliUsageException($"--spec-json @{path} 읽기 실패: {exception.Message}");
+            throw new CliUsageException($"Failed to read --spec-json @{path}: {exception.Message}");
         }
     }
 
@@ -1213,14 +1213,14 @@ public static partial class CliArgumentParser
         string trimmed = token.Trim();
         if (!trimmed.StartsWith("--", StringComparison.Ordinal) || trimmed.Length <= 2)
         {
-            throw new CliUsageException($"지원하지 않는 옵션입니다: {token}");
+            throw new CliUsageException($"Unsupported option: {token}");
         }
 
         string body = trimmed[2..];
         string[] parts = body.Split('-', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)
         {
-            throw new CliUsageException($"지원하지 않는 옵션입니다: {token}");
+            throw new CliUsageException($"Unsupported option: {token}");
         }
 
         return string.Concat(parts.Select((part, index) =>
@@ -1260,11 +1260,11 @@ public static partial class CliArgumentParser
     {
         if (value.StartsWith("--", StringComparison.Ordinal))
         {
-            throw new CliUsageException("`--output`에 값이 필요합니다. `default`, `json`, `compact` 중 하나를 지정하세요.");
+            throw new CliUsageException("`--output` requires a value. Use `default`, `json`, or `compact`.");
         }
 
         return TryGetOutputMode(value)
-            ?? throw new CliUsageException("`--output`은 `default`, `json`, `compact` 중 하나여야 합니다.");
+            ?? throw new CliUsageException("`--output` must be `default`, `json`, or `compact`.");
     }
 
     private static OutputMode? TryGetOutputMode(string value)

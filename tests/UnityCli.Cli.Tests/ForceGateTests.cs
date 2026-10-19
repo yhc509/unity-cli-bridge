@@ -337,7 +337,7 @@ public sealed class ForceGateTests
             "prefab patch" => new ParsedCommand(CommandKind.PrefabPatch) { PrefabSpecJson = DestructivePrefabPatchJson },
             "prefab remove-component" => new ParsedCommand(CommandKind.PrefabRemoveComponent),
             "package remove" => new ParsedCommand(CommandKind.PackageRemove),
-            _ => throw new InvalidOperationException("테스트 mapping이 없는 force command입니다: " + command),
+            _ => throw new InvalidOperationException("Force command has no test mapping: " + command),
         };
     }
 }
