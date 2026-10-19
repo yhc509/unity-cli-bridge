@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "unity-cli-bridge",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Agent skill for Unity CLI Bridge (unity-cli / ucli): scenes, prefabs, assets, Play Mode QA, and profiling.",
   "author": {
     "name": "yhc509",
