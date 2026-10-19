@@ -1,0 +1,4 @@
+interface:
+  display_name: "Unity CLI Bridge"
+  short_description: "How to run Unity CLI Bridge commands for prefabs, assets, and safe Editor workflows"
+  default_prompt: "Use $unity-cli-bridge to choose the right Unity CLI Bridge commands, run them safely, and verify console logs."

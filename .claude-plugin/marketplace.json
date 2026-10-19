@@ -1,0 +1,16 @@
+{
+  "name": "unity-cli-bridge",
+  "description": "Unity CLI Bridge agent skill for operating the Unity Editor.",
+  "owner": {
+    "name": "yhc509",
+    "url": "https://github.com/yhc509"
+  },
+  "plugins": [
+    {
+      "name": "unity-cli-bridge",
+      "source": "./plugins/unity-cli-bridge",
+      "description": "Operate the Unity Editor through unity-cli: scenes, prefabs, assets, Play Mode QA, and profiling.",
+      "category": "development"
+    }
+  ]
+}

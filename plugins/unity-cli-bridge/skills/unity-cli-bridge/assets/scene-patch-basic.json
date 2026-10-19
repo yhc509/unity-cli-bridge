@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "operations": [
+    {
+      "op": "add-gameobject",
+      "parent": "/",
+      "node": {
+        "name": "SpawnPoint",
+        "transform": {
+          "localPosition": { "x": 0, "y": 1, "z": 0 }
+        }
+      }
+    },
+    {
+      "op": "modify-gameobject",
+      "target": "/SpawnPoint[0]",
+      "values": {
+        "tag": "EditorOnly"
+      }
+    }
+  ]
+}
