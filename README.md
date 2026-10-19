@@ -135,11 +135,11 @@ A full checkout is required. `--sparse` omits `plugins/unity-cli-bridge` unless 
 
 **Grok Build**
 
-Grok reads this repo's Claude Code marketplace. Trust the plugin so the skill loads:
+Grok reads this repo's Claude Code marketplace. `grok plugin install` takes a git URL, a `owner/repo` shorthand, or a local path. Trust the plugin so the skill loads:
 
 ```bash
 grok plugin marketplace add yhc509/unity-cli-bridge
-grok plugin install unity-cli-bridge --trust
+grok plugin install yhc509/unity-cli-bridge --trust
 ```
 
 `/marketplace` in Grok browses the same source. A plugin already enabled in Claude Code is also visible to Grok.

@@ -490,18 +490,33 @@ namespace UnityCliBridge.Bridge.Editor
 
         private bool DrawSkillFileCopyFoldout()
         {
+            // Foldout sizes its label from EditorGUIUtility.labelWidth, which this window
+            // keeps near 140px for the key/value rows. Give this control the whole row or
+            // the title clips to "Advanced: copy skill f" at 420px. Restore the width
+            // before the file-copy fields draw.
             Rect row = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
-            GUIStyle style = new GUIStyle(EditorStyles.foldout)
+            float previousLabelWidth = EditorGUIUtility.labelWidth;
+            EditorGUIUtility.labelWidth = Mathf.Max(1f, row.width);
+            bool expanded;
+            try
             {
-                wordWrap = false,
-                clipping = TextClipping.Clip,
-            };
-            bool expanded = EditorGUI.Foldout(
-                row,
-                _skillFileCopyExpanded,
-                new GUIContent("Advanced: copy skill files into a folder"),
-                true,
-                style);
+                GUIStyle style = new GUIStyle(EditorStyles.foldout)
+                {
+                    wordWrap = false,
+                    clipping = TextClipping.Clip,
+                };
+                expanded = EditorGUI.Foldout(
+                    row,
+                    _skillFileCopyExpanded,
+                    new GUIContent("Advanced: copy skill files into a folder"),
+                    true,
+                    style);
+            }
+            finally
+            {
+                EditorGUIUtility.labelWidth = previousLabelWidth;
+            }
+
             if (expanded != _skillFileCopyExpanded)
             {
                 _skillFileCopyExpanded = expanded;

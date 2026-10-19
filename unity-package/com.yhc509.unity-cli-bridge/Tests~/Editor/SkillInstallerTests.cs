@@ -471,7 +471,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.AreEqual("codex plugin add unity-cli-bridge@unity-cli-bridge", lines[5].Command);
             Assert.AreEqual(SkillPluginCommands.GrokGroup, lines[6].Group);
             Assert.AreEqual("grok plugin marketplace add yhc509/unity-cli-bridge", lines[6].Command);
-            Assert.AreEqual("grok plugin install unity-cli-bridge --trust", lines[7].Command);
+            Assert.AreEqual("grok plugin install yhc509/unity-cli-bridge --trust", lines[7].Command);
             Assert.IsFalse(lines[7].Command.Contains("@"));
         }
 

@@ -8,7 +8,8 @@ namespace UnityCliBridge.Bridge.Editor
     /// <c>.agents/plugins/marketplace.json</c> <c>name</c> (plugin entry <c>name</c> matches).
     /// Plugin name is <c>plugins/unity-cli-bridge/plugin.json</c> <c>name</c>.
     /// The repository slug is the README install target <c>yhc509/unity-cli-bridge</c>.
-    /// Grok's install line does not use <c>plugin@marketplace</c>.
+    /// Grok's install line passes that slug to <c>grok plugin install</c>. That command
+    /// takes a GitHub shorthand, a git URL, or a local path.
     /// </summary>
     internal static class SkillPluginCommands
     {
@@ -73,7 +74,7 @@ namespace UnityCliBridge.Bridge.Editor
 
         internal static string GrokInstall()
         {
-            return "grok plugin install " + PluginName + " --trust";
+            return "grok plugin install " + RepositorySlug + " --trust";
         }
     }
 

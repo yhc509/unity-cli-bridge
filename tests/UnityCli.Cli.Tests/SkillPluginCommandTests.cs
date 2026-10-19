@@ -24,7 +24,7 @@ public sealed class SkillPluginCommandTests
         Assert.Equal("codex plugin add unity-cli-bridge@unity-cli-bridge", lines[5].Command);
         Assert.Equal(SkillPluginCommands.GrokGroup, lines[6].Group);
         Assert.Equal("grok plugin marketplace add yhc509/unity-cli-bridge", lines[6].Command);
-        Assert.Equal("grok plugin install unity-cli-bridge --trust", lines[7].Command);
+        Assert.Equal("grok plugin install yhc509/unity-cli-bridge --trust", lines[7].Command);
         Assert.DoesNotContain("@", lines[7].Command);
     }
 }
