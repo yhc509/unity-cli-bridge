@@ -156,7 +156,7 @@ ucli scene add-object --project "$PROJECT" --path Assets/Scenes/SampleScene.unit
 ### Transform 수정
 
 ```bash
-ucli scene set-transform --project "$PROJECT" --node "/Cube[0]" --position 3,0,0 --scale 2,2,2 --output compact
+ucli scene set-transform --project "$PROJECT" --node "/Environment[0]/Floor[0]" --position 3,0,0 --scale 2,2,2 --output compact
 ```
 
 `--position`, `--rotation`, `--scale` 중 최소 하나를 지정한다. `scene patch --spec-json` 대신 이 편의 명령을 우선 사용한다.
@@ -164,7 +164,7 @@ ucli scene set-transform --project "$PROJECT" --node "/Cube[0]" --position 3,0,0
 ### 머티리얼 할당
 
 ```bash
-ucli scene assign-material --project "$PROJECT" --node "/Cube[0]" --material Assets/Materials/MyMat.mat --output compact
+ucli scene assign-material --project "$PROJECT" --node "/Environment[0]/Floor[0]" --material Assets/Materials/MyMat.mat --output compact
 ```
 
 노드의 MeshRenderer.sharedMaterials[0]에 머티리얼을 할당한다. `scene patch`로 `m_Materials.Array.data[0]`을 직접 지정하는 것보다 간편하다.
