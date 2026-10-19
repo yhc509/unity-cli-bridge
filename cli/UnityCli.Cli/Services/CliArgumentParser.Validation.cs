@@ -14,7 +14,7 @@ public static partial class CliArgumentParser
         {
             "game" => "game",
             "scene" => "scene",
-            _ => throw new CliUsageException("`--view`는 `game` 또는 `scene`만 지원합니다."),
+            _ => throw new CliUsageException("`--view` must be `game` or `scene`."),
         };
     }
 
@@ -25,7 +25,7 @@ public static partial class CliArgumentParser
             "png" => "png",
             "jpg" => "jpg",
             "jpeg" => "jpeg",
-            _ => throw new CliUsageException("`--format`은 `png`, `jpg`, `jpeg` 중 하나여야 합니다."),
+            _ => throw new CliUsageException("`--format` must be `png`, `jpg`, or `jpeg`."),
         };
     }
 
@@ -34,7 +34,7 @@ public static partial class CliArgumentParser
         int quality = RequireInt(value, "--quality");
         if (quality > 100)
         {
-            throw new CliUsageException("--quality 값은 1 이상 100 이하의 정수여야 합니다.");
+            throw new CliUsageException("--quality must be an integer from 1 to 100.");
         }
 
         return quality;
@@ -44,12 +44,12 @@ public static partial class CliArgumentParser
     {
         if (!int.TryParse(value, out var result))
         {
-            throw new CliUsageException($"{option} 값은 {DescribeIntegerRequirement(minimumValue)}여야 합니다.");
+            throw new CliUsageException($"{option} must be {DescribeIntegerRequirement(minimumValue)}.");
         }
 
         if (minimumValue.HasValue && result < minimumValue.Value)
         {
-            throw new CliUsageException($"{option} 값은 {DescribeIntegerRequirement(minimumValue)}여야 합니다.");
+            throw new CliUsageException($"{option} must be {DescribeIntegerRequirement(minimumValue)}.");
         }
 
         return result;
@@ -59,10 +59,10 @@ public static partial class CliArgumentParser
     {
         return minimumValue switch
         {
-            null => "정수",
-            0 => "0 이상의 정수",
-            1 => "1 이상의 정수",
-            _ => minimumValue.Value + " 이상의 정수",
+            null => "an integer",
+            0 => "an integer >= 0",
+            1 => "an integer >= 1",
+            _ => "an integer >= " + minimumValue.Value,
         };
     }
 
@@ -70,7 +70,7 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException($"{option} 값이 비어 있습니다.");
+            throw new CliUsageException($"{option} requires a value.");
         }
 
         return tokens.Dequeue();
@@ -80,13 +80,13 @@ public static partial class CliArgumentParser
     {
         if (tokens.Count == 0 || tokens.Peek().StartsWith("--", StringComparison.Ordinal))
         {
-            throw new CliUsageException($"{option} 옵션은 JSON 값이 필요합니다.");
+            throw new CliUsageException($"{option} requires a JSON value.");
         }
 
         string value = tokens.Dequeue();
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new CliUsageException($"{option} 옵션은 JSON 값이 필요합니다.");
+            throw new CliUsageException($"{option} requires a JSON value.");
         }
 
         try
@@ -96,7 +96,7 @@ public static partial class CliArgumentParser
         }
         catch (JsonException exception)
         {
-            throw new CliUsageException($"{option} 값은 올바른 JSON이어야 합니다. " + exception.Message);
+            throw new CliUsageException($"{option} must be valid JSON. " + exception.Message);
         }
     }
 
@@ -110,8 +110,8 @@ public static partial class CliArgumentParser
         {
             throw new CliUsageException(
                 allowPackages
-                    ? $"{option} 값은 `Assets/...` 또는 `Packages/...` 형식이어야 합니다."
-                    : $"{option} 값은 `Assets/...` 형식이어야 합니다.");
+                    ? $"{option} must be an `Assets/...` or `Packages/...` path."
+                    : $"{option} must be an `Assets/...` path.");
         }
     }
 
@@ -120,7 +120,7 @@ public static partial class CliArgumentParser
         string normalized = BuiltInAssetCreateCatalog.NormalizeTypeId(value);
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            throw new CliUsageException("`asset create --type` 값이 비어 있습니다.");
+            throw new CliUsageException("`asset create --type` requires a value.");
         }
 
         return normalized;
@@ -131,7 +131,7 @@ public static partial class CliArgumentParser
         string normalized = ProtocolConstants.NormalizeScenePrimitive(value);
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            throw new CliUsageException("`--primitive`는 `" + string.Join("`, `", ProtocolConstants.SupportedScenePrimitiveNames) + "` 중 하나여야 합니다.");
+            throw new CliUsageException("`--primitive` must be one of `" + string.Join("`, `", ProtocolConstants.SupportedScenePrimitiveNames) + "`.");
         }
 
         return normalized;
@@ -146,7 +146,7 @@ public static partial class CliArgumentParser
         }
 
         string allowed = allowAll ? "edit, play, all" : "edit, play";
-        throw new CliUsageException($"--mode 값은 {allowed} 중 하나여야 합니다.");
+        throw new CliUsageException($"--mode must be one of {allowed}.");
     }
 
     private static string RequireQaButton(string value)
@@ -157,14 +157,14 @@ public static partial class CliArgumentParser
             return normalized;
         }
 
-        throw new CliUsageException("`--button` 값은 `left` 또는 `right` 중 하나여야 합니다.");
+        throw new CliUsageException("`--button` must be `left` or `right`.");
     }
 
     private static string RequireSubcommand(Queue<string> tokens, string command)
     {
         if (tokens.Count == 0)
         {
-            throw new CliUsageException($"`{command}` 다음에는 하위 명령이 필요합니다.");
+            throw new CliUsageException($"`{command}` requires a subcommand.");
         }
 
         return tokens.Dequeue().ToLowerInvariant();
@@ -177,74 +177,74 @@ public static partial class CliArgumentParser
             case CommandKind.AssetFind
                 when string.IsNullOrWhiteSpace(parsed.AssetName)
                 && string.IsNullOrWhiteSpace(parsed.AssetType):
-                throw new CliUsageException("`asset find`에는 `--name` 또는 `--type` 중 하나 이상이 필요합니다.");
+                throw new CliUsageException("`asset find` requires `--name` or `--type` (at least one).");
             case CommandKind.AssetInfo:
             {
                 var hasPath = !string.IsNullOrWhiteSpace(parsed.AssetPath);
                 var hasGuid = !string.IsNullOrWhiteSpace(parsed.AssetGuid);
                 if (hasPath == hasGuid)
                 {
-                    throw new CliUsageException("`asset info`에는 `--path` 또는 `--guid` 중 하나만 필요합니다.");
+                    throw new CliUsageException("`asset info` requires exactly one of `--path` or `--guid`.");
                 }
 
                 break;
             }
             case CommandKind.AssetReimport when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset reimport`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`asset reimport` requires `--path`.");
             case CommandKind.AssetMkdir when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset mkdir`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`asset mkdir` requires `--path`.");
             case CommandKind.AssetMove when string.IsNullOrWhiteSpace(parsed.AssetFrom) || string.IsNullOrWhiteSpace(parsed.AssetTo):
-                throw new CliUsageException("`asset move`에는 `--from`과 `--to`가 모두 필요합니다.");
+                throw new CliUsageException("`asset move` requires both `--from` and `--to`.");
             case CommandKind.AssetRename when string.IsNullOrWhiteSpace(parsed.AssetPath) || string.IsNullOrWhiteSpace(parsed.AssetNewName):
-                throw new CliUsageException("`asset rename`에는 `--path`와 `--name`이 모두 필요합니다.");
+                throw new CliUsageException("`asset rename` requires both `--path` and `--name`.");
             case CommandKind.AssetDelete when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset delete`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`asset delete` requires `--path`.");
             case CommandKind.AssetDelete when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`asset delete`는 `--force`가 필요합니다.");
+                throw new CliUsageException("`asset delete` requires `--force`.");
             case CommandKind.AssetCreate when string.IsNullOrWhiteSpace(parsed.AssetCreateType) || string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset create`에는 `--type`과 `--path`가 필요합니다.");
+                throw new CliUsageException("`asset create` requires `--type` and `--path`.");
             case CommandKind.AssetCreate when parsed.AssetCreateType == "scriptable-object"
                 && string.IsNullOrWhiteSpace(parsed.AssetScript)
                 && string.IsNullOrWhiteSpace(parsed.AssetTypeName):
-                throw new CliUsageException("`asset create --type scriptable-object`에는 `--script` 또는 `--type-name`이 필요합니다.");
+                throw new CliUsageException("`asset create --type scriptable-object` requires `--script` or `--type-name`.");
             case CommandKind.AssetCreate when parsed.AssetCreateType == "animator-override-controller"
                 && string.IsNullOrWhiteSpace(parsed.AssetBaseController):
-                throw new CliUsageException("`asset create --type animator-override-controller`에는 `--base-controller`가 필요합니다.");
+                throw new CliUsageException("`asset create --type animator-override-controller` requires `--base-controller`.");
             case CommandKind.AssetCreate when IsBuiltInAssetCreateType(parsed.AssetCreateType)
                 && parsed.AssetCustomOptions.Count > 0:
                 throw new CliUsageException(
-                    "`asset create --type " + parsed.AssetCreateType + "`에서 지원하지 않는 옵션입니다: "
+                    "`asset create --type " + parsed.AssetCreateType + "` does not support: "
                     + string.Join(", ", parsed.AssetCustomOptions.Keys.Select(key => "--" + ToKebabCase(key))));
             case CommandKind.PrefabInspect when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab inspect`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab inspect` requires `--path`.");
             case CommandKind.PrefabCreate when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab create`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab create` requires `--path`.");
             case CommandKind.PrefabPatch when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab patch`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab patch` requires `--path`.");
             case CommandKind.PrefabAddComponent when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab add-component`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab add-component` requires `--path`.");
             case CommandKind.PrefabAddComponent when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`prefab add-component`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`prefab add-component` requires `--node`.");
             case CommandKind.PrefabAddComponent when string.IsNullOrWhiteSpace(parsed.SceneComponentType):
-                throw new CliUsageException("`prefab add-component`에는 `--type`이 필요합니다.");
+                throw new CliUsageException("`prefab add-component` requires `--type`.");
             case CommandKind.PrefabRemoveComponent when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab remove-component`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab remove-component` requires `--path`.");
             case CommandKind.PrefabRemoveComponent when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`prefab remove-component`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`prefab remove-component` requires `--node`.");
             case CommandKind.PrefabRemoveComponent when string.IsNullOrWhiteSpace(parsed.SceneComponentType):
-                throw new CliUsageException("`prefab remove-component`에는 `--type`이 필요합니다.");
+                throw new CliUsageException("`prefab remove-component` requires `--type`.");
             case CommandKind.PrefabRemoveComponent when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`prefab remove-component`에는 `--force`가 필요합니다.");
+                throw new CliUsageException("`prefab remove-component` requires `--force`.");
             case CommandKind.PrefabListComponents when string.IsNullOrWhiteSpace(parsed.PrefabPath):
-                throw new CliUsageException("`prefab list-components`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`prefab list-components` requires `--path`.");
             case CommandKind.PrefabListComponents when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`prefab list-components`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`prefab list-components` requires `--node`.");
             case CommandKind.PrefabCreate when HasInvalidPrefabSpecSource(parsed):
-                throw new CliUsageException("`prefab create`에는 `--spec-file` 또는 `--spec-json` 중 하나만 필요합니다.");
+                throw new CliUsageException("`prefab create` requires exactly one of `--spec-file` or `--spec-json`.");
             case CommandKind.PrefabPatch when HasInvalidPrefabSpecSource(parsed):
-                throw new CliUsageException("`prefab patch`에는 `--spec-file` 또는 `--spec-json` 중 하나만 필요합니다.");
+                throw new CliUsageException("`prefab patch` requires exactly one of `--spec-file` or `--spec-json`.");
             case CommandKind.PrefabPatch when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`prefab patch`에서 destructive operation을 쓰려면 `--force`가 필요합니다.");
+                throw new CliUsageException("`prefab patch` requires `--force` for a destructive operation.");
         }
     }
 
@@ -253,46 +253,46 @@ public static partial class CliArgumentParser
         switch (parsed.Kind)
         {
             case CommandKind.SceneOpen when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene open`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene open` requires `--path`.");
             case CommandKind.SceneInspect when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene inspect`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene inspect` requires `--path`.");
             case CommandKind.ScenePatch when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene patch`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene patch` requires `--path`.");
             case CommandKind.ScenePatch when HasInvalidSceneSpecSource(parsed):
-                throw new CliUsageException("`scene patch`에는 `--spec-file` 또는 `--spec-json` 중 하나만 필요합니다.");
+                throw new CliUsageException("`scene patch` requires exactly one of `--spec-file` or `--spec-json`.");
             case CommandKind.ScenePatch when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`scene patch`에서 `delete-gameobject` 또는 `remove-component`를 쓰려면 `--force`가 필요합니다.");
+                throw new CliUsageException("`scene patch` requires `--force` to use `delete-gameobject` or `remove-component`.");
             case CommandKind.SceneAddObject when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene add-object`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene add-object` requires `--path`.");
             case CommandKind.SceneAddObject when string.IsNullOrWhiteSpace(parsed.SceneObjectName):
-                throw new CliUsageException("`scene add-object`에는 `--name`이 필요합니다.");
+                throw new CliUsageException("`scene add-object` requires `--name`.");
             case CommandKind.SceneSetTransform when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`scene set-transform`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`scene set-transform` requires `--node`.");
             case CommandKind.SceneSetTransform
                 when string.IsNullOrWhiteSpace(parsed.ScenePosition)
                 && string.IsNullOrWhiteSpace(parsed.SceneRotation)
                 && string.IsNullOrWhiteSpace(parsed.SceneScale):
-                throw new CliUsageException("`scene set-transform`에는 `--position`, `--rotation`, `--scale` 중 하나 이상이 필요합니다.");
+                throw new CliUsageException("`scene set-transform` requires at least one of `--position`, `--rotation`, or `--scale`.");
             case CommandKind.SceneAddComponent when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene add-component`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene add-component` requires `--path`.");
             case CommandKind.SceneAddComponent when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`scene add-component`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`scene add-component` requires `--node`.");
             case CommandKind.SceneAddComponent when string.IsNullOrWhiteSpace(parsed.SceneComponentType):
-                throw new CliUsageException("`scene add-component`에는 `--type`이 필요합니다.");
+                throw new CliUsageException("`scene add-component` requires `--type`.");
             case CommandKind.SceneRemoveComponent when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene remove-component`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`scene remove-component` requires `--path`.");
             case CommandKind.SceneRemoveComponent when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`scene remove-component`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`scene remove-component` requires `--node`.");
             case CommandKind.SceneRemoveComponent when string.IsNullOrWhiteSpace(parsed.SceneComponentType):
-                throw new CliUsageException("`scene remove-component`에는 `--type`이 필요합니다.");
+                throw new CliUsageException("`scene remove-component` requires `--type`.");
             case CommandKind.SceneRemoveComponent when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`scene remove-component`는 `--force`가 필요합니다.");
+                throw new CliUsageException("`scene remove-component` requires `--force`.");
             case CommandKind.SceneListComponents when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`scene list-components`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`scene list-components` requires `--node`.");
             case CommandKind.SceneAssignMaterial when string.IsNullOrWhiteSpace(parsed.SceneTarget):
-                throw new CliUsageException("`scene assign-material`에는 `--node`가 필요합니다.");
+                throw new CliUsageException("`scene assign-material` requires `--node`.");
             case CommandKind.SceneAssignMaterial when string.IsNullOrWhiteSpace(parsed.MaterialPath):
-                throw new CliUsageException("`scene assign-material`에는 `--material`이 필요합니다.");
+                throw new CliUsageException("`scene assign-material` requires `--material`.");
         }
     }
 
@@ -308,7 +308,7 @@ public static partial class CliArgumentParser
 
         if (hasView && hasCamera)
         {
-            throw new CliUsageException("`screenshot`에는 `--view` 또는 `--camera` 중 하나만 필요합니다.");
+            throw new CliUsageException("`screenshot` requires exactly one of `--view` or `--camera`.");
         }
 
         if (!hasView && !hasCamera)
@@ -328,12 +328,12 @@ public static partial class CliArgumentParser
         bool hasList = parsed.MenuList;
         if (hasPath == hasList)
         {
-            throw new CliUsageException("`execute-menu`에는 `--path` 또는 `--list <prefix>` 중 하나만 필요합니다.");
+            throw new CliUsageException("`execute-menu` requires exactly one of `--path` or `--list <prefix>`.");
         }
 
         if (parsed.MenuList && string.IsNullOrWhiteSpace(parsed.MenuListPrefix))
         {
-            throw new CliUsageException("`execute-menu --list`에는 prefix가 필요합니다.");
+            throw new CliUsageException("`execute-menu --list` requires a prefix.");
         }
     }
 
@@ -342,13 +342,13 @@ public static partial class CliArgumentParser
         switch (parsed.Kind)
         {
             case CommandKind.PackageAdd when string.IsNullOrWhiteSpace(parsed.PackageName):
-                throw new CliUsageException("`package add`에는 `--name`이 필요합니다.");
+                throw new CliUsageException("`package add` requires `--name`.");
             case CommandKind.PackageRemove when string.IsNullOrWhiteSpace(parsed.PackageName):
-                throw new CliUsageException("`package remove`에는 `--name`이 필요합니다.");
+                throw new CliUsageException("`package remove` requires `--name`.");
             case CommandKind.PackageRemove when ForceRequiredByCatalog(parsed):
-                throw new CliUsageException("`package remove`는 `--force`가 필요합니다.");
+                throw new CliUsageException("`package remove` requires `--force`.");
             case CommandKind.PackageSearch when string.IsNullOrWhiteSpace(parsed.PackageQuery):
-                throw new CliUsageException("`package search`에는 `--query`가 필요합니다.");
+                throw new CliUsageException("`package search` requires `--query`.");
         }
     }
 
@@ -357,17 +357,17 @@ public static partial class CliArgumentParser
         switch (parsed.Kind)
         {
             case CommandKind.TestRun when string.IsNullOrWhiteSpace(parsed.TestMode):
-                throw new CliUsageException("`test run`에는 `--mode <edit|play>`가 필요합니다.");
+                throw new CliUsageException("`test run` requires `--mode <edit|play>`.");
             case CommandKind.TestRun
                 when string.Equals(parsed.TestMode, "edit", StringComparison.Ordinal)
                 && parsed.TestNoDomainReload:
-                throw new CliUsageException("--no-domain-reload는 --mode play에서만 사용 가능합니다.");
+                throw new CliUsageException("--no-domain-reload is only valid with --mode play.");
             case CommandKind.TestRun when parsed.TestTimeoutSeconds > ProtocolConstants.MaxTestRunTimeoutSeconds:
-                throw new CliUsageException($"--timeout 값은 {ProtocolConstants.MaxTestRunTimeoutSeconds}초를 초과할 수 없습니다.");
+                throw new CliUsageException($"--timeout cannot exceed {ProtocolConstants.MaxTestRunTimeoutSeconds} seconds.");
             case CommandKind.TestResults
                 when !string.IsNullOrEmpty(parsed.TestRunId)
                 && !ProtocolHelpers.IsValid32HexId(parsed.TestRunId):
-                throw new CliUsageException("--run-id 값은 32자리 16진수여야 합니다 (`test run`이 반환한 runId).");
+                throw new CliUsageException("--run-id must be 32 hex characters (the runId returned by `test run`).");
         }
     }
 
@@ -375,12 +375,12 @@ public static partial class CliArgumentParser
     {
         if (parsed.Kind == CommandKind.RecordStart && parsed.RecordWait && parsed.RecordDuration is null)
         {
-            throw new CliUsageException("`record start --wait`는 `--duration <초>`와 함께 사용해야 합니다 (수동 녹화는 `record stop`으로 종료).");
+            throw new CliUsageException("`record start --wait` requires `--duration <seconds>` (stop a manual recording with `record stop`).");
         }
 
         if (!string.IsNullOrEmpty(parsed.RecordRunId) && !ProtocolHelpers.IsValid32HexId(parsed.RecordRunId))
         {
-            throw new CliUsageException("--recording-id 값은 32자리 16진수여야 합니다 (`record start`가 반환한 recordingId).");
+            throw new CliUsageException("--recording-id must be 32 hex characters (the recordingId returned by `record start`).");
         }
     }
 
@@ -388,7 +388,7 @@ public static partial class CliArgumentParser
     {
         if (parsed.Kind == CommandKind.ProfileCaptureStart && parsed.ProfileFrames.HasValue && parsed.ProfileDuration.HasValue)
         {
-            throw new CliUsageException("profile capture start에서 --frames와 --duration은 동시에 쓸 수 없습니다.");
+            throw new CliUsageException("profile capture start cannot take both --frames and --duration.");
         }
 
         if (parsed.Kind == CommandKind.ProfileAnalyze)
@@ -399,7 +399,7 @@ public static partial class CliArgumentParser
                 + (parsed.ProfileAnalyzeSpikes ? 1 : 0);
             if (queryCount != 1)
             {
-                throw new CliUsageException("profile analyze에는 --marker, --frame, --gc, --spikes 중 정확히 하나가 필요합니다.");
+                throw new CliUsageException("profile analyze requires exactly one of --marker, --frame, --gc, or --spikes.");
             }
         }
 
@@ -409,7 +409,7 @@ public static partial class CliArgumentParser
             && parsed.ProfileThresholdPercent.HasValue
             && (!double.IsFinite(parsed.ProfileThresholdPercent.Value) || parsed.ProfileThresholdPercent.Value < 0))
         {
-            throw new CliUsageException("--threshold 값은 0 이상의 유한한 숫자여야 합니다.");
+            throw new CliUsageException("--threshold must be a finite number >= 0.");
         }
     }
 
@@ -418,9 +418,9 @@ public static partial class CliArgumentParser
         switch (parsed.Kind)
         {
             case CommandKind.MaterialInfo when string.IsNullOrWhiteSpace(parsed.MaterialPath):
-                throw new CliUsageException("`material info`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`material info` requires `--path`.");
             case CommandKind.MaterialSet when string.IsNullOrWhiteSpace(parsed.MaterialPath):
-                throw new CliUsageException("`material set`에는 `--path`가 필요합니다.");
+                throw new CliUsageException("`material set` requires `--path`.");
             case CommandKind.MaterialSet:
             {
                 bool hasPropertySet = !string.IsNullOrWhiteSpace(parsed.MaterialProperty)
@@ -429,7 +429,7 @@ public static partial class CliArgumentParser
                     && !string.IsNullOrWhiteSpace(parsed.MaterialTextureAsset);
                 if (!hasPropertySet && !hasTextureSet)
                 {
-                    throw new CliUsageException("`material set`에는 `--property`+`--value` 또는 `--texture`+`--asset` 조합이 필요합니다.");
+                    throw new CliUsageException("`material set` requires `--property`+`--value` or `--texture`+`--asset`.");
                 }
 
                 break;
@@ -437,13 +437,13 @@ public static partial class CliArgumentParser
             case CommandKind.QaRunSequence:
                 if (parsed.QaSequenceArgs == null || parsed.QaSequenceArgs.steps.Length == 0)
                 {
-                    throw new CliUsageException("`qa run-sequence`에는 `--spec-json <json|@file>`(비어 있지 않은 steps)이 필요합니다.");
+                    throw new CliUsageException("`qa run-sequence` requires `--spec-json <json|@file>` with a non-empty steps array.");
                 }
 
                 if (parsed.QaSequenceTimeoutMs < 0
                     || parsed.QaSequenceTimeoutMs > ProtocolConstants.MaxQaRunSequenceTimeoutMs)
                 {
-                    throw new CliUsageException($"`qa run-sequence`의 `--timeout`은 0~{ProtocolConstants.MaxQaRunSequenceTimeoutMs}ms 범위여야 합니다.");
+                    throw new CliUsageException($"`qa run-sequence` `--timeout` must be from 0 to {ProtocolConstants.MaxQaRunSequenceTimeoutMs} ms.");
                 }
 
                 break;
@@ -465,7 +465,7 @@ public static partial class CliArgumentParser
                 bool hasTarget = !string.IsNullOrWhiteSpace(parsed.QaTarget);
                 if (hasQaId == hasTarget)
                 {
-                    throw new CliUsageException("`qa click`에는 `--qa-id` 또는 `--target` 중 하나만 필요합니다.");
+                    throw new CliUsageException("`qa click` requires exactly one of `--qa-id` or `--target`.");
                 }
 
                 break;
@@ -478,12 +478,12 @@ public static partial class CliArgumentParser
                 {
                     if (hasAnyCoord)
                     {
-                        throw new CliUsageException("`qa tap`에서 `--target`과 `--x`/`--y`는 함께 사용할 수 없습니다.");
+                        throw new CliUsageException("`qa tap` cannot combine `--target` with `--x`/`--y`.");
                     }
                 }
                 else if (!parsed.QaTapX.HasValue || !parsed.QaTapY.HasValue)
                 {
-                    throw new CliUsageException("`qa tap`에는 `--x`와 `--y`가 모두 필요합니다(또는 `--target`).");
+                    throw new CliUsageException("`qa tap` requires both `--x` and `--y` (or `--target`).");
                 }
 
                 ValidateQaScreenshotDimensions(parsed, "`qa tap`");
@@ -496,7 +496,7 @@ public static partial class CliArgumentParser
                 ValidateQaScreenshotDimensions(parsed, "`qa world-dump`");
                 break;
             case CommandKind.QaSwipe when string.IsNullOrWhiteSpace(parsed.QaSwipeFrom) || string.IsNullOrWhiteSpace(parsed.QaSwipeTo):
-                throw new CliUsageException("`qa swipe`에는 `--from`과 `--to`가 모두 필요합니다.");
+                throw new CliUsageException("`qa swipe` requires both `--from` and `--to`.");
             case CommandKind.QaSwipe:
                 bool usesTargetRelativeOffsets = !string.IsNullOrWhiteSpace(parsed.QaTarget);
                 RequireQaSwipeCoordinatePair(parsed.QaSwipeFrom!, "--from", usesTargetRelativeOffsets);
@@ -504,14 +504,14 @@ public static partial class CliArgumentParser
                 ValidateQaScreenshotDimensions(parsed, "`qa swipe`");
                 if (usesTargetRelativeOffsets && (parsed.QaScreenshotWidth.HasValue || parsed.QaScreenshotHeight.HasValue))
                 {
-                    throw new CliUsageException("`qa swipe`에서 `--target`과 `--screenshot-width`/`--screenshot-height`는 함께 사용할 수 없습니다.");
+                    throw new CliUsageException("`qa swipe` cannot combine `--target` with `--screenshot-width`/`--screenshot-height`.");
                 }
 
                 break;
             case CommandKind.QaKey when string.IsNullOrWhiteSpace(parsed.QaKeyName):
-                throw new CliUsageException("`qa key`에는 `--key`가 필요합니다.");
+                throw new CliUsageException("`qa key` requires `--key`.");
             case CommandKind.QaWait when parsed.QaWaitMs <= 0:
-                throw new CliUsageException("`qa wait`에는 `--ms`가 필요합니다.");
+                throw new CliUsageException("`qa wait` requires `--ms`.");
             case CommandKind.QaWaitUntil:
             {
                 bool hasScene = !string.IsNullOrWhiteSpace(parsed.QaWaitScene);
@@ -521,19 +521,19 @@ public static partial class CliArgumentParser
                 bool hasObjectGone = !string.IsNullOrWhiteSpace(parsed.QaWaitObjectGone);
                 if (!hasScene && !hasLogContains && !hasObjectExists && !hasObjectInteractable && !hasObjectGone)
                 {
-                    throw new CliUsageException("`qa wait-until`에는 `--scene`, `--log-contains`, `--object-exists`, `--object-interactable`, `--object-gone`, `--qa-id` 중 하나 이상이 필요합니다.");
+                    throw new CliUsageException("`qa wait-until` requires at least one of `--scene`, `--log-contains`, `--object-exists`, `--object-interactable`, `--object-gone`, or `--qa-id`.");
                 }
 
                 if (!string.IsNullOrWhiteSpace(parsed.QaId) && !string.IsNullOrWhiteSpace(parsed.QaWaitObjectExists))
                 {
-                    throw new CliUsageException("`qa wait-until`에서는 `--qa-id`와 `--object-exists`를 동시에 쓸 수 없습니다.");
+                    throw new CliUsageException("`qa wait-until` cannot use `--qa-id` and `--object-exists` together.");
                 }
 
                 if (hasObjectGone
                     && ((hasObjectExists && string.Equals(parsed.QaWaitObjectGone, parsed.QaWaitObjectExists, StringComparison.Ordinal))
                         || (hasObjectInteractable && string.Equals(parsed.QaWaitObjectGone, parsed.QaWaitObjectInteractable, StringComparison.Ordinal))))
                 {
-                    throw new CliUsageException("동일 대상에 `--object-gone`과 `--object-exists`/`--object-interactable`을 함께 지정할 수 없습니다 (조건이 AND로 결합되어 영원히 timeout됩니다).");
+                    throw new CliUsageException("Cannot set `--object-gone` together with `--object-exists`/`--object-interactable` on the same target (the conditions are ANDed and would time out forever).");
                 }
 
                 if (!string.IsNullOrWhiteSpace(parsed.QaId))
@@ -552,7 +552,7 @@ public static partial class CliArgumentParser
         bool hasScreenshotHeight = parsed.QaScreenshotHeight.HasValue;
         if (hasScreenshotWidth != hasScreenshotHeight)
         {
-            throw new CliUsageException($"{commandName}에서 `--screenshot-width`와 `--screenshot-height`는 함께 지정해야 합니다.");
+            throw new CliUsageException($"{commandName} requires `--screenshot-width` and `--screenshot-height` together.");
         }
     }
 
@@ -561,15 +561,15 @@ public static partial class CliArgumentParser
         string[] parts = value.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || !int.TryParse(parts[0], out _) || !int.TryParse(parts[1], out _))
         {
-            throw new CliUsageException($"{option} 값은 {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}이어야 합니다.");
+            throw new CliUsageException($"{option} must be {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}.");
         }
     }
 
     private static string GetQaSwipeCoordinateDescription(bool usesTargetRelativeOffsets)
     {
         return usesTargetRelativeOffsets
-            ? "`x,y` 형식의 target 중심 기준 픽셀 오프셋"
-            : "`x,y` 형식의 절대 화면 픽셀 좌표";
+            ? "`x,y` pixel offset from the target center"
+            : "`x,y` absolute screen pixel coordinates";
     }
 
     private static void ValidateExecuteOptions(ParsedCommand parsed)
@@ -584,12 +584,12 @@ public static partial class CliArgumentParser
 
         if (hasCode == hasFile)
         {
-            throw new CliUsageException("`execute`에는 `--code` 또는 `--file` 중 하나만 필요합니다.");
+            throw new CliUsageException("`execute` requires exactly one of `--code` or `--file`.");
         }
 
         if (ForceRequiredByCatalog(parsed))
         {
-            throw new CliUsageException("`execute`는 `--force`가 필요합니다.");
+            throw new CliUsageException("`execute` requires `--force`.");
         }
 
         if (parsed.ExecuteCodeTimeoutSeconds.HasValue)
@@ -599,7 +599,7 @@ public static partial class CliArgumentParser
             if (seconds <= 0 || seconds > maxSeconds)
             {
                 throw new CliUsageException(
-                    $"--timeout 값은 1~{maxSeconds} 사이의 정수(초)여야 합니다.");
+                    $"--timeout must be an integer number of seconds from 1 to {maxSeconds}.");
             }
         }
     }
@@ -618,7 +618,7 @@ public static partial class CliArgumentParser
             ForceRule.Always => true,
             ForceRule.OnOverwrite => false,
             ForceRule.OnDestructiveOp => PatchContainsDestructiveOperation(parsed),
-            _ => throw new InvalidOperationException("지원하지 않는 force rule입니다: " + descriptor.ForceRule),
+            _ => throw new InvalidOperationException("Unsupported force rule: " + descriptor.ForceRule),
         };
     }
 
@@ -698,11 +698,11 @@ public static partial class CliArgumentParser
             CommandKind.InstancesUse => "instances use",
             CommandKind.Doctor => "doctor",
             CommandKind.Raw => "raw",
-            _ => throw new InvalidOperationException("catalog descriptor가 없는 command kind입니다: " + kind),
+            _ => throw new InvalidOperationException("Command kind has no catalog descriptor: " + kind),
         };
 
         return CliCommandCatalog.FindByCommand(commandPath)
-            ?? throw new InvalidOperationException("catalog descriptor를 찾지 못했습니다: " + commandPath);
+            ?? throw new InvalidOperationException("Could not find a catalog descriptor: " + commandPath);
     }
 
     private static bool PatchContainsDestructiveOperation(ParsedCommand parsed)

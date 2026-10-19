@@ -16,14 +16,14 @@ public sealed class ResponseFormatterTests
             target: "target-1",
             data: ToDataElement(new
             {
-                message = "AssetDatabase.Refresh 완료",
+                message = "AssetDatabase.Refresh completed",
             }),
             durationMs: 12,
             transport: ProtocolConstants.TransportLive);
 
         var text = ResponseFormatter.Format(parsed, response);
 
-        Assert.Contains("AssetDatabase.Refresh 완료", text);
+        Assert.Contains("AssetDatabase.Refresh completed", text);
         Assert.DoesNotContain("\\uC644\\uB8CC", text);
     }
 
@@ -158,13 +158,13 @@ public sealed class ResponseFormatterTests
             requestId: "req-1",
             target: "target-1",
             code: "LIVE_UNAVAILABLE",
-            message: "Bridge가 아직 준비되지 않았습니다.",
+            message: "The bridge is not ready yet.",
             retryable: true,
             details: "{\"hint\":\"retry\"}");
 
         var text = ResponseFormatter.Format(OutputMode.Compact, response);
 
-        Assert.Equal("{\"error\":\"LIVE_UNAVAILABLE\",\"message\":\"Bridge가 아직 준비되지 않았습니다.\"}", text);
+        Assert.Equal("{\"error\":\"LIVE_UNAVAILABLE\",\"message\":\"The bridge is not ready yet.\"}", text);
     }
 
     [Fact]

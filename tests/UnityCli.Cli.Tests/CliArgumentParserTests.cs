@@ -91,7 +91,7 @@ public sealed class CliArgumentParserTests
         var ex = Assert.Throws<CliUsageException>(() =>
             CliArgumentParser.Parse(["test", "run", "--mode", "edit", "--no-domain-reload"]));
 
-        Assert.Equal("--no-domain-reload는 --mode play에서만 사용 가능합니다.", ex.Message);
+        Assert.Equal("--no-domain-reload is only valid with --mode play.", ex.Message);
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public sealed class CliArgumentParserTests
     {
         var ex = Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(["status", "--output", "--json"]));
 
-        Assert.Equal("`--output`에 값이 필요합니다. `default`, `json`, `compact` 중 하나를 지정하세요.", ex.Message);
+        Assert.Equal("`--output` requires a value. Use `default`, `json`, or `compact`.", ex.Message);
     }
 
     [Fact]
@@ -1118,7 +1118,7 @@ public sealed class CliArgumentParserTests
                 "--type", "BoxCollider"
             ]));
 
-        Assert.Contains("지원하지 않는 옵션입니다: --target", ex.Message);
+        Assert.Contains("Unsupported option: --target", ex.Message);
     }
 
     [Fact]
@@ -1269,7 +1269,7 @@ public sealed class CliArgumentParserTests
                 "--type", "BoxCollider"
             ]));
 
-        Assert.Contains("지원하지 않는 옵션입니다: --target", ex.Message);
+        Assert.Contains("Unsupported option: --target", ex.Message);
     }
 
     [Fact]
@@ -1854,7 +1854,7 @@ public sealed class CliArgumentParserTests
                 "--force"
             ]));
 
-        Assert.Equal("--args 옵션은 JSON 값이 필요합니다.", ex.Message);
+        Assert.Equal("--args requires a JSON value.", ex.Message);
     }
 
     [Fact]
@@ -1867,7 +1867,7 @@ public sealed class CliArgumentParserTests
                 "--args"
             ]));
 
-        Assert.Equal("--args 옵션은 JSON 값이 필요합니다.", ex.Message);
+        Assert.Equal("--args requires a JSON value.", ex.Message);
     }
 
     [Theory]
@@ -1883,7 +1883,7 @@ public sealed class CliArgumentParserTests
                 "--force"
             ]));
 
-        Assert.Equal("--args 옵션은 JSON 값이 필요합니다.", ex.Message);
+        Assert.Equal("--args requires a JSON value.", ex.Message);
     }
 
     [Fact]
@@ -1932,7 +1932,7 @@ public sealed class CliArgumentParserTests
         var ex = Assert.Throws<CliUsageException>(() =>
             CliArgumentParser.Parse(["custom"]));
 
-        Assert.Contains("명령 이름", ex.Message);
+        Assert.Contains("command name", ex.Message);
     }
 
     [Fact]
