@@ -245,6 +245,11 @@ namespace UnityCliBridge.Bridge.Editor
                         failuresOnly));
                 }
 
+                if (HasPendingSettlement(runId))
+                {
+                    return;
+                }
+
                 if (!startResponseSent
                     && (EditorApplication.isPlaying || EditorApplication.isPlayingOrWillChangePlaymode))
                 {

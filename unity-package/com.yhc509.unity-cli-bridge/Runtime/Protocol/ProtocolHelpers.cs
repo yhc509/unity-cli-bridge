@@ -24,6 +24,19 @@ namespace UnityCli.Protocol
             return CliCommandCatalog.IsProtocolCommandInGroup(command, CliCommandGroup.SceneWorkflows);
         }
 
+        /// <summary>
+        /// Play-mode changes and scene commands are refused while a test run holds the editor.
+        /// Scene restore runs after the tests themselves finish, and entering Play Mode in that
+        /// window makes <c>EditorSceneManager.RestoreSceneManagerSetup</c> throw.
+        /// </summary>
+        public static bool IsBlockedWhileTestRunActive(string command)
+        {
+            return string.Equals(command, ProtocolConstants.CommandPlay, StringComparison.Ordinal)
+                || string.Equals(command, ProtocolConstants.CommandPause, StringComparison.Ordinal)
+                || string.Equals(command, ProtocolConstants.CommandStop, StringComparison.Ordinal)
+                || IsSceneCommand(command);
+        }
+
         public static bool IsPrefabCommand(string command)
         {
             return CliCommandCatalog.IsProtocolCommandInGroup(command, CliCommandGroup.PrefabWorkflows);
@@ -230,6 +243,76 @@ namespace UnityCli.Protocol
             }
 
             return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// A snapshot of whether a finished test callback may be published to the CLI.
+    /// Unity's <c>RunFinished</c> runs before the Test Framework restores the open scenes.
+    /// </summary>
+    public readonly struct TestRunSettlementObservation
+    {
+        public TestRunSettlementObservation(
+            bool probeAvailable,
+            bool frameworkRunActive,
+            bool playingOrChangingPlayMode,
+            int updatesSinceArmed,
+            int quiescentUpdates,
+            TimeSpan elapsed)
+        {
+            ProbeAvailable = probeAvailable;
+            FrameworkRunActive = frameworkRunActive;
+            PlayingOrChangingPlayMode = playingOrChangingPlayMode;
+            UpdatesSinceArmed = updatesSinceArmed;
+            QuiescentUpdates = quiescentUpdates;
+            Elapsed = elapsed;
+        }
+
+        public bool ProbeAvailable { get; }
+        public bool FrameworkRunActive { get; }
+        public bool PlayingOrChangingPlayMode { get; }
+        public int UpdatesSinceArmed { get; }
+        public int QuiescentUpdates { get; }
+        public TimeSpan Elapsed { get; }
+    }
+
+    /// <summary>
+    /// Decides when a staged test result is safe to publish. The editor must be out of Play Mode,
+    /// and the Test Framework job must be idle when that probe exists. The probe is
+    /// <c>TestRunnerApi.IsAnyRunActive</c> (Test Framework 2) or parameterless <c>IsRunActive</c>
+    /// (1.4), both of which stay true until scene restore and the rest of the post-run tasks finish.
+    /// </summary>
+    public static class TestRunSettlementPolicy
+    {
+        public const int MinimumUpdatesAfterCallback = 1;
+
+        /// <summary>
+        /// Used only when the framework probe cannot be bound. Post-run work is about ten tasks
+        /// after <c>RunFinished</c>, and some of them yield for more than one editor update.
+        /// </summary>
+        public const int FallbackQuiescentUpdates = 90;
+
+        public static readonly TimeSpan ForcePublishAfter = TimeSpan.FromSeconds(45);
+
+        public static bool ShouldPublish(TestRunSettlementObservation observation)
+        {
+            if (observation.Elapsed >= ForcePublishAfter)
+            {
+                return true;
+            }
+
+            if (observation.PlayingOrChangingPlayMode)
+            {
+                return false;
+            }
+
+            if (observation.ProbeAvailable)
+            {
+                return !observation.FrameworkRunActive
+                    && observation.UpdatesSinceArmed >= MinimumUpdatesAfterCallback;
+            }
+
+            return observation.QuiescentUpdates >= FallbackQuiescentUpdates;
         }
     }
 }

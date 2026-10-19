@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- `test run` no longer reports success while the Test Framework is still restoring the open scenes. The finish callback runs before that restore, so a `play` command in the gap threw `InvalidOperationException` from scene restore ("This cannot be used during play mode") on both Unity 2021.3 and Unity 6. Edit Mode and Play Mode `--wait` now return only after that cleanup has finished. Until then, `play`, `pause`, `stop`, and scene commands fail with the existing retryable `TEST_RUN_IN_PROGRESS` code. Result JSON is unchanged.
+
 ## [0.5.4] - 2026-08-18
 
 ### Added

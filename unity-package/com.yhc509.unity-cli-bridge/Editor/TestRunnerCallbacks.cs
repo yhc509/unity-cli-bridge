@@ -98,10 +98,21 @@ namespace UnityCliBridge.Bridge.Editor
         {
             // Every completion path is idempotent: once this run has been finalized — by Unity's
             // RunFinished or by a cancel/timeout/failure mark — a later mark must not overwrite the
-            // recorded result with a synthesized one, nor release a run lock it no longer owns.
-            // Serialized so the flag survives a domain reload alongside the rest of the state.
+            // recorded result with a synthesized one. Serialized so the flag survives a domain
+            // reload alongside the rest of the state.
+            //
+            // "Completed" is not published here. RunFinished runs before the Test Framework restores
+            // the open scenes (RestoreSceneSetupTask and the tasks after it). The staged payload is
+            // published, and the run lock released, only once that job is idle.
             if (_runFinished)
             {
+                return;
+            }
+
+            if (TestCommandHandler.HasPendingSettlement(_runId))
+            {
+                _runFinished = true;
+                TestCommandHandler.ArmSettlement();
                 return;
             }
 
@@ -109,10 +120,18 @@ namespace UnityCliBridge.Bridge.Editor
 
             List<string> warnings = BuildWarnings(extraWarnings);
             TestRunResultPayload payload = BuildPayload(status, warnings);
+            bool deferPublish = string.Equals(status, "Completed", StringComparison.Ordinal);
 
             try
             {
-                FlushToDisk(payload);
+                if (deferPublish)
+                {
+                    TestCommandHandler.WritePendingSettlement(_runId, ProtocolJson.Serialize(payload));
+                }
+                else
+                {
+                    FlushToDisk(payload);
+                }
             }
             catch (Exception exception)
             {
@@ -121,6 +140,7 @@ namespace UnityCliBridge.Bridge.Editor
                 warnings.Add("Failed to write result cache: " + exception.Message);
                 TestRunResultPayload failedPayload = BuildPayload("Failed", warnings);
                 StoreInlineResult(failedPayload);
+                deferPublish = false;
 
                 try
                 {
@@ -131,15 +151,19 @@ namespace UnityCliBridge.Bridge.Editor
                     Debug.LogError("[unity-cli-bridge] Failed to flush fallback test run " + _runId + ": " + retryException);
                 }
             }
-            finally
-            {
-                if (_domainReloadDisabled)
-                {
-                    DomainReloadDisableScope.Deactivate();
-                }
 
-                TestCommandHandler.EndRun();
+            if (_domainReloadDisabled)
+            {
+                DomainReloadDisableScope.Deactivate();
             }
+
+            if (deferPublish)
+            {
+                TestCommandHandler.ArmSettlement();
+                return;
+            }
+
+            TestCommandHandler.EndRun();
         }
 
         private static int CountLeafTests(ITestAdaptor adaptor)
