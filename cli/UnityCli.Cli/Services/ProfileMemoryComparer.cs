@@ -20,7 +20,7 @@ internal static class ProfileMemoryComparer
         if (!double.IsFinite(threshold) || threshold < 0)
         {
             return ResponseEnvelope.Failure(
-                "local", null, "CLI_USAGE", "--threshold는 0 이상의 유한한 값이어야 합니다.", false, 0, "cli");
+                "local", null, "CLI_USAGE", "--threshold must be a finite value >= 0.", false, 0, "cli");
         }
 
         if (!ProfileSidecarLoader.TryLoadMemory(
@@ -69,7 +69,7 @@ internal static class ProfileMemoryComparer
             "local",
             null,
             ProtocolConstants.ErrorProfileFailed,
-            $"{side} 리포트 `{sidecar.reportId}`에는 카운터가 없습니다. 다시 측정하세요.",
+            $"{side} report `{sidecar.reportId}` has no counters. Measure it again.",
             false,
             0,
             "cli");
@@ -88,17 +88,17 @@ internal static class ProfileMemoryComparer
         var notes = new List<string>();
         if (!string.Equals(baseReport.mode, headReport.mode, StringComparison.Ordinal))
         {
-            notes.Add($"mode가 다릅니다 (base={baseReport.mode}, head={headReport.mode}) — 값 차이가 모드 차이일 수 있습니다.");
+            notes.Add($"mode differs (base={baseReport.mode}, head={headReport.mode}) — the value gap may be the mode gap.");
         }
 
         if (!string.Equals(baseReport.unityVersion, headReport.unityVersion, StringComparison.Ordinal))
         {
-            notes.Add($"unityVersion이 다릅니다 (base={baseReport.unityVersion}, head={headReport.unityVersion}).");
+            notes.Add($"unityVersion differs (base={baseReport.unityVersion}, head={headReport.unityVersion}).");
         }
 
         if (baseReport.frames != headReport.frames)
         {
-            notes.Add($"샘플링 프레임 수가 다릅니다 (base={baseReport.frames}, head={headReport.frames}).");
+            notes.Add($"Sampled frame counts differ (base={baseReport.frames}, head={headReport.frames}).");
         }
 
         var payload = new ProfileMemoryComparePayload
@@ -114,12 +114,12 @@ internal static class ProfileMemoryComparer
             || FindMedian(headReport, TotalCounterName) is null;
         if (totalMissing)
         {
-            notes.Insert(0, $"`{TotalCounterName}` 카운터가 한쪽에 없어 verdict를 판정할 수 없습니다 — unchanged로 고정합니다.");
+            notes.Insert(0, $"`{TotalCounterName}` is missing on one side, so a verdict cannot be decided — fixed to unchanged.");
             payload.verdict = "unchanged";
         }
         else if (!payload.totalUsedBytes.deltaPercentAvailable)
         {
-            notes.Insert(0, "base Total Used Memory가 0 이하라 퍼센트가 정의되지 않습니다 — verdict는 unchanged로 고정합니다.");
+            notes.Insert(0, "base Total Used Memory is 0 or below, so the percentage is undefined — verdict is fixed to unchanged.");
             payload.verdict = "unchanged";
         }
         else if (payload.totalUsedBytes.deltaPercent > thresholdPercent)
@@ -146,7 +146,7 @@ internal static class ProfileMemoryComparer
                 .FirstOrDefault(c => string.Equals(c.name, baseStat.name, StringComparison.Ordinal));
             if (headStat is null)
             {
-                notes.Add($"base에만 있는 카운터: {baseStat.name}");
+                notes.Add($"Counter only in base: {baseStat.name}");
                 continue;
             }
 
@@ -180,7 +180,7 @@ internal static class ProfileMemoryComparer
         {
             if (!baseReport.counters.Any(c => string.Equals(c.name, headStat.name, StringComparison.Ordinal)))
             {
-                notes.Add($"head에만 있는 카운터: {headStat.name}");
+                notes.Add($"Counter only in head: {headStat.name}");
             }
         }
 

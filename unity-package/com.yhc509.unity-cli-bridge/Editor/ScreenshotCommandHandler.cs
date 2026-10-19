@@ -135,7 +135,7 @@ namespace UnityCliBridge.Bridge.Editor
                 var sceneView = SceneView.lastActiveSceneView;
                 if (sceneView == null)
                 {
-                    throw new CommandFailureException("SCREENSHOT_FAILED", "Scene View가 열려 있지 않습니다.", false, null);
+                    throw new CommandFailureException("SCREENSHOT_FAILED", "Scene View is not open.", false, null);
                 }
 
                 int width = requestedWidth > 0 ? requestedWidth : (int)sceneView.position.width;
@@ -144,14 +144,14 @@ namespace UnityCliBridge.Bridge.Editor
                 Camera? camera = sceneView.camera;
                 if (camera == null)
                 {
-                    throw new CommandFailureException("SCREENSHOT_FAILED", "Scene View 캡처를 위한 카메라가 없습니다.", false, null);
+                    throw new CommandFailureException("SCREENSHOT_FAILED", "No camera is available for a Scene View capture.", false, null);
                 }
 
                 var result = CaptureCameraToPath(camera, width, height, maxWidth, format, jpegQuality, tempPath);
                 return (tempPath, result.width, result.height);
             }
 
-            throw new CommandFailureException("INVALID_VIEW", $"지원하지 않는 view입니다: {view}", false, null);
+            throw new CommandFailureException("INVALID_VIEW", $"Unsupported view: {view}", false, null);
         }
 
         private (string path, int width, int height) CaptureFromCamera(
@@ -165,7 +165,7 @@ namespace UnityCliBridge.Bridge.Editor
             var camera = FindCamera(cameraName);
             if (camera == null)
             {
-                throw new CommandFailureException("CAMERA_NOT_FOUND", $"카메라를 찾지 못했습니다: {cameraName}", false, null);
+                throw new CommandFailureException("CAMERA_NOT_FOUND", $"Could not find camera: {cameraName}", false, null);
             }
 
             int width = requestedWidth > 0 ? requestedWidth : camera.pixelWidth;
@@ -208,14 +208,14 @@ namespace UnityCliBridge.Bridge.Editor
                 gameViewWindow = GetGameViewWindow(focus: true);
                 if (gameViewWindow == null)
                 {
-                    throw new CommandFailureException("SCREENSHOT_FAILED", "Play Mode Game View 창을 찾지 못했습니다.", false, null);
+                    throw new CommandFailureException("SCREENSHOT_FAILED", "Could not find the Play Mode Game View window.", false, null);
                 }
 
                 capturedTexture = TryCaptureGameViewRenderTexture(gameViewWindow)
                     ?? ScreenCapture.CaptureScreenshotAsTexture();
                 if (capturedTexture == null)
                 {
-                    throw new CommandFailureException("SCREENSHOT_FAILED", "Play Mode Game View 캡처에 실패했습니다.", false, null);
+                    throw new CommandFailureException("SCREENSHOT_FAILED", "Play Mode Game View capture failed.", false, null);
                 }
 
                 WarnIfSuspiciousPlayModeCapture(capturedTexture, gameViewWindow);
@@ -255,7 +255,7 @@ namespace UnityCliBridge.Bridge.Editor
             int height = requestedHeight > 0 ? requestedHeight : capturedTexture.height;
             if (width <= 0 || height <= 0)
             {
-                throw new CommandFailureException("SCREENSHOT_FAILED", "유효한 Game View 캡처 크기를 확인하지 못했습니다.", false, null);
+                throw new CommandFailureException("SCREENSHOT_FAILED", "Could not determine a valid Game View capture size.", false, null);
             }
 
             if (width > capturedTexture.width || height > capturedTexture.height)
@@ -382,7 +382,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (camera == null)
             {
-                throw new CommandFailureException("SCREENSHOT_FAILED", "Game View 캡처를 위한 카메라가 없습니다.", false, null);
+                throw new CommandFailureException("SCREENSHOT_FAILED", "No camera is available for a Game View capture.", false, null);
             }
 
             var gameView = GetMainGameViewSize();
@@ -508,7 +508,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             throw new CommandFailureException(
                 "SCREENSHOT_INVALID_FORMAT",
-                "screenshot format은 png, jpg, jpeg 중 하나여야 합니다.",
+                "screenshot format must be png, jpg, or jpeg.",
                 false,
                 null);
         }
@@ -527,7 +527,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             throw new CommandFailureException(
                 "SCREENSHOT_INVALID_QUALITY",
-                "screenshot quality는 1~100 범위여야 합니다.",
+                "screenshot quality must be from 1 to 100.",
                 false,
                 null);
         }

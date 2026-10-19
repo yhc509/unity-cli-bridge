@@ -139,7 +139,7 @@ namespace UnityCli.Protocol
         {
             if (string.IsNullOrWhiteSpace(projectRoot))
             {
-                throw new ArgumentException("프로젝트 root가 비어 있습니다.", nameof(projectRoot));
+                throw new ArgumentException("Project root is empty.", nameof(projectRoot));
             }
 
             return Path.Combine(Path.GetFullPath(projectRoot), "Library", BackupDirectoryName, "backups");
@@ -149,7 +149,7 @@ namespace UnityCli.Protocol
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                throw new ArgumentException("백업 대상 path가 비어 있습니다.", nameof(path));
+                throw new ArgumentException("Backup target path is empty.", nameof(path));
             }
 
             if (action == null)
@@ -278,7 +278,7 @@ namespace UnityCli.Protocol
 
             if (PathExists(entry.BackupPath))
             {
-                options.WarningSink?.Invoke("stale bridge backup을 덮어씁니다: " + entry.BackupPath);
+                options.WarningSink?.Invoke("Overwriting a stale bridge backup: " + entry.BackupPath);
                 DeletePath(entry.BackupPath);
             }
 
@@ -342,7 +342,7 @@ namespace UnityCli.Protocol
                 }
                 catch (Exception exception)
                 {
-                    options.WarningSink?.Invoke("bridge backup cleanup에 실패했습니다: " + entry.BackupPath + " (" + exception.Message + ")");
+                    options.WarningSink?.Invoke("Bridge backup cleanup failed: " + entry.BackupPath + " (" + exception.Message + ")");
                 }
             }
         }
@@ -353,7 +353,7 @@ namespace UnityCli.Protocol
             BackupEntry[] entries,
             Exception exception)
         {
-            string message = commandName + " 백업 생성에 실패했습니다: " + path;
+            string message = commandName + " backup failed: " + path;
             string details = BuildDetails(entries, exception);
             return new FileBackupTransactionException(ProtocolConstants.ErrorBackupFailed, message, details, exception);
         }
@@ -367,9 +367,9 @@ namespace UnityCli.Protocol
         {
             string backupLocations = BuildBackupLocationMessage(backedUpEntries);
             string message = commandName
-                + " 실패 후 백업 복원에 실패했습니다. 수동 복구가 필요합니다. 백업 위치: "
+                + " failed, then restoring the backup failed. Manual recovery is required. Backup location: "
                 + backupLocations
-                + ". 원인: "
+                + ". Cause: "
                 + restoreException.Message;
             string details = "original: " + actionException + Environment.NewLine + "restore: " + restoreException;
             return new FileBackupTransactionException(ProtocolConstants.ErrorBackupRestoreFailed, message, details, restoreException);
@@ -384,7 +384,7 @@ namespace UnityCli.Protocol
         {
             if (entries.Count == 0)
             {
-                return "(생성된 백업 없음)";
+                return "(no backup was created)";
             }
 
             var locations = new List<string>(entries.Count);
@@ -397,7 +397,7 @@ namespace UnityCli.Protocol
                 }
             }
 
-            return locations.Count == 0 ? "(생성된 백업 없음)" : string.Join(", ", locations.ToArray());
+            return locations.Count == 0 ? "(no backup was created)" : string.Join(", ", locations.ToArray());
         }
 
         private static bool PathExists(string path)

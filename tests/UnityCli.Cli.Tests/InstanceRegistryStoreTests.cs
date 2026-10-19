@@ -229,7 +229,7 @@ public sealed class InstanceRegistryStoreTests
 
         var exception = Assert.Throws<CliUsageException>(() => store.ResolveProjectRootOverride(registry, "UnityCliBridge"));
 
-        Assert.Contains("중복되어", exception.Message);
+        Assert.Contains("ambiguous", exception.Message);
         Assert.Contains(ProtocolConstants.GetCanonicalPath(firstProjectRoot), exception.Message);
         Assert.Contains(ProtocolConstants.GetCanonicalPath(secondProjectRoot), exception.Message);
     }

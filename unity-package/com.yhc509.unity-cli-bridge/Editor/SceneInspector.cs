@@ -85,18 +85,18 @@ namespace UnityCliBridge.Bridge.Editor
             string normalizedPath = string.IsNullOrWhiteSpace(path) ? "/" : path.Trim();
             if (normalizedPath == "/")
             {
-                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path는 scene root `/`를 직접 가리킬 수 없습니다.");
+                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path cannot point at the scene root `/`.");
             }
 
             if (!normalizedPath.StartsWith("/", StringComparison.Ordinal))
             {
-                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path는 `/`로 시작해야 합니다: " + normalizedPath);
+                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path must start with `/`: " + normalizedPath);
             }
 
             int position = 0;
             if (!InspectorPathParserUtility.TryGetNextPathSegment(normalizedPath, ref position, out int rootStart, out int rootLength))
             {
-                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path가 비어 있습니다.");
+                throw new CommandFailureException("SCENE_NODE_INVALID", commandName + " path is empty.");
             }
 
             GameObject current = ResolveRoot(scene, normalizedPath.AsSpan(rootStart, rootLength), normalizedPath, commandName);
@@ -127,7 +127,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (matchedChild == null)
                 {
-                    throw new CommandFailureException("SCENE_NODE_NOT_FOUND", commandName + " path를 찾지 못했습니다: " + normalizedPath);
+                    throw new CommandFailureException("SCENE_NODE_NOT_FOUND", commandName + " could not find path: " + normalizedPath);
                 }
 
                 current = matchedChild.gameObject;
@@ -140,7 +140,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (spec == null)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", "node spec이 비어 있습니다.");
+                throw new CommandFailureException("SCENE_SPEC_INVALID", "Node spec is empty.");
             }
 
             string name = string.IsNullOrWhiteSpace(spec.Name)
@@ -165,7 +165,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (spec == null)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", "node values가 비어 있습니다.");
+                throw new CommandFailureException("SCENE_SPEC_INVALID", "Node values are empty.");
             }
 
             if (spec.Name != null)
@@ -190,7 +190,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (values == null)
             {
-                throw new CommandFailureException("SCENE_SPEC_INVALID", "node values가 비어 있습니다.");
+                throw new CommandFailureException("SCENE_SPEC_INVALID", "Node values are empty.");
             }
 
             string? name = InspectorMutationReaderUtility.ReadOptionalString(values, "name");
@@ -199,7 +199,7 @@ namespace UnityCliBridge.Bridge.Editor
                 target.name = InspectorPathParserUtility.RequireNodeName(name, commandName, "SCENE");
             }
 
-            JObject? transformValues = InspectorMutationReaderUtility.ReadOptionalObject(values, "transform", "SCENE_SPEC_INVALID", commandName + " transform 값은 object여야 합니다.");
+            JObject? transformValues = InspectorMutationReaderUtility.ReadOptionalObject(values, "transform", "SCENE_SPEC_INVALID", commandName + " transform value must be an object.");
             Transform transform = target.transform;
             InspectorUtility.ApplyNodeStateCore(
                 target,
@@ -208,13 +208,13 @@ namespace UnityCliBridge.Bridge.Editor
                 InspectorMutationReaderUtility.ReadOptionalProperty(values, "layer"),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localPosition,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localPosition", "SCENE_SPEC_INVALID", commandName + " transform.localPosition 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localPosition", "SCENE_SPEC_INVALID", commandName + " transform.localPosition must be an object.")),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localEulerAngles,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localRotationEuler", "SCENE_SPEC_INVALID", commandName + " transform.localRotationEuler 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localRotationEuler", "SCENE_SPEC_INVALID", commandName + " transform.localRotationEuler must be an object.")),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localScale,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localScale", "SCENE_SPEC_INVALID", commandName + " transform.localScale 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localScale", "SCENE_SPEC_INVALID", commandName + " transform.localScale must be an object.")),
                 "SCENE");
         }
 
@@ -289,7 +289,7 @@ namespace UnityCliBridge.Bridge.Editor
                 matchIndex++;
             }
 
-            throw new CommandFailureException("SCENE_NODE_NOT_FOUND", commandName + " path를 찾지 못했습니다: " + normalizedPath);
+            throw new CommandFailureException("SCENE_NODE_NOT_FOUND", commandName + " could not find path: " + normalizedPath);
         }
 
         private static void WriteComponents(JsonTextWriter writer, GameObject gameObject, bool withValues, bool omitDefaults)

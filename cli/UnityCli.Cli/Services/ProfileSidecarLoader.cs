@@ -28,7 +28,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 "CLI_USAGE",
-                "프로젝트 루트를 찾을 수 없습니다. Unity 프로젝트 안에서 실행하거나 --project를 지정하세요.",
+                "Could not find the project root. Run inside a Unity project, or pass --project.",
                 false,
                 0,
                 "cli");
@@ -45,7 +45,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 ProtocolConstants.ErrorProfileNotFound,
-                $"captureId `{captureId}`의 sidecar를 찾을 수 없습니다: {sidecarPath}",
+                $"Could not find the sidecar for captureId `{captureId}`: {sidecarPath}",
                 false,
                 0,
                 "cli");
@@ -63,7 +63,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 ProtocolConstants.ErrorProfileFailed,
-                "sidecar JSON을 읽지 못했습니다: " + exception.Message,
+                "Could not read sidecar JSON: " + exception.Message,
                 false,
                 0,
                 "cli");
@@ -73,7 +73,7 @@ internal static class ProfileSidecarLoader
         if (loaded is null)
         {
             failure = ResponseEnvelope.Failure(
-                "local", null, ProtocolConstants.ErrorProfileFailed, "sidecar가 비어 있습니다.", false, 0, "cli");
+                "local", null, ProtocolConstants.ErrorProfileFailed, "The sidecar is empty.", false, 0, "cli");
             return false;
         }
 
@@ -101,7 +101,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 "CLI_USAGE",
-                "프로젝트 루트를 찾을 수 없습니다. Unity 프로젝트 안에서 실행하거나 --project를 지정하세요.",
+                "Could not find the project root. Run inside a Unity project, or pass --project.",
                 false,
                 0,
                 "cli");
@@ -118,7 +118,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 ProtocolConstants.ErrorProfileNotFound,
-                $"reportId `{reportId}`의 memory sidecar를 찾을 수 없습니다: {sidecarPath}",
+                $"Could not find the memory sidecar for reportId `{reportId}`: {sidecarPath}",
                 false,
                 0,
                 "cli");
@@ -136,7 +136,7 @@ internal static class ProfileSidecarLoader
                 "local",
                 null,
                 ProtocolConstants.ErrorProfileFailed,
-                "memory sidecar JSON을 읽지 못했습니다: " + exception.Message,
+                "Could not read memory sidecar JSON: " + exception.Message,
                 false,
                 0,
                 "cli");
@@ -146,7 +146,7 @@ internal static class ProfileSidecarLoader
         if (loaded is null)
         {
             failure = ResponseEnvelope.Failure(
-                "local", null, ProtocolConstants.ErrorProfileFailed, "memory sidecar가 비어 있습니다.", false, 0, "cli");
+                "local", null, ProtocolConstants.ErrorProfileFailed, "The memory sidecar is empty.", false, 0, "cli");
             return false;
         }
 

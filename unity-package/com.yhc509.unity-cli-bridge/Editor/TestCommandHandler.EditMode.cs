@@ -131,7 +131,7 @@ namespace UnityCliBridge.Bridge.Editor
                             requestId,
                             projectHash,
                             ProtocolConstants.ErrorTestTimeout,
-                            "EditMode test run이 " + timeoutSec + "초 내 완료되지 않았습니다.",
+                            "EditMode test run did not finish within " + timeoutSec + " seconds.",
                             false,
                             stopwatch.ElapsedMilliseconds,
                             ProtocolConstants.TransportLive,

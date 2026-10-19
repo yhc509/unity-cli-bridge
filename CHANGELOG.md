@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-19
+
 ### Changed
+- User-facing text is now English: CLI messages, Editor bridge messages, and the installed AI-agent skill. Error codes, JSON field names, placeholders, and exit codes are unchanged. Reinstall the skill from **Window > Unity CLI Manager** to pick up the English copy.
 - The package now supports Unity 2021.3 LTS through Unity 6. It was checked on 2021.3.45f2, the latest public 2021.3 patch; later 2021.3 updates are paid extended-LTS releases. Gradient property edits still need Unity 2022.1 or newer. `record` compiles only when Unity Recorder 3.0.0 or newer is installed. On Unity 6000.4 and newer, Recorder 5.1.6 or later is still required or Recorder itself does not compile.
 
 ### Fixed
+- Scene examples that add an object with `--parent "/Environment[0]"` now follow up with that object's real `createdPath` (`/Environment[0]/Cube[0]` or `/Environment[0]/Floor[0]`). The old `--node "/Cube[0]"` returns `SCENE_NODE_NOT_FOUND`.
 - `profile memory snapshot` compiles on Unity 2021.3. That editor exposes the snapshot API as `UnityEngine.Profiling.Memory.Experimental`; Unity 2022.2 and newer use `Unity.Profiling.Memory`.
 - Projects without the Input System no longer get an unreachable-code warning from `qa key` and `qa swipe`.
 
@@ -237,7 +241,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [0.1.13] - 2026-05-13
 
 ### Added
-- `unity-cli execute --timeout <초>` cooperative cancellation token. Wrapper exposes `__pucToken` for user code to check; timeouts surface as `EXECUTE_TIMEOUT` errors. Default 30s, max 600s. Non-cooperative code still occupies the Editor main thread (force-user responsibility).
+- `unity-cli execute --timeout <seconds>` cooperative cancellation token. Wrapper exposes `__pucToken` for user code to check; timeouts surface as `EXECUTE_TIMEOUT` errors. Default 30s, max 600s. Non-cooperative code still occupies the Editor main thread (force-user responsibility).
 - `unity-cli doctor` now reports the live-side error code and message when it cannot reach the Editor, so protocol mismatches (`PROTOCOL_MISMATCH`) are distinguishable from a simple unreachable instance.
 
 ### Changed
@@ -344,7 +348,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Execute wrapper code now exposes the supplied JSON as the `__pucArgsJson` string variable.
 
 ### Notes
-- 이 기능은 bridge `0.1.6+` 필요. 구 bridge에 신규 CLI를 사용하면 `__pucArgsJson` 참조 시 컴파일 에러가 발생합니다.
+- Requires bridge `0.1.6` or newer. A newer CLI against an older bridge fails to compile when user code references `__pucArgsJson`.
 
 ## [0.1.5] - 2026-04-26
 
@@ -353,7 +357,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - AI skills installer in `Window > Unity CLI Manager` now writes to the user's global skills directory (`~/.claude/skills/`, `~/.codex/skills/`) instead of `{ProjectRoot}/.claude/skills/` and `{ProjectRoot}/.agents/skills/`; the project-local `.claude/skills/unity-cli-operator` symlink was removed (#23).
-- Rewrote the `unity-cli-operator` skill so agents stop bypassing it and detouring through `Unity -batchmode` headless runs or searching for a (nonexistent) Unity MCP server: `SKILL.md` description rewritten as a forward-firing trigger and a "진입 규칙" section added; `agents/openai.yaml` populated with `short_description` and `default_prompt` rules (#24).
+- Rewrote the `unity-cli-operator` skill so agents stop bypassing it and detouring through `Unity -batchmode` headless runs or searching for a (nonexistent) Unity MCP server: `SKILL.md` description rewritten as a forward-firing trigger and an "Entry rules" section added; `agents/openai.yaml` populated with `short_description` and `default_prompt` rules (#24).
 - Bridge package author changed from `yhjang` to `yhc509` (#22).
 
 ## [0.1.4] - 2026-04-08

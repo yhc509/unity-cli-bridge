@@ -64,13 +64,13 @@ public sealed class LocalIpcClient
         var responseLine = await reader.ReadLineAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(responseLine))
         {
-            throw new IOException("Unity IPC 응답이 비어 있습니다.");
+            throw new IOException("The Unity IPC response is empty.");
         }
 
         var response = ProtocolJson.Deserialize<ResponseEnvelope>(responseLine);
         if (response is null)
         {
-            throw new IOException("Unity IPC 응답을 파싱하지 못했습니다.");
+            throw new IOException("Could not parse the Unity IPC response.");
         }
 
         return EnsureCompatibleResponse(response);

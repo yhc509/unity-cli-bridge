@@ -85,7 +85,7 @@ public class ProfileMemoryComparerTests
 
         Assert.Equal("unchanged", payload.verdict);
         Assert.False(payload.totalUsedBytes.deltaPercentAvailable);
-        Assert.Contains(payload.notes, note => note.Contains("0 이하"));
+        Assert.Contains(payload.notes, note => note.Contains("0 or below"));
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class ProfileMemoryComparerTests
 
         var payload = ProfileMemoryComparer.Compare(baseSide, headSide, 5.0, 10);
 
-        Assert.Contains(payload.notes, note => note.Contains("mode가 다릅니다"));
+        Assert.Contains(payload.notes, note => note.Contains("mode differs"));
     }
 
     [Fact]

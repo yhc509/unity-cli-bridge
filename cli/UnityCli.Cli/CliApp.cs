@@ -172,7 +172,7 @@ public static class CliApp
     {
         if (string.IsNullOrWhiteSpace(parsed.InstanceTarget))
         {
-            throw new CliUsageException("`instances use`에는 project hash, project path 또는 project name이 필요합니다.");
+            throw new CliUsageException("`instances use` requires a project hash, project path, or project name.");
         }
 
         InstanceRecord? target = null;
@@ -419,7 +419,7 @@ public static class CliApp
             {
                 return CreateLiveUnavailableResponse(
                     target.projectHash,
-                    "Bridge 인증 정보를 읽지 못했습니다. Unity Editor가 실행 중이 아니거나, 시작·재시작·스크립트 재컴파일 중일 수 있습니다. Editor가 떠 있다면 잠시 후 다시 시도하세요.");
+                    "Could not read the bridge auth token. The Unity Editor may be closed, starting, restarting, or recompiling scripts. If the Editor is open, try again shortly.");
             }
 
             try
@@ -463,8 +463,8 @@ public static class CliApp
                         }
                         catch (Exception)
                         {
-                            // stop 자체는 이미 성공(Processing)이므로, 폴링이 취소/전송 예외로 throw해도
-                            // 원본 응답을 유지한다 — captureId로 나중에 `profile status`를 조회할 수 있다.
+                            // stop itself already succeeded (Processing), so a cancel or transport throw during polling
+                            // keeps the original response — the captureId can be read later with `profile status`.
                         }
                     }
                 }
@@ -494,7 +494,7 @@ public static class CliApp
             {
                 return CreateLiveUnavailableResponse(
                     target.projectHash,
-                    "Unity가 로컬 패키지를 import/compile 중인지 확인한 뒤 다시 시도하세요. 원인: " + ex.Message);
+                    "Check whether Unity is importing or compiling a local package, then try again. Cause: " + ex.Message);
             }
         }
 
@@ -502,7 +502,7 @@ public static class CliApp
         {
             return CreateLiveUnavailableResponse(
                 ProtocolConstants.ComputeProjectHash(projectRoot),
-                "Unity Editor를 열고 Bridge import/compile이 끝난 뒤 다시 시도하세요.");
+                "Open the Unity Editor and try again after the bridge finishes importing and compiling.");
         }
 
         var offlineCandidates = registry.instances
@@ -510,15 +510,15 @@ public static class CliApp
             .Select(item => $"  - {item.projectName} ({item.state})  {item.projectRoot}")
             .ToArray();
         string noTargetDetails = offlineCandidates.Length > 0
-            ? "Unity 프로젝트 루트에서 실행하거나 `unity-cli instances use <projectHash|projectPath|projectName>`로 대상을 고정하세요.\n"
-              + "등록됐으나 실행 중이 아닌 인스턴스:\n" + string.Join("\n", offlineCandidates)
-            : "Unity 프로젝트 루트에서 실행하거나 `unity-cli instances use <projectHash|projectPath|projectName>`로 대상을 고정하세요.";
+            ? "Run from a Unity project root, or pin a target with `unity-cli instances use <projectHash|projectPath|projectName>`.\n"
+              + "Registered instances that are not running:\n" + string.Join("\n", offlineCandidates)
+            : "Run from a Unity project root, or pin a target with `unity-cli instances use <projectHash|projectPath|projectName>`.";
 
         return ResponseEnvelope.Failure(
             Guid.NewGuid().ToString("N"),
             target?.projectHash,
             "NO_TARGET",
-            "Unity Editor가 실행 중이지 않거나 Bridge가 활성화되지 않았습니다.",
+            "The Unity Editor is not running, or the bridge is not active.",
             retryable: false,
             transport: "cli",
             details: noTargetDetails);
@@ -567,7 +567,7 @@ public static class CliApp
             response.requestId,
             response.target,
             ProtocolConstants.ErrorEditorStopTimeout,
-            $"에디터가 종료 응답 후 {timeoutSeconds}초 안에 프로세스를 끝내지 않았습니다 (PID {editorProcessId}). 강제 종료가 필요하면 kill을 사용하세요.",
+            $"The editor did not exit within {timeoutSeconds} seconds after the quit response (PID {editorProcessId}). Use kill if you need to force it.",
             retryable: true,
             transport: "cli");
     }
@@ -1010,7 +1010,7 @@ public static class CliApp
                     poll.requestId,
                     poll.target,
                     GetProfileResultErrorCode(summary.status),
-                    $"profile capture `{captureId}` 상태가 {summary.status}입니다.",
+                    $"profile capture `{captureId}` status is {summary.status}.",
                     false,
                     poll.durationMs,
                     poll.transport);
@@ -1022,7 +1022,7 @@ public static class CliApp
                     poll.requestId,
                     poll.target,
                     ProtocolConstants.ErrorProfileTimeout,
-                    $"profile capture `{captureId}` 요약이 {ProtocolConstants.ProfileStopWaitTimeoutSeconds}초 안에 완료되지 않았습니다.",
+                    $"profile capture `{captureId}` summary did not finish within {ProtocolConstants.ProfileStopWaitTimeoutSeconds} seconds.",
                     true,
                     poll.durationMs,
                     poll.transport);
@@ -1062,14 +1062,14 @@ public static class CliApp
         }
         catch (Exception)
         {
-            // 폴링이 취소(cts)나 전송 예외로 throw해도 성공한 시퀀스 결과를 침몰시키지 않는다.
-            // captureId는 응답에 남아 있으므로 나중에 `profile status`로 요약을 조회할 수 있다.
+            // A cancel (cts) or transport throw during polling must not drop a successful sequence result.
+            // The captureId stays on the response, so the summary can be read later with `profile status`.
             return response;
         }
 
         if (!string.Equals(poll.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal))
         {
-            // 요약 실패는 시퀀스 결과를 침몰시키지 않는다 — captureId로 나중에 조회 가능.
+            // A summary failure must not drop the sequence result — look it up later with the captureId.
             return response;
         }
 
@@ -1389,7 +1389,7 @@ public static class CliApp
             startedResponse.requestId,
             startedResponse.target,
             "LIVE_UNAVAILABLE",
-            "Unity Editor가 실행 중이지 않거나 Bridge가 활성화되지 않았습니다.",
+            "The Unity Editor is not running, or the bridge is not active.",
             retryable: true,
             durationMs: waitedMs,
             transport: "cli",
@@ -1585,7 +1585,7 @@ public static class CliApp
     {
         if (parsed.QaWaitMs <= 0)
         {
-            throw new CliUsageException("qa wait에는 --ms <밀리초>가 필요합니다.");
+            throw new CliUsageException("qa wait requires --ms <milliseconds>.");
         }
 
         await Task.Delay(parsed.QaWaitMs);
@@ -1609,7 +1609,7 @@ public static class CliApp
             Guid.NewGuid().ToString("N"),
             projectHash,
             "LIVE_UNAVAILABLE",
-            "Unity Editor가 실행 중이지 않거나 Bridge가 활성화되지 않았습니다.",
+            "The Unity Editor is not running, or the bridge is not active.",
             retryable: true,
             transport: "cli",
             details: details);
@@ -1707,8 +1707,8 @@ public static class CliApp
             .ThenBy(item => item.projectRoot, StringComparer.OrdinalIgnoreCase)
             .Select(item => $"  - {item.projectName} ({item.state})  {item.projectRoot}");
         return new CliUsageException(
-            "실행 중인 Unity 인스턴스가 여러 개여서 대상을 결정할 수 없습니다. "
-            + "--project로 지정하거나 `unity-cli instances use <projectPath|projectName>`로 기본 대상을 고정하세요.\n후보:\n"
+            "More than one Unity instance is running, so the target cannot be resolved. "
+            + "Pass --project or pin a default with `unity-cli instances use <projectPath|projectName>`.\nCandidates:\n"
             + string.Join("\n", lines));
     }
 

@@ -26,7 +26,7 @@ public static class EditorLauncher
 
         if (string.IsNullOrWhiteSpace(projectRoot))
         {
-            throw new CliUsageException("editor launch에는 대상 프로젝트가 필요합니다. --project <path>를 지정하세요.");
+            throw new CliUsageException("editor launch requires a target project. Pass --project <path>.");
         }
 
         string canonicalRoot = ProtocolConstants.GetCanonicalPath(projectRoot);
@@ -35,7 +35,7 @@ public static class EditorLauncher
             return Failure(
                 requestId,
                 ProtocolConstants.ErrorEditorLaunchFailed,
-                "Unity 프로젝트가 아닙니다 (ProjectSettings/ProjectVersion.txt 없음): " + canonicalRoot,
+                "Not a Unity project (ProjectSettings/ProjectVersion.txt is missing): " + canonicalRoot,
                 retryable: false,
                 stopwatch);
         }
@@ -47,7 +47,7 @@ public static class EditorLauncher
             string requestedMode = RequestedModeLabel(parsed);
             string note = string.IsNullOrEmpty(live.editorMode) || string.Equals(live.editorMode, requestedMode, StringComparison.Ordinal)
                 ? string.Empty
-                : $"요청 모드({requestedMode})와 실행 중인 에디터 모드({live.editorMode})가 다릅니다. 모드 전환이 필요하면 editor stop 후 다시 launch 하세요.";
+                : $"Requested mode ({requestedMode}) does not match the running editor mode ({live.editorMode}). Run editor stop, then launch again, to switch modes.";
 
             return Success(requestId, new
             {
@@ -71,8 +71,8 @@ public static class EditorLauncher
             return Failure(
                 requestId,
                 ProtocolConstants.ErrorEditorAlreadyRunning,
-                $"이 프로젝트를 연 에디터 프로세스(PID {strayPid.Value})가 이미 있지만 브릿지 인스턴스로 등록되어 있지 않습니다. "
-                + "부팅/컴파일 중이면 잠시 후 다시 시도하고, 패키지 미설치 프로젝트면 해당 에디터를 직접 사용하세요.",
+                $"An editor process (PID {strayPid.Value}) already has this project open, but it is not registered as a bridge instance. "
+                + "If it is still booting or compiling, try again shortly. If the package is not installed in that project, use that editor directly.",
                 retryable: true,
                 stopwatch);
         }
@@ -85,7 +85,7 @@ public static class EditorLauncher
             return Failure(
                 requestId,
                 ProtocolConstants.ErrorEditorLaunchFailed,
-                "프로젝트 버전에 맞는 Unity 에디터 바이너리를 찾지 못했습니다. Unity Hub로 해당 버전을 설치하거나 --editor-path로 지정하세요.",
+                "Could not find a Unity editor binary for the project version. Install that version with Unity Hub, or pass --editor-path.",
                 retryable: false,
                 stopwatch);
         }
@@ -100,14 +100,14 @@ public static class EditorLauncher
         try
         {
             editorProcess = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Process.Start가 null을 반환했습니다.");
+                ?? throw new InvalidOperationException("Process.Start returned null.");
         }
         catch (Exception exception)
         {
             return Failure(
                 requestId,
                 ProtocolConstants.ErrorEditorLaunchFailed,
-                "에디터 기동에 실패했습니다: " + exception.Message,
+                "Failed to start the editor: " + exception.Message,
                 retryable: false,
                 stopwatch);
         }
@@ -123,7 +123,7 @@ public static class EditorLauncher
                 unityVersion = string.Empty,
                 projectRoot = canonicalRoot,
                 waitedMs = 0L,
-                note = "--no-wait: 브릿지 준비를 기다리지 않았습니다. editor-launch.log와 instances list로 상태를 확인하세요.",
+                note = "--no-wait: did not wait for the bridge to become ready. Check editor-launch.log and instances list.",
             }, stopwatch);
         }
 
@@ -136,7 +136,7 @@ public static class EditorLauncher
                 return Failure(
                     requestId,
                     ProtocolConstants.ErrorEditorLaunchFailed,
-                    $"에디터 프로세스가 준비 전에 종료되었습니다 (exit {editorProcess.ExitCode}). 로그 확인: {logFile}",
+                    $"The editor process exited before it was ready (exit {editorProcess.ExitCode}). Log: {logFile}",
                     retryable: false,
                     stopwatch);
             }
@@ -163,18 +163,18 @@ public static class EditorLauncher
         return Failure(
             requestId,
             ProtocolConstants.ErrorEditorWaitTimeout,
-            $"에디터(PID {editorProcess.Id})는 떠 있지만 {timeoutSeconds}초 안에 브릿지가 준비되지 않았습니다. "
-            + $"첫 임포트가 긴 프로젝트면 --timeout을 늘리세요. 로그: {logFile}",
+            $"Editor (PID {editorProcess.Id}) is running, but the bridge was not ready within {timeoutSeconds} seconds. "
+            + $"Increase --timeout when the first import is long. Log: {logFile}",
             retryable: true,
             stopwatch);
     }
 
     /// <summary>
-    /// stdio를 분리해 에디터를 낳는다. 그냥 상속시키면 스폰된 에디터가 CLI의
-    /// stdout/stderr 파이프 write-end를 쥐고 있어, `unity-cli editor launch | grep …`
-    /// 같은 파이프라인이 CLI 종료 후에도 EOF를 못 받고 영원히 매달린다 (실측).
-    /// Unix에서는 `sh -c 'exec …'`로 감싸 /dev/null에 연결한다 — exec이 셸을
-    /// 대체하므로 Process.Id는 그대로 에디터 PID다. 에디터 출력은 -logFile이 담당.
+    /// Spawns the editor with detached stdio. Inheriting the CLI's stdout/stderr
+    /// leaves the editor holding the pipe write-end, so `unity-cli editor launch | grep …`
+    /// never sees EOF and hangs after the CLI exits (measured).
+    /// On Unix, wrap with `sh -c 'exec …'` and redirect to /dev/null — exec replaces
+    /// the shell, so Process.Id stays the editor PID. -logFile owns editor output.
     /// </summary>
     public static ProcessStartInfo BuildStartInfo(string editorBinary, string[] arguments)
     {
@@ -241,9 +241,9 @@ public static class EditorLauncher
     }
 
     /// <summary>
-    /// ps 한 줄이 "이 프로젝트를 연 메인 에디터 프로세스"인지 판별한다.
-    /// 오탐 두 종류를 걸러낸다 (실측 근거): -adb2 AssetImportWorker는 같은
-    /// -projectPath를 갖고, Unity Hub Helper는 argv에 최근 프로젝트 경로 목록을 담는다.
+    /// Decides whether one ps line is the main editor process for this project.
+    /// Filters two measured false positives: -adb2 AssetImportWorker shares the
+    /// same -projectPath, and Unity Hub Helper lists recent project paths in argv.
     /// </summary>
     public static bool IsMainEditorProcessLine(string psLine, string projectRoot)
     {

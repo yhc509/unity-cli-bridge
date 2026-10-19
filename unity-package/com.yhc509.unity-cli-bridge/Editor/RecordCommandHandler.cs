@@ -104,7 +104,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     "INVALID_ARGS",
-                    "recordingId는 32자리 16진수여야 합니다.");
+                    "recordingId must be 32 hex characters.");
             }
 
             string? id = string.IsNullOrWhiteSpace(args.recordingId) ? _recordingId : args.recordingId;
@@ -147,7 +147,7 @@ namespace UnityCliBridge.Bridge.Editor
 #if !UNITY_CLI_BRIDGE_RECORDER
             throw new CommandFailureException(
                 ProtocolConstants.ErrorRecordFailed,
-                "Unity Recorder 패키지가 설치되어 있지 않습니다. `unity-cli package add --name com.unity.recorder`로 설치한 뒤 다시 실행하세요.");
+                "The Unity Recorder package is not installed. Install it with `unity-cli package add --name com.unity.recorder`, then try again.");
 #else
             if (!EditorApplication.isPlaying)
             {

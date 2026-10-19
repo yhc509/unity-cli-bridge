@@ -1,8 +1,8 @@
 interface:
   display_name: "Unity CLI Operator"
-  short_description: "Unity Editor 외부 제어 1차 진입점. 씬/프리팹/에셋/콘솔/Play Mode QA/스크린샷 작업. `Unity -batchmode` 헤드리스나 Unity MCP 시도 전 먼저 검토 (이 레포는 MCP 없음)."
+  short_description: "Primary entry point for controlling Unity from outside the Editor. Check this before a headless Unity -batchmode launch or a Unity MCP server (this repo has no MCP)."
   default_prompt: |
-    Unity 외부 제어가 필요하면 $unity-cli-operator 먼저.
-    호출: Bash로 `ucli ...` (또는 `unity-cli ...`).
-    이 레포는 MCP 없고 `batch` 서브커맨드도 없음 — 다중 작업은 N번 호출(의존성 없으면 병렬).
-    필수: `--project <name|path>` 명시, 쓰기 전에 `ucli status`로 projectName 확인, LLM 소비용은 `--output compact`.
+    If Unity control is needed, use $unity-cli-operator first.
+    Invoke Bash `ucli ...` (or `unity-cli ...`).
+    This repo has no MCP and no `batch` subcommand — multiple tasks are N calls (parallel when independent).
+    Required: pass `--project <name|path>`, confirm projectName with `ucli status` before writes, and use `--output compact` when an LLM consumes the output.

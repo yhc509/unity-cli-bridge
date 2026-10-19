@@ -171,7 +171,7 @@ unity-cli execute-menu --list "GameObject" # Browse Unity menus
 unity-cli execute --code "Debug.Log(1);" --force  # Run arbitrary C# (escape hatch)
 unity-cli execute --code "Debug.Log(__pucArgsJson);" --args '{"k":"v"}' --force
 unity-cli execute --code "__pucResult = new Vector3(1.5f, 0f, 3.25f);" --force
-# 협력적 timeout — 사용자 코드는 __pucToken 체크 필요
+# Cooperative timeout — user code must check __pucToken
 unity-cli execute --file my-script.cs --force --timeout 60
 ```
 
@@ -179,7 +179,7 @@ unity-cli execute --file my-script.cs --force --timeout 60
 
 Assign a value to `__pucResult` when the caller needs a structured return value. The response includes `hasResult: true` and `result` as type-preserving JSON, with `float` formatted using G9 and `double` using G17 for round-trip precision. Editor-assembly custom `[PucCommand]` methods can return `ExecuteValueSerializer.Serialize(obj)`; runtime-assembly commands must serialize precise JSON themselves.
 
-`--timeout`(기본 30초, 상한 600초)은 **협력적** cancel입니다. 사용자 코드가 `__pucToken.ThrowIfCancellationRequested()`(또는 다른 token API)를 호출해야 강제 종료됩니다. 호출하지 않으면 main thread를 계속 점유하므로 `--force`를 쓰는 사용자가 책임집니다. CLI는 Editor가 `EXECUTE_TIMEOUT`을 보고할 때까지 기다리도록 IPC 타임아웃을 `--timeout`보다 길게 잡습니다 — 그래서 `--timeout`보다 짧은 `--timeout-ms`를 줘도 그 값으로 먼저 끊지 않습니다.
+`--timeout` (default 30 seconds, maximum 600) is a **cooperative** cancel. User code must call `__pucToken.ThrowIfCancellationRequested()` (or another token API) to stop. If it does not, the call keeps the main thread, and that is the responsibility of whoever passed `--force`. The CLI waits until the Editor reports `EXECUTE_TIMEOUT`, so its IPC timeout is longer than `--timeout`. A shorter `--timeout-ms` does not cut the call off first.
 
 `record start` captures the Play Mode Game View as mp4 via Unity Recorder. It returns `STARTED` plus a `recordingId` immediately; add `--duration N --wait` to auto-stop and poll until the mp4 is finalized. Without `--duration`, stop manually with `record stop`. Outputs default to `Library/com.yhc509.unity-cli-bridge/recordings/`; pass `--path` to move the finalized mp4.
 
@@ -208,13 +208,13 @@ unity-cli scene inspect --path ... --node "/Player[0]/Arm[0]" --max-depth 2
 # Build scenes with convenience commands
 unity-cli scene add-object --path Assets/Scenes/Main.unity --name Cube --primitive Cube \
   --parent "/Environment[0]" --position 3,0,0
-# → Response includes createdPath — no follow-up inspect needed
+# → Response includes createdPath: /Environment[0]/Cube[0] — use that path below
 
-unity-cli scene set-transform --node "/Cube[0]" --position 0,1,0 --scale 2,2,2
-unity-cli scene assign-material --node "/Cube[0]" --material Assets/Materials/Red.mat
+unity-cli scene set-transform --node "/Environment[0]/Cube[0]" --position 0,1,0 --scale 2,2,2
+unity-cli scene assign-material --node "/Environment[0]/Cube[0]" --material Assets/Materials/Red.mat
 
 # Component operations
-unity-cli scene list-components --node "/Cube[0]"
+unity-cli scene list-components --node "/Environment[0]/Cube[0]"
 unity-cli scene add-component --path Assets/Scenes/Main.unity --node "/Player[0]" --type Rigidbody --values '{"mass":5}'
 unity-cli scene remove-component --path Assets/Scenes/Main.unity --node "/Player[0]" --type BoxCollider --index 0 --force
 

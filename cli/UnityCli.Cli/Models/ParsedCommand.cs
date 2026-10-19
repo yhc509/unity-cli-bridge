@@ -246,25 +246,25 @@ public sealed class ParsedCommand
         {
             try
             {
-                var raw = JsonDocument.Parse(RawJson ?? throw new CliUsageException("raw 명령에는 `--json` payload가 필요합니다."));
+                var raw = JsonDocument.Parse(RawJson ?? throw new CliUsageException("A raw command requires a `--json` payload."));
                 var root = raw.RootElement;
 
                 // TryGetProperty/GetString throw InvalidOperationException on the wrong ValueKind,
                 // which escapes the JsonException catch below and surfaces as CLI_ERROR.
                 if (root.ValueKind != JsonValueKind.Object)
                 {
-                    throw new CliUsageException("raw payload는 JSON object여야 합니다.");
+                    throw new CliUsageException("The raw payload must be a JSON object.");
                 }
 
                 if (!root.TryGetProperty("command", out var commandElement))
                 {
-                    throw new CliUsageException("raw payload에는 `command` 필드가 필요합니다.");
+                    throw new CliUsageException("The raw payload requires a `command` field.");
                 }
 
                 if (commandElement.ValueKind != JsonValueKind.String
                     || string.IsNullOrWhiteSpace(commandElement.GetString()))
                 {
-                    throw new CliUsageException("raw payload의 `command`는 비어 있지 않은 문자열이어야 합니다.");
+                    throw new CliUsageException("The raw payload `command` must be a non-empty string.");
                 }
 
                 var rawRequest = new CommandEnvelope
@@ -278,7 +278,7 @@ public sealed class ParsedCommand
             }
             catch (JsonException exception)
             {
-                throw new CliUsageException("raw payload는 올바른 JSON이어야 합니다. " + exception.Message);
+                throw new CliUsageException("The raw payload must be valid JSON. " + exception.Message);
             }
         }
 
@@ -350,7 +350,7 @@ public sealed class ParsedCommand
                 CommandKind.ProfileMemory => ProtocolConstants.CommandProfileMemory,
                 CommandKind.ProfileMemorySnapshot => ProtocolConstants.CommandProfileMemorySnapshot,
                 CommandKind.EditorStop => ProtocolConstants.CommandEditorQuit,
-                _ => throw new CliUsageException($"지원하지 않는 live 명령입니다: {Kind}"),
+                _ => throw new CliUsageException($"Unsupported live command: {Kind}"),
             },
             argumentsJson = BuildArgumentsJson(),
         };
@@ -700,7 +700,7 @@ public sealed class ParsedCommand
 
         if (argumentsElement.ValueKind is not (JsonValueKind.Object or JsonValueKind.Null or JsonValueKind.Undefined))
         {
-            throw new CliUsageException("raw payload의 `arguments`는 JSON object여야 합니다.");
+            throw new CliUsageException("The raw payload `arguments` must be a JSON object.");
         }
 
         if (!Force)
@@ -716,7 +716,7 @@ public sealed class ParsedCommand
         else
         {
             arguments = JsonNode.Parse(argumentsElement.GetRawText()) as JsonObject
-                ?? throw new CliUsageException("raw `--force`를 쓰려면 `arguments`가 JSON object여야 합니다.");
+                ?? throw new CliUsageException("raw `--force` requires `arguments` to be a JSON object.");
         }
 
         // Raw force is explicit: the flag may fill a missing value, but not contradict payload intent.
@@ -819,7 +819,7 @@ public sealed class ParsedCommand
             string filePath = Path.GetFullPath(ExecuteCodeFile);
             if (!File.Exists(filePath))
             {
-                throw new CliUsageException("코드 파일을 찾지 못했습니다: " + filePath);
+                throw new CliUsageException("Could not find the code file: " + filePath);
             }
 
             return File.ReadAllText(filePath);
@@ -832,13 +832,13 @@ public sealed class ParsedCommand
     {
         if (string.IsNullOrWhiteSpace(csv))
         {
-            throw new CliUsageException($"{option} 값은 {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}이어야 합니다.");
+            throw new CliUsageException($"{option} must be {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}.");
         }
 
         var parts = csv.Split(',', StringSplitOptions.TrimEntries);
         if (parts.Length != 2 || index >= parts.Length || !int.TryParse(parts[index], out var value))
         {
-            throw new CliUsageException($"{option} 값은 {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}이어야 합니다.");
+            throw new CliUsageException($"{option} must be {GetQaSwipeCoordinateDescription(usesTargetRelativeOffsets)}.");
         }
 
         return value;
@@ -847,8 +847,8 @@ public sealed class ParsedCommand
     private static string GetQaSwipeCoordinateDescription(bool usesTargetRelativeOffsets)
     {
         return usesTargetRelativeOffsets
-            ? "`x,y` 형식의 target 중심 기준 픽셀 오프셋"
-            : "`x,y` 형식의 절대 화면 픽셀 좌표";
+            ? "`x,y` pixel offset from the target center"
+            : "`x,y` absolute screen pixel coordinates";
     }
 
     public string ResolvePrefabSpecJson()
@@ -1012,7 +1012,7 @@ public sealed class ParsedCommand
         }
         catch (JsonException exception)
         {
-            throw new CliUsageException("`--values`는 object 형태의 JSON이어야 합니다. " + exception.Message);
+            throw new CliUsageException("`--values` must be a JSON object. " + exception.Message);
         }
     }
 
@@ -1021,7 +1021,7 @@ public sealed class ParsedCommand
         string normalized = ProtocolConstants.NormalizeScenePrimitive(primitive);
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            throw new CliUsageException("`--primitive`는 `" + string.Join("`, `", ProtocolConstants.SupportedScenePrimitiveNames) + "` 중 하나여야 합니다.");
+            throw new CliUsageException("`--primitive` must be one of `" + string.Join("`, `", ProtocolConstants.SupportedScenePrimitiveNames) + "`.");
         }
 
         return normalized;
@@ -1035,7 +1035,7 @@ public sealed class ParsedCommand
             || !float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float y)
             || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float z))
         {
-            throw new CliUsageException($"{option} 값은 `x,y,z` 형식이어야 합니다.");
+            throw new CliUsageException($"{option} must be `x,y,z`.");
         }
 
         return new SceneVector3Value
@@ -1054,7 +1054,7 @@ public sealed class ParsedCommand
             string filePath = Path.GetFullPath(specFile);
             if (!File.Exists(filePath))
             {
-                throw new CliUsageException("spec 파일을 찾지 못했습니다: " + filePath);
+                throw new CliUsageException("Could not find the spec file: " + filePath);
             }
 
             specJson = File.ReadAllText(filePath);
@@ -1062,7 +1062,7 @@ public sealed class ParsedCommand
 
         if (string.IsNullOrWhiteSpace(specJson))
         {
-            throw new CliUsageException(label + " spec이 비어 있습니다.");
+            throw new CliUsageException(label + " spec is empty.");
         }
 
         return specJson;

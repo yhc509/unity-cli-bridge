@@ -46,7 +46,7 @@ public static class QaSequenceSpecParser
         }
         catch (JsonException exception)
         {
-            throw new CliUsageException($"--spec-json 파싱 실패: {exception.Message}");
+            throw new CliUsageException($"Failed to parse --spec-json: {exception.Message}");
         }
 
         using (doc)
@@ -54,14 +54,14 @@ public static class QaSequenceSpecParser
             JsonElement root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
-                throw new CliUsageException("--spec-json은 JSON object여야 합니다.");
+                throw new CliUsageException("--spec-json must be a JSON object.");
             }
 
             if (!root.TryGetProperty("steps", out JsonElement stepsEl)
                 || stepsEl.ValueKind != JsonValueKind.Array
                 || stepsEl.GetArrayLength() == 0)
             {
-                throw new CliUsageException("--spec-json: 비어 있지 않은 `steps` 배열이 필요합니다.");
+                throw new CliUsageException("--spec-json requires a non-empty `steps` array.");
             }
 
             var steps = new List<QaSequenceStep>();
@@ -79,7 +79,7 @@ public static class QaSequenceSpecParser
     {
         if (stepEl.ValueKind != JsonValueKind.Object)
         {
-            throw new CliUsageException("--spec-json: steps의 각 원소는 JSON object여야 합니다.");
+            throw new CliUsageException("--spec-json: each steps element must be a JSON object.");
         }
 
         var wait = new List<QaSequenceCondition>();
@@ -87,7 +87,7 @@ public static class QaSequenceSpecParser
         {
             if (waitEl.ValueKind != JsonValueKind.Array)
             {
-                throw new CliUsageException("--spec-json: step.wait는 배열이어야 합니다.");
+                throw new CliUsageException("--spec-json: step.wait must be an array.");
             }
 
             foreach (JsonElement conditionEl in waitEl.EnumerateArray())
@@ -101,7 +101,7 @@ public static class QaSequenceSpecParser
         {
             if (actionsEl.ValueKind != JsonValueKind.Array)
             {
-                throw new CliUsageException("--spec-json: step.actions는 배열이어야 합니다.");
+                throw new CliUsageException("--spec-json: step.actions must be an array.");
             }
 
             foreach (JsonElement actionEl in actionsEl.EnumerateArray())
@@ -191,7 +191,7 @@ public static class QaSequenceSpecParser
     {
         if (tapEl.ValueKind != JsonValueKind.Object)
         {
-            throw new CliUsageException("--spec-json: tap action은 {x,y} 또는 {target} 객체여야 합니다.");
+            throw new CliUsageException("--spec-json: a tap action must be an object with {x,y} or {target}.");
         }
 
         bool hasX = TryGetInt32(tapEl, "x", out int x);
@@ -201,7 +201,7 @@ public static class QaSequenceSpecParser
         {
             if (!hasX || !hasY || !string.IsNullOrEmpty(target))
             {
-                throw new CliUsageException("--spec-json: tap action은 x/y 좌표 쌍 또는 target 중 하나만 필요합니다.");
+                throw new CliUsageException("--spec-json: a tap action requires either an x/y pair or a target, not both.");
             }
 
             action.hasTapCoords = true;
@@ -212,7 +212,7 @@ public static class QaSequenceSpecParser
 
         if (string.IsNullOrWhiteSpace(target))
         {
-            throw new CliUsageException("--spec-json: tap action에는 x/y 또는 target이 필요합니다.");
+            throw new CliUsageException("--spec-json: a tap action requires x/y or a target.");
         }
 
         action.target = target;
@@ -222,7 +222,7 @@ public static class QaSequenceSpecParser
     {
         if (swipeEl.ValueKind != JsonValueKind.Object)
         {
-            throw new CliUsageException("--spec-json: swipe action은 객체여야 합니다.");
+            throw new CliUsageException("--spec-json: a swipe action must be an object.");
         }
 
         if (swipeEl.TryGetProperty("from", out JsonElement fromEl)
@@ -261,7 +261,7 @@ public static class QaSequenceSpecParser
             }
         }
 
-        throw new CliUsageException($"--spec-json: {label} 값은 [x,y] 또는 \"x,y\" 형식이어야 합니다.");
+        throw new CliUsageException($"--spec-json: {label} must be [x,y] or \"x,y\".");
     }
 
     private static string GetSinglePresentKey(JsonElement element, string[] keys, string label)
@@ -270,7 +270,7 @@ public static class QaSequenceSpecParser
         // TryGetProperty from throwing InvalidOperationException on a non-object element.
         if (element.ValueKind != JsonValueKind.Object)
         {
-            throw new CliUsageException($"--spec-json: {label}의 각 원소는 JSON object여야 합니다.");
+            throw new CliUsageException($"--spec-json: each {label} element must be a JSON object.");
         }
 
         string? present = null;
@@ -283,13 +283,13 @@ public static class QaSequenceSpecParser
 
             if (present != null)
             {
-                throw new CliUsageException($"--spec-json: {label}에는 kind 키를 하나만 지정할 수 있습니다.");
+                throw new CliUsageException($"--spec-json: {label} must specify exactly one kind key.");
             }
 
             present = key;
         }
 
-        return present ?? throw new CliUsageException($"--spec-json: {label} kind를 찾지 못했습니다.");
+        return present ?? throw new CliUsageException($"--spec-json: could not find a kind for {label}.");
     }
 
     private static string RequireValidOp(JsonElement element)
@@ -297,7 +297,7 @@ public static class QaSequenceSpecParser
         string op = TryGetString(element, "op") ?? string.Empty;
         if (string.IsNullOrWhiteSpace(op) || !ValidOps.Contains(op))
         {
-            throw new CliUsageException("--spec-json: op는 ==, !=, >=, <=, near, changed 중 하나여야 합니다.");
+            throw new CliUsageException("--spec-json: op must be ==, !=, >=, <=, near, or changed.");
         }
 
         return op;
@@ -307,7 +307,7 @@ public static class QaSequenceSpecParser
     {
         if (!element.TryGetProperty("value", out JsonElement valueEl))
         {
-            throw new CliUsageException($"--spec-json: {label} condition에는 value가 필요합니다.");
+            throw new CliUsageException($"--spec-json: {label} condition requires a value.");
         }
 
         return NormalizeValue(valueEl);
@@ -331,7 +331,7 @@ public static class QaSequenceSpecParser
         {
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
-            _ => throw new CliUsageException($"--spec-json: {label} 값은 bool이어야 합니다."),
+            _ => throw new CliUsageException($"--spec-json: {label} must be a bool."),
         };
     }
 
@@ -344,7 +344,7 @@ public static class QaSequenceSpecParser
             JsonValueKind.String => element.GetString() ?? string.Empty,
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
-            _ => throw new CliUsageException("--spec-json: value는 number, number array, string, bool 중 하나여야 합니다."),
+            _ => throw new CliUsageException("--spec-json: value must be a number, number array, string, or bool."),
         };
     }
 
@@ -363,7 +363,7 @@ public static class QaSequenceSpecParser
     {
         if (string.IsNullOrWhiteSpace(condition.target))
         {
-            throw new CliUsageException($"--spec-json: {kind} condition에는 target이 필요합니다.");
+            throw new CliUsageException($"--spec-json: {kind} condition requires a target.");
         }
     }
 
@@ -371,13 +371,13 @@ public static class QaSequenceSpecParser
     {
         if (element.ValueKind != JsonValueKind.String)
         {
-            throw new CliUsageException($"--spec-json: {label} 값은 문자열이어야 합니다.");
+            throw new CliUsageException($"--spec-json: {label} must be a string.");
         }
 
         string? value = element.GetString();
         if (string.IsNullOrWhiteSpace(value))
         {
-            throw new CliUsageException($"--spec-json: {label} 값이 비어 있습니다.");
+            throw new CliUsageException($"--spec-json: {label} must not be empty.");
         }
 
         return value;
@@ -387,7 +387,7 @@ public static class QaSequenceSpecParser
     {
         if (!element.TryGetProperty(propertyName, out JsonElement valueEl))
         {
-            throw new CliUsageException($"--spec-json: {label}.{propertyName} 값이 필요합니다.");
+            throw new CliUsageException($"--spec-json: {label}.{propertyName} requires a value.");
         }
 
         return RequireInt32(valueEl, $"{label}.{propertyName}");
@@ -397,7 +397,7 @@ public static class QaSequenceSpecParser
     {
         if (!element.TryGetInt32(out int value))
         {
-            throw new CliUsageException($"--spec-json: {label} 값은 정수여야 합니다.");
+            throw new CliUsageException($"--spec-json: {label} must be an integer.");
         }
 
         return value;

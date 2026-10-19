@@ -11,7 +11,7 @@ public sealed class EditorReadyWaitTests
     public async Task PollEditorReadyAsync_WaitsUntilStatusIsNotCompilingOrUpdating()
     {
         var parsed = new ParsedCommand(CommandKind.Compile) { Wait = true };
-        var started = Success(new { message = "script compilation 요청 완료" });
+        var started = Success(new { message = "script compilation requested" });
         var statusResponses = new Queue<ResponseEnvelope>([
             Success(new StatusPayload { isCompiling = true }),
             Success(new StatusPayload { isUpdating = true }),
@@ -34,7 +34,7 @@ public sealed class EditorReadyWaitTests
         Assert.Equal([ProtocolConstants.CommandStatus, ProtocolConstants.CommandStatus, ProtocolConstants.CommandStatus], polledCommands);
         Assert.True(result.data.HasValue);
         JsonElement data = result.data.Value;
-        Assert.Equal("script compilation 요청 완료", data.GetProperty("message").GetString());
+        Assert.Equal("script compilation requested", data.GetProperty("message").GetString());
         Assert.True(data.GetProperty("ready").GetBoolean());
         Assert.Equal("ready", data.GetProperty("readyMessage").GetString());
         Assert.True(data.GetProperty("waitedMs").GetInt64() >= 0);
@@ -44,7 +44,7 @@ public sealed class EditorReadyWaitTests
     public async Task PollEditorReadyAsync_TreatsLiveUnavailableAsTransient()
     {
         var parsed = new ParsedCommand(CommandKind.Refresh) { Wait = true };
-        var started = Success(new { message = "AssetDatabase.Refresh 완료" });
+        var started = Success(new { message = "AssetDatabase.Refresh completed" });
         var statusResponses = new Queue<ResponseEnvelope>([
             ResponseEnvelope.Failure("poll-1", "target-1", "LIVE_UNAVAILABLE", "Bridge unavailable.", retryable: true),
             Success(new StatusPayload()),
@@ -232,7 +232,7 @@ public sealed class EditorReadyWaitTests
         Assert.Equal("LIVE_UNAVAILABLE", result.error?.code);
         Assert.True(result.retryable);
         Assert.Equal(expectedProjectHash, result.target);
-        Assert.Contains("Bridge 인증 정보를 읽지 못했습니다", result.error?.details?.GetString());
+        Assert.Contains("Could not read the bridge auth token", result.error?.details?.GetString());
     }
 
     [Fact]

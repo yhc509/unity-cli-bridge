@@ -94,7 +94,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorProfileInProgress,
-                        "memory snapshot이 진행 중입니다. 끝난 뒤 capture를 시작하세요.");
+                        "A memory snapshot is in progress. Wait for it to finish before starting a capture.");
                 }
 
                 _phase = CapturePhase.Capturing;
