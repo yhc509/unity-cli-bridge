@@ -346,6 +346,132 @@ public sealed class EditorReadyWaitTests
         Assert.Contains("valid status payload", result.error?.details?.GetString());
     }
 
+    [Fact]
+    public async Task PollEditorReadyAsync_Play_WaitsForPostReloadBridge()
+    {
+        var parsed = new ParsedCommand(CommandKind.Play) { Wait = true };
+        var started = Success(new PlayStatePayload { isPlaying = true, domainId = "edit-domain", reloadsDomain = true });
+        var statusResponses = new Queue<ResponseEnvelope>([
+            Success(new StatusPayload { isPlaying = false, isChangingPlayMode = true, domainId = "edit-domain" }),
+            // isPlaying already reads true but this is still the pre-reload domain: not ready.
+            Success(new StatusPayload { isPlaying = true, domainId = "edit-domain" }),
+            Success(new StatusPayload { isPlaying = true, domainId = "play-domain" }),
+        ]);
+
+        var result = await UnityCli.Cli.CliApp.PollEditorReadyAsync(
+            parsed,
+            started,
+            (_, _, _) => Task.FromResult(statusResponses.Dequeue()),
+            delayAsync: (_, _) => Task.CompletedTask,
+            timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ProtocolConstants.StatusSuccess, result.status);
+        Assert.Empty(statusResponses);
+        JsonElement data = result.data!.Value;
+        Assert.True(data.GetProperty("isPlaying").GetBoolean());
+        Assert.False(data.TryGetProperty("domainId", out _));
+        Assert.False(data.TryGetProperty("reloadsDomain", out _));
+    }
+
+    [Fact]
+    public async Task PollEditorReadyAsync_Play_ToleratesManyTransportFailuresDuringReload()
+    {
+        var parsed = new ParsedCommand(CommandKind.Play) { Wait = true };
+        var started = Success(new PlayStatePayload { isPlaying = true, domainId = "a", reloadsDomain = true });
+        int polls = 0;
+
+        var result = await UnityCli.Cli.CliApp.PollEditorReadyAsync(
+            parsed,
+            started,
+            (_, _, _) =>
+            {
+                polls++;
+                if (polls <= 10)
+                {
+                    throw new FileNotFoundException("socket gone during domain reload");
+                }
+
+                return Task.FromResult(Success(new StatusPayload { isPlaying = true, domainId = "b" }));
+            },
+            delayAsync: (_, _) => Task.CompletedTask,
+            timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ProtocolConstants.StatusSuccess, result.status);
+        Assert.Equal(11, polls);
+    }
+
+    [Fact]
+    public async Task PollEditorReadyAsync_Play_WithoutDomainReload_ReadyOnceEntered()
+    {
+        var parsed = new ParsedCommand(CommandKind.Play) { Wait = true };
+        var started = Success(new PlayStatePayload { isPlaying = true, domainId = "a", reloadsDomain = false });
+        var statusResponses = new Queue<ResponseEnvelope>([
+            Success(new StatusPayload { isPlaying = true, isChangingPlayMode = true, domainId = "a" }),
+            Success(new StatusPayload { isPlaying = true, domainId = "a" }),
+        ]);
+
+        var result = await UnityCli.Cli.CliApp.PollEditorReadyAsync(
+            parsed,
+            started,
+            (_, _, _) => Task.FromResult(statusResponses.Dequeue()),
+            delayAsync: (_, _) => Task.CompletedTask,
+            timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ProtocolConstants.StatusSuccess, result.status);
+        Assert.Empty(statusResponses);
+    }
+
+    [Fact]
+    public async Task PollEditorReadyAsync_Stop_WaitsUntilEditMode()
+    {
+        var parsed = new ParsedCommand(CommandKind.Stop) { Wait = true };
+        var statusResponses = new Queue<ResponseEnvelope>([
+            Success(new StatusPayload { isPlaying = true, isChangingPlayMode = true }),
+            Success(new StatusPayload { isPlaying = false }),
+        ]);
+
+        var result = await UnityCli.Cli.CliApp.PollEditorReadyAsync(
+            parsed,
+            Success(new StopStatePayload()),
+            (_, _, _) => Task.FromResult(statusResponses.Dequeue()),
+            delayAsync: (_, _) => Task.CompletedTask,
+            timeout: TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ProtocolConstants.StatusSuccess, result.status);
+        Assert.Empty(statusResponses);
+    }
+
+    [Theory]
+    [InlineData(CommandKind.Play, ProtocolConstants.ErrorPlayWaitTimeout)]
+    [InlineData(CommandKind.Stop, ProtocolConstants.ErrorStopWaitTimeout)]
+    public async Task PollEditorReadyAsync_PlayStop_TimeOutWithOwnCode(CommandKind kind, string expectedCode)
+    {
+        var result = await UnityCli.Cli.CliApp.PollEditorReadyAsync(
+            new ParsedCommand(kind) { Wait = true },
+            Success(new { isPlaying = kind == CommandKind.Play }),
+            (_, _, _) => throw new InvalidOperationException("Should not poll after timeout."),
+            delayAsync: (_, _) => Task.CompletedTask,
+            timeout: TimeSpan.Zero);
+
+        Assert.Equal(expectedCode, result.error?.code);
+        Assert.True(result.retryable);
+    }
+
+    [Fact]
+    public void IsSettledFor_Play_OlderBridgeWithoutTransitionFields_FallsBackToIsPlaying()
+    {
+        Assert.True(UnityCli.Cli.CliApp.IsSettledFor(CommandKind.Play, new StatusPayload { isPlaying = true }, new PlayStatePayload { isPlaying = true }));
+        Assert.False(UnityCli.Cli.CliApp.IsSettledFor(CommandKind.Play, new StatusPayload { isPlaying = false }, null));
+    }
+
+    [Fact]
+    public void ResolveEditorReadyPollInterval_IsShortForPlayAndStop()
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(200), UnityCli.Cli.CliApp.ResolveEditorReadyPollInterval(CommandKind.Play));
+        Assert.Equal(TimeSpan.FromMilliseconds(200), UnityCli.Cli.CliApp.ResolveEditorReadyPollInterval(CommandKind.Stop));
+        Assert.Equal(TimeSpan.FromSeconds(2), UnityCli.Cli.CliApp.ResolveEditorReadyPollInterval(CommandKind.Compile));
+    }
+
     private static ResponseEnvelope Success<T>(T data)
     {
         return ResponseEnvelope.Success(

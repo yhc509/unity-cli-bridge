@@ -73,6 +73,9 @@ for (int i = 0; i < workItems.Count; i++)
 }
 ```
 
+- `play`, `stop`, `refresh`, and `compile` wait until Unity has settled: Play Mode fully entered (or exited) with the bridge reachable again after the domain reload, or the compile/import finished. Do not add `sleep` after them. `--no-wait` returns right after the request.
+- Inside `execute`, `Object` means `UnityEngine.Object` (the wrapper adds `using Object = UnityEngine.Object;`), so `Object.FindFirstObjectByType<T>()` compiles as written. A user alias with the same name wins.
+- A snippet is compiled once and cached until the next domain reload. A repeat call with the same `--code` skips compilation (about 0.5 s saved per call; the response sets `cacheHit: true` and `compileMs: 0`), so keep the code identical and pass changing values through `--args`.
 - In `execute --args` user code, do not declare the wrapper-reserved prefix `__puc_internal_*`, or the variables `__pucToken` and `__pucResult`.
 - Do not put secrets or credentials in `execute --args`. CodeDOM compilation can briefly write a `.cs` file to the OS temp directory.
 - **Attach `--output compact` by default whenever an LLM consumes the command.** The reason and the exceptions are in [references/command-flows.md](references/command-flows.md) under `Checking status`.
@@ -98,14 +101,37 @@ for (int i = 0; i < workItems.Count; i++)
 - Tap a listed world object with `qa tap --target <path>`. If the object's `TryQaTap()` handles it, that runs; otherwise the bridge injects an Input System tap at the anchor. That reaches raw Input System polling that `qa tap --x --y` (EventSystem) does not. Same-named siblings resolve to the first match, so give tappable objects unique names or labels. Details are in [references/qa-testing.md](references/qa-testing.md).
 - Send a condition wait and a multi-step input together with `qa run-sequence --spec-json @file`. When you need video, add `--record --record-path /tmp/seq.mp4` so only the sequence interval is saved as mp4. Details are in [references/qa-testing.md](references/qa-testing.md).
 
+### Per-frame Play Mode logic (autopilot, input driver, watcher)
+
+**Never drive the game by calling `execute` from a shell loop, and never `sleep`-poll state between calls.** Every call is a CLI process plus an IPC round trip, so a loop of 100 calls costs a minute and still reacts far slower than one frame. Register the per-frame logic inside the Editor once with `PucFrameLoop`, let Play Mode run, then read the result:
+
+```bash
+unity-cli play --project "$P" --output compact          # returns once Play Mode is entered and the bridge is back
+unity-cli execute --force --project "$P" --output compact --code '
+var bird = GameObject.Find("Bird");
+PucFrameLoop.Start("autopilot", () => {
+    if (bird == null) return false;                      // scene reloaded or object destroyed: finish
+    if (bird.transform.position.y < 0f) bird.SendMessage("Flap");
+    return true;                                         // keep running next frame
+}, timeoutSeconds: 20);
+__pucResult = "started";'
+sleep 10                                                  # one wait for game time to pass is fine
+unity-cli execute --force --project "$P" --output compact --code '__pucResult = PucFrameLoop.Status("autopilot") + " score=" + Object.FindFirstObjectByType<GameManager>().Score;'
+```
+
+- `PucFrameLoop.Start(name, Func<bool> onFrame, timeoutSeconds = 60)` runs `onFrame` once per editor frame until it returns false, throws, hits the timeout (max 600 s), or Play Mode exits. Starting the same name again replaces the loop.
+- `PucFrameLoop.Status(name)` returns `running|finished|timeout|stopped|play-mode-exited|error: ...` plus `frames=` and `elapsed=`. `PucFrameLoop.Stop(name)` ends a loop. `PucFrameLoop.Running` lists active loop names.
+- The Editor keeps ticking at full rate while a loop runs, focused or not. A domain reload (script compile, or entering Play Mode with domain reload) drops every loop, so start loops after `play` has returned.
+- Capture state in locals from the same snippet (as above). For values you read later, store them on a game object or in a static field of your own code, and read them with a short `execute`.
+
 ### Script Workflow (No Dedicated Commands)
 
 unity-cli does not have dedicated script create/delete commands. Use this combination:
 
 **Create/modify script:**
 1. Write .cs file directly to the Assets/ folder via filesystem
-2. `unity-cli refresh` — trigger AssetDatabase refresh
-3. `unity-cli compile` — request script compilation
+2. `unity-cli refresh` — refresh the AssetDatabase; it waits until the resulting compile/import finishes and the bridge is reachable again
+3. `unity-cli compile` — only when you need an explicit recompile without file changes; it also waits by default
 4. `unity-cli read-console --type error` — check for compile errors
 
 **Delete script:**

@@ -314,6 +314,39 @@ public sealed class CliArgumentParserTests
         Assert.True(parsed.Wait);
     }
 
+    [Theory]
+    [InlineData("compile", CommandKind.Compile)]
+    [InlineData("refresh", CommandKind.Refresh)]
+    [InlineData("play", CommandKind.Play)]
+    [InlineData("stop", CommandKind.Stop)]
+    public void Parse_EditorStateCommands_WaitByDefault(string command, CommandKind expectedKind)
+    {
+        var parsed = CliArgumentParser.Parse([command]);
+
+        Assert.Equal(expectedKind, parsed.Kind);
+        Assert.True(parsed.Wait);
+    }
+
+    [Theory]
+    [InlineData("compile")]
+    [InlineData("refresh")]
+    [InlineData("play")]
+    [InlineData("stop")]
+    public void Parse_EditorStateCommands_NoWaitOptsOut(string command)
+    {
+        var parsed = CliArgumentParser.Parse([command, "--no-wait"]);
+
+        Assert.False(parsed.Wait);
+    }
+
+    [Fact]
+    public void Parse_Pause_DoesNotWait()
+    {
+        var parsed = CliArgumentParser.Parse(["pause"]);
+
+        Assert.False(parsed.Wait);
+    }
+
     [Fact]
     public void Parse_CompileTimeoutMs_MarksExplicitTimeout()
     {

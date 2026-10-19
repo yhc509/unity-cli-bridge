@@ -1306,11 +1306,17 @@ namespace UnityCliBridge.Bridge.Editor
                             data = ProtocolJson.Serialize(new MessagePayload { message = "script compilation requested" });
                             break;
                         case ProtocolConstants.CommandPlay:
+                            bool alreadyEnteringOrPlaying = EditorApplication.isPlayingOrWillChangePlaymode;
                             EditorApplication.isPaused = false;
                             EditorApplication.isPlaying = true;
                             _originalRunInBackground = UnityEngine.Application.runInBackground;
                             UnityEngine.Application.runInBackground = true;
-                            data = ProtocolJson.Serialize(new PlayStatePayload { isPlaying = true });
+                            data = ProtocolJson.Serialize(new PlayStatePayload
+                            {
+                                isPlaying = true,
+                                domainId = DomainId,
+                                reloadsDomain = !alreadyEnteringOrPlaying && PlayModeReloadsDomain(),
+                            });
                             break;
                         case ProtocolConstants.CommandPause:
                             EditorApplication.isPaused = true;
@@ -1426,7 +1432,20 @@ namespace UnityCliBridge.Bridge.Editor
                 isUpdating = EditorApplication.isUpdating,
                 activeScenePath = EditorSceneManager.GetActiveScene().path,
                 pipeName = _pipeName,
+                isChangingPlayMode = EditorApplication.isPlaying != EditorApplication.isPlayingOrWillChangePlaymode,
+                domainId = DomainId,
             });
+        }
+
+        // A static initializer runs once per domain, so this value changes on every domain reload.
+        private static readonly string DomainId = Guid.NewGuid().ToString("N");
+
+        private static bool PlayModeReloadsDomain()
+        {
+#pragma warning disable CS0618 // enterPlayModeOptionsEnabled is obsolete on newer Unity versions but still reports the setting.
+            return !(EditorSettings.enterPlayModeOptionsEnabled
+                && (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) != 0);
+#pragma warning restore CS0618
         }
 
         private string HandleExecuteMenu(string argumentsJson)

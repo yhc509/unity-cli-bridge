@@ -25,6 +25,10 @@ namespace UnityCli.Protocol
         public bool isUpdating;
         public string activeScenePath = string.Empty;
         public string pipeName = string.Empty;
+        // True while a Play Mode enter/exit is requested but not finished (isPlaying != isPlayingOrWillChangePlaymode).
+        public bool isChangingPlayMode;
+        // Changes on every domain reload; lets the CLI tell whether the reload that follows `play` has happened.
+        public string domainId = string.Empty;
     }
 
     [Serializable]
@@ -50,6 +54,10 @@ namespace UnityCli.Protocol
     public sealed class PlayStatePayload
     {
         public bool isPlaying;
+        // Domain id at the time of the request, and whether entering Play Mode will reload the domain.
+        // The CLI waits for the domain id to change before reporting Play Mode as ready.
+        public string domainId = string.Empty;
+        public bool reloadsDomain;
     }
 
     [Serializable]
@@ -164,6 +172,10 @@ namespace UnityCli.Protocol
         public string? error;
         public string? result;
         public bool hasResult;
+        // True when the wrapped snippet was already compiled in this domain (SHA-256 cache hit).
+        public bool cacheHit;
+        // Wall milliseconds spent compiling (0 on a cache hit).
+        public long compileMs;
     }
 
     [Serializable]

@@ -66,6 +66,8 @@ namespace UnityCli.Protocol
         public const string ErrorEditorAlreadyRunning = "EDITOR_ALREADY_RUNNING_CONFLICT";
         public const string ErrorCompileWaitTimeout = "COMPILE_WAIT_TIMEOUT";
         public const string ErrorRefreshWaitTimeout = "REFRESH_WAIT_TIMEOUT";
+        public const string ErrorPlayWaitTimeout = "PLAY_WAIT_TIMEOUT";
+        public const string ErrorStopWaitTimeout = "STOP_WAIT_TIMEOUT";
         public const string ErrorSceneForceRequired = "SCENE_FORCE_REQUIRED";
         public const string ErrorBackupFailed = "BACKUP_FAILED";
         public const string ErrorBackupRestoreFailed = "BACKUP_RESTORE_FAILED";

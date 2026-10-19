@@ -57,12 +57,13 @@ public static partial class CliArgumentParser
         parsed = command switch
         {
             "status" => new ParsedCommand(CommandKind.Status),
-            "compile" => new ParsedCommand(CommandKind.Compile),
-            "refresh" => new ParsedCommand(CommandKind.Refresh),
+            // compile/refresh/play/stop wait for the Editor to settle by default; --no-wait opts out.
+            "compile" => new ParsedCommand(CommandKind.Compile) { Wait = true },
+            "refresh" => new ParsedCommand(CommandKind.Refresh) { Wait = true },
             "read-console" => new ParsedCommand(CommandKind.ReadConsole),
-            "play" => new ParsedCommand(CommandKind.Play),
+            "play" => new ParsedCommand(CommandKind.Play) { Wait = true },
             "pause" => new ParsedCommand(CommandKind.Pause),
-            "stop" => new ParsedCommand(CommandKind.Stop),
+            "stop" => new ParsedCommand(CommandKind.Stop) { Wait = true },
             "execute-menu" => new ParsedCommand(CommandKind.ExecuteMenu),
             "screenshot" => new ParsedCommand(CommandKind.Screenshot),
             "execute" => new ParsedCommand(CommandKind.ExecuteCode),
@@ -571,9 +572,11 @@ public static partial class CliArgumentParser
                 case CommandKind.Raw when token == "--force":
                     parsed.Force = true;
                     break;
-                case CommandKind.Compile when token == "--wait":
-                case CommandKind.Refresh when token == "--wait":
+                case CommandKind.Compile or CommandKind.Refresh or CommandKind.Play or CommandKind.Stop when token == "--wait":
                     parsed.Wait = true;
+                    break;
+                case CommandKind.Compile or CommandKind.Refresh or CommandKind.Play or CommandKind.Stop when token == "--no-wait":
+                    parsed.Wait = false;
                     break;
                 case CommandKind.ReadConsole when token == "--limit":
                     parsed.ConsoleLimit = RequireInt(RequireValue(tokens, "--limit"), "--limit");
