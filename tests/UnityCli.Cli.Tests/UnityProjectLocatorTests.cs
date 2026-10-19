@@ -126,7 +126,17 @@ public sealed class UnityProjectLocatorTests
         using var temp = new TempDirectory();
         string projectRoot = Path.Combine(temp.Path, "games", "Game");
         CreateProject(projectRoot);
-        Directory.CreateSymbolicLink(Path.Combine(temp.Path, "link"), projectRoot);
+        string link = Path.Combine(temp.Path, "link");
+        try
+        {
+            Directory.CreateSymbolicLink(link, projectRoot);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            // Windows can refuse symlink creation without Developer Mode. The assertion below
+            // still runs on hosts that allow it, including GitHub-hosted Windows runners.
+            return;
+        }
 
         var locator = new UnityProjectLocator();
         IReadOnlyList<string> found = locator.FindCandidateProjectRoots(temp.Path);

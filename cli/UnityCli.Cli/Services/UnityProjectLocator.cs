@@ -10,6 +10,10 @@ public sealed class UnityProjectLocator
     /// </summary>
     public const int MaxDescendantDepth = 3;
 
+    private static readonly StringComparer PathComparer = Path.DirectorySeparatorChar == '\\'
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
     private static readonly HashSet<string> SkippedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "Library",
@@ -49,7 +53,10 @@ public sealed class UnityProjectLocator
         }
 
         var found = new List<string>();
-        var visited = new HashSet<string>(StringComparer.Ordinal) { canonicalStart };
+        // Windows paths are case-insensitive, and GetCanonicalPath does not resolve links there.
+        // Distinct casing of the same directory must not become two candidates. Unix paths stay
+        // case-sensitive so /Foo and /foo remain different projects.
+        var visited = new HashSet<string>(PathComparer) { canonicalStart };
         SearchDescendants(canonicalStart, MaxDescendantDepth, found, visited);
         found.Sort(StringComparer.Ordinal);
         return found;
@@ -165,7 +172,10 @@ public sealed class UnityProjectLocator
                 continue;
             }
 
-            string canonical = ProtocolConstants.GetCanonicalPath(child);
+            // Resolve directory links before deduping. On macOS and Linux, GetCanonicalPath
+            // already calls realpath. On Windows it does not, so a symlink and its target would
+            // otherwise count as two projects.
+            string canonical = CanonicalDirectory(child);
             if (!visited.Add(canonical))
             {
                 continue;
@@ -179,6 +189,24 @@ public sealed class UnityProjectLocator
 
             SearchDescendants(canonical, depthRemaining - 1, found, visited);
         }
+    }
+
+    private static string CanonicalDirectory(string path)
+    {
+        string resolved = path;
+        try
+        {
+            FileSystemInfo? target = new DirectoryInfo(path).ResolveLinkTarget(returnFinalTarget: true);
+            if (target is not null && !string.IsNullOrWhiteSpace(target.FullName))
+            {
+                resolved = target.FullName;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        return ProtocolConstants.GetCanonicalPath(resolved);
     }
 
     private static bool ShouldSkipDirectory(string name)
