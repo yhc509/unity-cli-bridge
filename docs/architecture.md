@@ -14,7 +14,7 @@
 
 1. When the Unity Editor opens, the bridge starts automatically.
 2. The bridge registers the project real-path hash and instance information in the registry.
-3. The CLI finds the Unity project from the current working directory or `--project <path|name>`, resolves existing directory paths before registry-name matches, and fails fast when the override is neither one, then attaches to the correct instance through the registry.
+3. The CLI finds the Unity project by walking up from the working directory, then searching a few descendant levels (skipping heavy and hidden folders, in canonical-path order), or from `--project <path|name>`. An existing directory path wins over a registry name. Several on-disk matches fail with `AMBIGUOUS_PROJECT` unless a reachable Editor (live process, or a pipe/socket that accepts a connection) or an explicit pin uniquely selects one. The CLI then attaches to that instance through the registry.
 4. Requests are executed on the Editor main thread over local IPC.
 
 ### Live Target Unavailable
