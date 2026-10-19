@@ -2,6 +2,39 @@
 
 How to **read** `profile` output. Command usage lives in SKILL.md's Profile Workflow. This page only answers "can I trust this number?"
 
+## Workflow loop
+
+Diagnose performance with this loop:
+
+1. Run `unity-cli qa run-sequence --spec-json <spec> --profile` to play the sequence and capture at the same time. The response `profileSummary` already contains frame-time percentiles, spike frames, hotspots, GC, and a CPU/GPU-bound verdict.
+2. When you only need a capture, start with `unity-cli profile capture start --frames <n>` and wait for the summary with `unity-cli profile capture stop --wait`.
+3. After the summary shows a problem (overBudget count, spike, verdict), drill into the local sidecar with `unity-cli profile analyze <captureId> --gc` / `--frame <n>` / `--marker <name>` / `--spikes`. There is no Editor round trip, so repeated reads are safe.
+4. Fix the cause in code or assets, then run the same sequence with `--profile` again to make a new capture.
+5. Compare before and after with `unity-cli profile compare <baseCaptureId> <headCaptureId>`. One response has the verdict (`regression` / `improvement` / `unchanged`), frame-time / overBudget / GC deltas, and per-marker regressions and improvements. Sensitivity is `--threshold <percent>` (default 5). List length is `--limit <n>`. This also reads local sidecars only, so it works with the Editor closed. When you read it:
+   - An unfinished capture (stopped by a script recompile, for example) is not compared. It is rejected with `PROFILE_FAILED`. Recapture that side.
+   - `deltaPercent` means something only when the same object's `deltaPercentAvailable` is `true`. If the baseline is 0 (for example the base had zero over-budget frames), a percent is undefined, so read the absolute `delta`.
+   - A marker whose self time (`deltaMs`) is flat but whose GC allocation grew lands in `regressions`. One whose allocation shrank lands in `improvements`.
+   - A budget, Unity version, or frame-count mismatch is a warning in `notes`. Do not trust the result as-is in that case.
+6. For a quick counter sample in Edit Mode, use a preset: `unity-cli profile stats --frames 30 --preset memory` (`frame` / `render` / `gc` / `memory` / `all`).
+
+When a memory leak is the suspect, use the memory loop instead of the frame-time loop:
+
+1. Create a baseline reportId with `unity-cli profile memory`. Reproduce the suspect flow, then run it again for a head reportId. Both must be the **same mode** (both playmode, or both editmode).
+2. Compare with `unity-cli profile memory compare <baseReportId> <headReportId>`. The verdict uses the `Total Used Memory` median (`--threshold`, default 5%), and `increases` says which counters grew. This works with the Editor closed.
+3. An asset type whose Count and Memory rise together (for example `Texture Count` plus `Texture Memory`) is the first leak candidate. A rise in `GC Used Memory` means managed objects are still alive. A rise in `GC Reserved Memory` alone is heap growth. Do not use `Total Reserved` or `System Used` to call a leak.
+4. Take a `.snap` with `unity-cli profile memory snapshot` only when the trend is bad. It needs `com.unity.memoryprofiler` (otherwise it is rejected with an install hint), it does not run at the same time as profile capture, and analysis happens in Unity's Memory Profiler window. The CLI does not parse `.snap`. The file can exceed 1 GB and is not deleted automatically, so delete it when you are done.
+5. If `notes` warns about a mode, Unity version, or frame-count mismatch, do not trust the result as-is. If `deltaPercentAvailable` is false, ignore the percent and read the absolute `delta`.
+
+For an unattended regression with the Editor launched by you, use `editor launch` (headless by default), then `play`, capture or memory, `stop`, `editor stop`, and a local `compare`. The full pipeline and the `LIVE_UNAVAILABLE` retry rule during a domain reload are in section 12 (`Headless regression pipeline`) below.
+
+**Read the sections below before interpreting numbers.** In particular:
+- These numbers were measured inside the Editor. Do not report absolute values as shipping performance. Use them for relative comparison only.
+- If the top hotspot is `Semaphore.WaitForSignal`, `WaitForTargetFPS`, `EditorLoop`, or `Gfx.WaitFor*`, that is a wait or Editor overhead, not the cause. This is a common healthy result.
+- `gpuMedianMs: -1` is an unmeasured sentinel, not "GPU 0 ms".
+- A large `deltaPercent` is noise when `deltaMs` is negligible next to the frame budget. Unity has never published a noise threshold, so do not invent one.
+- The `--budget-ms` default of 16.67 assumes PC 60 fps. For mobile, Unity's recommendation at 30 fps is 21.66 ms.
+- Before suggesting an optimization, check the folklore table (section 10). Caching `Camera.main`, `foreach` boxing, and `GetComponent` GC are all wrong advice on current Unity.
+
 ## 0. The limit you need first — these numbers were measured inside the Editor
 
 `profile capture` runs inside the Unity Editor process. Unity's own position:

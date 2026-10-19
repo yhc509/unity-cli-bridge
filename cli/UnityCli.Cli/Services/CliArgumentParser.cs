@@ -53,6 +53,16 @@ public static partial class CliArgumentParser
             return parsed;
         }
 
+        if (TryGetHelpTopic(tokens.ToArray(), out string? helpTopic))
+        {
+            return new ParsedCommand(CommandKind.Help)
+            {
+                OutputMode = outputMode,
+                ProjectOverride = projectOverride,
+                HelpTopic = helpTopic,
+            };
+        }
+
         var command = tokens.Dequeue().ToLowerInvariant();
         parsed = command switch
         {
@@ -91,6 +101,51 @@ public static partial class CliArgumentParser
 
         ParseCommandOptions(parsed, tokens);
         return parsed;
+    }
+
+    /// <summary>
+    /// `--help` / `-h` anywhere in a command line asks for help on the leading command path
+    /// (`qa --help`, `qa key --help`, `scene patch --path X --help`). A `--help` that directly
+    /// follows a value-taking option (`execute --code --help`) is that option's value, not a help request.
+    /// </summary>
+    internal static bool TryGetHelpTopic(string[] tokens, out string? topic)
+    {
+        topic = null;
+        if (tokens.Length > 1 && string.Equals(tokens[0], "help", StringComparison.OrdinalIgnoreCase))
+        {
+            string[] rest = tokens.Skip(1).TakeWhile(t => !t.StartsWith("-", StringComparison.Ordinal)).Select(t => t.ToLowerInvariant()).ToArray();
+            topic = rest.Length == 0 ? null : string.Join(" ", rest);
+            return true;
+        }
+
+        int helpIndex = -1;
+        for (int i = 0; i < tokens.Length; i++)
+        {
+            if (tokens[i] is "--help" or "-h")
+            {
+                bool followsOption = i > 0 && tokens[i - 1].StartsWith("--", StringComparison.Ordinal);
+                bool directlyAfterPath = tokens.Take(i).All(t => !t.StartsWith("-", StringComparison.Ordinal));
+                if (directlyAfterPath || !followsOption)
+                {
+                    helpIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (helpIndex < 0)
+        {
+            return false;
+        }
+
+        string[] path = tokens
+            .Take(helpIndex)
+            .TakeWhile(t => !t.StartsWith("-", StringComparison.Ordinal))
+            .Select(t => t.ToLowerInvariant())
+            .Where(t => t != "help")
+            .ToArray();
+        topic = path.Length == 0 ? null : string.Join(" ", path);
+        return true;
     }
 
     private static void ApplyCatalogDefaults(ParsedCommand parsed)

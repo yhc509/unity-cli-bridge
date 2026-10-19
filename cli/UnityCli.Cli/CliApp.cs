@@ -21,7 +21,8 @@ public static class CliApp
             outputMode = parsed.OutputMode;
             if (parsed.Kind == CommandKind.Help)
             {
-                Console.WriteLine(CliArgumentParser.BuildHelpText());
+                string? topicHelp = parsed.HelpTopic is null ? null : CliCommandMetadata.BuildTopicHelpText(parsed.HelpTopic);
+                Console.WriteLine(topicHelp ?? CliArgumentParser.BuildHelpText());
                 return 0;
             }
 

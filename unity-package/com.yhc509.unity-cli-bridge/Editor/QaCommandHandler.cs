@@ -104,7 +104,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
 #if ENABLE_INPUT_SYSTEM
-            return true;
+            // A legacy-only project drags UGUI targets synchronously, as it would without the package.
+            return !QaLegacyInputSimulator.IsLegacyOnly;
 #else
             return false;
 #endif
@@ -138,12 +139,8 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (string.Equals(command, ProtocolConstants.CommandQaSwipe, StringComparison.Ordinal))
             {
-#if ENABLE_INPUT_SYSTEM
                 StartSwipeDeferred(argumentsJson, completion, projectHash, requestId);
                 return;
-#else
-                throw CreateInputSystemRequiredException("qa swipe");
-#endif
             }
 
             throw new InvalidOperationException("Unhandled deferred QA command: " + command);
@@ -227,6 +224,14 @@ namespace UnityCliBridge.Bridge.Editor
                 return HandleRightCoordinateTap(screenPosition, args.button);
             }
 
+            bool legacyInput = QaLegacyInputSimulator.IsLegacyOnly;
+            if (legacyInput && EventSystem.current == null)
+            {
+                // Legacy Input Manager game without UI: deliver the tap as touch / left-mouse input.
+                QaInputSimulator.SimulateTap(screenPosition, args.button);
+                return ProtocolJson.Serialize(new QaTapPayload { completed = true });
+            }
+
             EventSystem eventSystem = RequireEventSystem();
             var pointerData = new PointerEventData(eventSystem)
             {
@@ -239,6 +244,12 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (results.Count == 0)
             {
+                if (legacyInput)
+                {
+                    QaInputSimulator.SimulateTap(screenPosition, args.button);
+                    return ProtocolJson.Serialize(new QaTapPayload { completed = true });
+                }
+
 #if ENABLE_INPUT_SYSTEM
                 if (pointerButton == PointerEventData.InputButton.Right)
                 {
@@ -270,12 +281,8 @@ namespace UnityCliBridge.Bridge.Editor
             EventSystem? eventSystem = EventSystem.current;
             if (eventSystem == null)
             {
-#if ENABLE_INPUT_SYSTEM
                 QaInputSimulator.SimulateTap(screenPosition, button);
                 return ProtocolJson.Serialize(new QaTapPayload { completed = true });
-#else
-                throw CreateInputSystemRequiredException("qa tap --button right");
-#endif
             }
 
             var pointerData = new PointerEventData(eventSystem)
@@ -297,12 +304,8 @@ namespace UnityCliBridge.Bridge.Editor
                 }
             }
 
-#if ENABLE_INPUT_SYSTEM
             QaInputSimulator.SimulateTap(screenPosition, button);
             return ProtocolJson.Serialize(new QaTapPayload { completed = true });
-#else
-            throw CreateInputSystemRequiredException("qa tap --button right");
-#endif
         }
 
         private static string HandleTapTarget(QaTapArgs args)
@@ -327,13 +330,9 @@ namespace UnityCliBridge.Bridge.Editor
                 return ProtocolJson.Serialize(new QaTapPayload { completed = true });
             }
 
-#if ENABLE_INPUT_SYSTEM
             Vector2 anchorScreenPosition = GetWorldTapScreenPosition(gameObject, target);
             QaInputSimulator.SimulateTap(anchorScreenPosition, args.button);
             return ProtocolJson.Serialize(new QaTapPayload { completed = true });
-#else
-            throw CreateInputSystemRequiredException("qa tap --target (coordinate fallback)");
-#endif
         }
 
         private static bool TryInvokeQaTappable(GameObject gameObject)
@@ -354,7 +353,6 @@ namespace UnityCliBridge.Bridge.Editor
             return false;
         }
 
-#if ENABLE_INPUT_SYSTEM
         private static Vector2 GetWorldTapScreenPosition(GameObject gameObject, string target)
         {
             Transform anchor = ResolveTapAnchor(gameObject);
@@ -383,7 +381,6 @@ namespace UnityCliBridge.Bridge.Editor
 
             return new Vector2(screenPoint.x, screenPoint.y);
         }
-#endif
 
         private static Transform ResolveTapAnchor(GameObject gameObject)
         {
@@ -902,15 +899,11 @@ namespace UnityCliBridge.Bridge.Editor
                 throw new CommandFailureException("QA_MISSING_KEY", "--key is required for qa key.", false, null);
             }
 
-#if ENABLE_INPUT_SYSTEM
             QaInputSimulator.SimulateKey(args.key);
             return ProtocolJson.Serialize(new QaKeyPayload
             {
                 completed = true,
             });
-#else
-            throw CreateInputSystemRequiredException("qa key");
-#endif
         }
 
         private static void StartWaitUntilDeferred(
@@ -990,7 +983,6 @@ namespace UnityCliBridge.Bridge.Editor
             Poll();
         }
 
-#if ENABLE_INPUT_SYSTEM
         private static void StartSwipeDeferred(
             string argumentsJson,
             TaskCompletionSource<ResponseEnvelope> completion,
@@ -999,7 +991,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             QaSwipeArgs args = ProtocolJson.Deserialize<QaSwipeArgs>(argumentsJson) ?? new QaSwipeArgs();
             SwipeScreenPositions swipeScreenPositions = ResolveSwipeScreenPositions(args);
-            QaInputSimulator.SwipeOperation swipe = QaInputSimulator.BeginSwipe(
+            IQaSwipeOperation swipe = QaInputSimulator.BeginSwipe(
                 swipeScreenPositions.FromScreenPosition,
                 swipeScreenPositions.ToScreenPosition,
                 args.durationMs,
@@ -1045,7 +1037,6 @@ namespace UnityCliBridge.Bridge.Editor
             EditorTickPump.Add(Poll);
             Poll();
         }
-#endif
 
         private static void ValidateWaitUntilArgs(QaWaitUntilArgs args)
         {
@@ -1129,15 +1120,6 @@ namespace UnityCliBridge.Bridge.Editor
                 durationMs,
                 ProtocolConstants.TransportLive,
                 ProtocolErrorDetails.FromString(exception.ToString()));
-        }
-
-        private static CommandFailureException CreateInputSystemRequiredException(string commandName)
-        {
-            return new CommandFailureException(
-                "QA_INPUT_SYSTEM_REQUIRED",
-                $"{commandName} requires the Unity Input System package (com.unity.inputsystem).",
-                false,
-                null);
         }
 
         private static string HandleSwipeOnTarget(string argumentsJson)

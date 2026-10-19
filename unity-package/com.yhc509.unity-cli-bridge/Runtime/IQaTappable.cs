@@ -21,4 +21,15 @@ namespace UnityCliBridge.Bridge
         /// </summary>
         bool TryQaTap();
     }
+
+    /// <summary>
+    /// Implement on a MonoBehaviour to receive `qa key` in projects that use the legacy Input Manager,
+    /// where UnityEngine.Input cannot be fed simulated keyboard state. Projects on the Input System
+    /// receive real simulated key events instead and never call this.
+    /// </summary>
+    public interface IQaKeyHandler
+    {
+        /// <summary>Performs the action bound to <paramref name="key"/>. Return true when handled.</summary>
+        bool TryQaKey(KeyCode key);
+    }
 }

@@ -47,11 +47,7 @@ namespace UnityCliBridge.Bridge.Editor
             int stepIndex = 0;
             SequencePhase phase = SequencePhase.WaitCondition;
             int actionIndex = 0;
-#if ENABLE_INPUT_SYSTEM
-            QaInputSimulator.SwipeOperation? activeSwipe = null;
-#else
-            object? activeSwipe = null;
-#endif
+            IQaSwipeOperation? activeSwipe = null;
             long actionDelayUntilMs = 0;
             long stepStartMs = 0;
             bool baselineCaptured = false;
@@ -249,10 +245,8 @@ namespace UnityCliBridge.Bridge.Editor
 
             void AbortActiveSwipe()
             {
-#if ENABLE_INPUT_SYSTEM
                 activeSwipe?.Abort();
                 activeSwipe = null;
-#endif
             }
 
             if (args.record && EditorApplication.isPlaying)
@@ -528,32 +522,20 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static bool AdvanceAction(
             QaSequenceAction action,
-#if ENABLE_INPUT_SYSTEM
-            ref QaInputSimulator.SwipeOperation? activeSwipe,
-#else
-            ref object? activeSwipe,
-#endif
+            ref IQaSwipeOperation? activeSwipe,
             ref long actionDelayUntilMs,
             long nowMs)
         {
             switch (action.kind)
             {
                 case "key":
-#if ENABLE_INPUT_SYSTEM
                     QaInputSimulator.SimulateKey(action.key);
                     return true;
-#else
-                    throw CreateInputSystemRequiredException("qa run-sequence key");
-#endif
                 case "tap":
                     if (action.hasTapCoords)
                     {
-#if ENABLE_INPUT_SYSTEM
                         QaInputSimulator.SimulateTap(new Vector2(action.x, action.y));
                         return true;
-#else
-                        throw CreateInputSystemRequiredException("qa run-sequence tap");
-#endif
                     }
 
                     HandleTapTarget(new QaTapArgs { target = action.target });
@@ -572,7 +554,6 @@ namespace UnityCliBridge.Bridge.Editor
 
                     return false;
                 case "swipe":
-#if ENABLE_INPUT_SYSTEM
                     activeSwipe ??= QaInputSimulator.BeginSwipe(
                         new Vector2(action.fromX, action.fromY),
                         new Vector2(action.toX, action.toY),
@@ -584,9 +565,6 @@ namespace UnityCliBridge.Bridge.Editor
                     }
 
                     return false;
-#else
-                    throw CreateInputSystemRequiredException("qa run-sequence swipe");
-#endif
                 default:
                     throw new CommandFailureException("QA_SEQUENCE_BAD_ACTION", $"Unknown action kind '{action.kind}'.", false, null);
             }

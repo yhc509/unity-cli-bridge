@@ -65,9 +65,10 @@ status → play → (simulate input) → verify (logs + screenshot) → stop
 - The bridge converts those offsets to screen coordinates, then runs a multi-frame deferred swipe
 - UGUI consumes the input only when the scene has an EventSystem
 
-### Non-UI, gesture, or key input → Input System path (swipe, key)
+### Non-UI, gesture, or key input → simulated device input (swipe, key)
 - Touching a 3D object, a screen-swipe gesture, or a keyboard press
-- Requires the Input System package (otherwise `QA_INPUT_SYSTEM_REQUIRED`)
+- With the Input System active, the bridge queues Input System device events
+- With only the legacy Input Manager active (Active Input Handling = Input Manager (Old), or no `com.unity.inputsystem`), see `Legacy Input Manager` under Prerequisites
 - Coordinate `qa swipe` uses **screenshot space**.
 - Y=0 is the top of the screenshot. The bridge converts to Unity screen space (bottom-origin) at execution time.
 - It defaults to the `width`/`height` of the last successful `screenshot` and scales to the current `Screen.width`/`Screen.height`.
@@ -89,9 +90,15 @@ ucli execute-menu --list "GameObject/UI" --project "$P" --json
 ucli execute-menu --path "GameObject/UI (Canvas)/Event System" --project "$P" --json
 ```
 
-### Input System
-`qa key` and every `qa swipe` need the Input System package.
-Without it the bridge still runs, and only those commands return `QA_INPUT_SYSTEM_REQUIRED`.
+### Input System or legacy Input Manager
+With the Input System active, `qa key`, `qa swipe`, and the pointer fallbacks of `qa tap` queue Input System device events.
+
+### Legacy Input Manager
+A project on the legacy Input Manager (no `com.unity.inputsystem`, or Active Input Handling = Input Manager (Old)) is supported without installing anything:
+- Pointer input (`qa tap --x/--y` that hits no UI, `qa tap --target` world fallback, coordinate `qa swipe`, and the same `qa run-sequence` actions) is a simulated touch. Unity reports it as `Input.touches`, as left mouse button 0 (`Input.GetMouseButtonDown(0)`, `Input.mousePosition`), and as `Input.anyKeyDown`. A tap holds for two frames so `GetMouseButtonDown` polling in `Update` sees it. A coordinate tap with no EventSystem in the scene goes straight to this path.
+- `--button right` is not available (`QA_LEGACY_BUTTON_UNSUPPORTED`).
+- `qa key` cannot reach `Input.GetKey*` — Unity has no API to inject legacy keyboard state. The key is delivered to every active MonoBehaviour that implements `UnityCliBridge.Bridge.IQaKeyHandler` (`bool TryQaKey(KeyCode key)`); with none, the error is `QA_LEGACY_KEY_UNSUPPORTED`. Key names accept `KeyCode` names and the common Input System names (`Space`, `Enter`, `Digit1`, `LeftCtrl`).
+- For a key-driven legacy game, prefer `qa tap` when the game also accepts mouse/touch, or drive it from a `PucFrameLoop` that calls the game's own method (see `SKILL.md`).
 
 ### Play Mode
 Every QA command runs only in Play Mode. Outside Play Mode the error is `QA_NOT_PLAYING`.
@@ -391,7 +398,8 @@ ucli qa wait-until --object-gone LoadingSpinner --timeout 10000 --project "$P" -
 | `QA_NOT_PLAYING` | Not in Play Mode | Run `play` first |
 | `QA_NO_EVENT_SYSTEM` | No EventSystem | Add one with `execute-menu` |
 | `QA_TAP_NO_TARGET` | No clickable UI under the coordinate | Check the coordinate and resolution basis, and whether UI is actually drawn there |
-| `QA_INPUT_SYSTEM_REQUIRED` | Input System is not installed | `package add --name com.unity.inputsystem` |
+| `QA_LEGACY_KEY_UNSUPPORTED` | `qa key` on the legacy Input Manager with no `IQaKeyHandler` | Use `qa tap`, implement `IQaKeyHandler`, or `package add --name com.unity.inputsystem` |
+| `QA_LEGACY_BUTTON_UNSUPPORTED` | `--button right` on the legacy Input Manager | `package add --name com.unity.inputsystem` |
 | `QA_TARGET_NOT_FOUND` | Hierarchy path is wrong | Confirm the path with `scene inspect` |
 | `QA_TARGET_NOT_RECT_TRANSFORM` | The `qa swipe --target` object is not a UI `RectTransform` | Pass a UI hierarchy path |
 | `QA_NO_POINTER_DEVICE` | No Mouse or Touchscreen | Check Input System devices |

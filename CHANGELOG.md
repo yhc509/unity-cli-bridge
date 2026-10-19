@@ -10,11 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0` (cold compile is still ~0.5 s). Changing values should go through `--args` so the source stays identical.
 - `PucFrameLoop` (available inside `execute` as `PucFrameLoop.Start` / `Status` / `Stop` / `Running`) runs agent code once per editor frame for Play Mode autopilots and watchers. Prefer it over a shell loop of `execute` calls. The skill documents the pattern.
 - `status` reports `isChangingPlayMode` and `domainId` so the CLI can tell when a Play Mode enter/exit (and its domain reload) has finished.
+- Every command and subcommand accepts `--help` / `-h` (`unity-cli qa --help`, `unity-cli qa key --help`, `unity-cli help scene patch`) and prints that command's usage with exit code 0.
+- QA input works on projects that use the legacy Input Manager (Active Input Handling = Input Manager (Old), or no `com.unity.inputsystem`). Coordinate `qa tap` with no UI hit, the `qa tap --target` world fallback, coordinate `qa swipe`, and the matching `qa run-sequence` actions send a simulated touch that Unity also reports as left mouse button 0 and `Input.anyKeyDown`. Unity cannot inject legacy keyboard state, so `qa key` calls MonoBehaviours that implement the new `IQaKeyHandler` interface and otherwise fails with `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` on legacy input fails with `QA_LEGACY_BUTTON_UNSUPPORTED`. `QA_INPUT_SYSTEM_REQUIRED` is no longer returned.
 
 ### Changed
 - `compile`, `refresh`, `play`, and `stop` wait until Unity has settled by default (`--no-wait` opts out; `--wait` stays accepted). `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload.
 - The `execute` wrapper aliases `Object` to `UnityEngine.Object`, so `Object.FindFirstObjectByType<T>()` compiles without an ambiguous-reference error. A user alias with the same name wins.
 - CodeDOM "Script 'Foo.cs' will not be compiled…" warnings are filtered out of the `execute` `output` field.
+- The AI-agent skill `SKILL.md` is about 5 KB (was about 22 KB). It keeps the workflow, wait-by-default, `execute`, `PucFrameLoop`, and QA input rules; the long rule list, component and convenience commands, and the profile loop moved to `references/operating-rules.md` and `references/profiling.md`.
 
 ## [0.5.5] - 2026-10-19
 
