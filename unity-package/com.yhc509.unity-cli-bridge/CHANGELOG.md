@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- The package now supports Unity 2021.3 LTS through Unity 6. It was checked on 2021.3.45f2, the latest public 2021.3 patch; later 2021.3 updates are paid extended-LTS releases. Gradient property edits still need Unity 2022.1 or newer. `record` compiles only when Unity Recorder 3.0.0 or newer is installed. On Unity 6000.4 and newer, Recorder 5.1.6 or later is still required or Recorder itself does not compile.
+
+### Fixed
+- `profile memory snapshot` compiles on Unity 2021.3. That editor exposes the snapshot API as `UnityEngine.Profiling.Memory.Experimental`; Unity 2022.2 and newer use `Unity.Profiling.Memory`.
+- Projects without the Input System no longer get an unreachable-code warning from `qa key` and `qa swipe`.
+
 ## [0.5.4] - 2026-08-18
 
 ### Added

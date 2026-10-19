@@ -7,6 +7,14 @@ using Unity.Profiling;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
+// Unity.Profiling.Memory shipped in 2022.2. 2022.1 and 2021.3 only have the
+// experimental types. On 2022.2 and later those experimental types are obsolete,
+// and current Unity 6 makes them a compile error, so the alias cannot be shared.
+#if UNITY_2022_2_OR_NEWER
+using MemProf = Unity.Profiling.Memory;
+#else
+using MemProf = UnityEngine.Profiling.Memory.Experimental;
+#endif
 
 namespace UnityCliBridge.Bridge.Editor
 {
@@ -234,10 +242,10 @@ namespace UnityCliBridge.Bridge.Editor
                 ProtocolConstants.SnapshotsDirectoryRelative.Replace('/', Path.DirectorySeparatorChar));
             string snapshotPath = Path.Combine(directory, snapshotId + ".snap");
 
-            const Unity.Profiling.Memory.CaptureFlags flags =
-                Unity.Profiling.Memory.CaptureFlags.ManagedObjects
-                | Unity.Profiling.Memory.CaptureFlags.NativeObjects
-                | Unity.Profiling.Memory.CaptureFlags.NativeAllocations;
+            const MemProf.CaptureFlags flags =
+                MemProf.CaptureFlags.ManagedObjects
+                | MemProf.CaptureFlags.NativeObjects
+                | MemProf.CaptureFlags.NativeAllocations;
 
             bool finished = false;
 
@@ -287,7 +295,7 @@ namespace UnityCliBridge.Bridge.Editor
             try
             {
                 Directory.CreateDirectory(directory);
-                Unity.Profiling.Memory.MemoryProfiler.TakeSnapshot(
+                MemProf.MemoryProfiler.TakeSnapshot(
                     snapshotPath,
                     (resultPath, success) =>
                     {
