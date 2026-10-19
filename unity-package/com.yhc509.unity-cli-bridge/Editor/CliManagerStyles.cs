@@ -95,20 +95,115 @@ namespace UnityCliBridge.Bridge.Editor
             GUI.Label(new Rect(pillX, pillY, pillWidth, pillHeight), versionContent, versionPill);
         }
 
+        private static float _windowWidth = 420f;
+        private static GUIStyle? _scrollContent;
+
         /// <summary>
-        /// Width of the section body at the current window size. Section padding and the
-        /// vertical scrollbar are already subtracted so a child laid out at this width
-        /// cannot force a horizontal scrollbar at the 420px minimum.
+        /// Records the EditorWindow width for this OnGUI pass. The scroll body is sized
+        /// from this instead of <see cref="EditorGUIUtility.currentViewWidth"/>, which
+        /// follows the laid-out content and cannot be used to cap that content.
         /// </summary>
-        internal static float SectionContentWidth()
+        internal static void SetWindowWidth(float windowWidth)
         {
-            float viewWidth = EditorGUIUtility.currentViewWidth;
-            if (viewWidth < 120f)
+            _windowWidth = windowWidth < 120f ? 420f : windowWidth;
+        }
+
+        /// <summary>
+        /// Pixels the scroll view spends on the vertical scrollbar and its own padding.
+        /// Always reserved, including when the window is tall enough that the bar is
+        /// hidden: IMGUI decides the bar after width is calculated, and a bar that
+        /// appears at the default height must not push the content sideways.
+        /// <see cref="GUILayout.Width"/> cannot express this. A vertical group's minimum
+        /// is raised to its widest child, so the cap is a style <c>fixedWidth</c>.
+        /// </summary>
+        internal static float ScrollChrome()
+        {
+            float scrollbar = 16f;
+            float scrollPadding = 0f;
+            if (GUI.skin != null)
             {
-                viewWidth = 420f;
+                GUIStyle bar = GUI.skin.verticalScrollbar;
+                if (bar != null)
+                {
+                    float measured = bar.fixedWidth + bar.margin.left;
+                    if (measured >= 8f)
+                    {
+                        scrollbar = measured;
+                    }
+                }
+
+                GUIStyle scroll = GUI.skin.scrollView;
+                if (scroll != null)
+                {
+                    // Padding sits inside the scroll group and is added to its minimum.
+                    // Margin sits outside the group, so the width it is given is already smaller.
+                    scrollPadding = scroll.padding.horizontal + scroll.margin.horizontal;
+                }
             }
 
-            return Mathf.Max(32f, viewWidth - 52f);
+            // A few points of slack cover retina rounding and the window border, so the
+            // scroll group's minimum stays inside the client width Unity compares against.
+            return scrollbar + scrollPadding + 6f;
+        }
+
+        internal static float ScrollContentWidth()
+        {
+            return Mathf.Max(160f, _windowWidth - ScrollChrome());
+        }
+
+        /// <summary>
+        /// Width of the section body. Section padding is 12 + 8; the remainder keeps a
+        /// wrapped help box from measuring wider than the rect it is given.
+        /// </summary>
+        internal static float SectionInnerWidth()
+        {
+            return Mathf.Max(120f, ScrollContentWidth() - 28f);
+        }
+
+        internal static float SectionContentWidth()
+        {
+            return SectionInnerWidth();
+        }
+
+        internal static void BeginScrollContent()
+        {
+            if (_scrollContent == null)
+            {
+                _scrollContent = new GUIStyle
+                {
+                    padding = new RectOffset(0, 0, 0, 0),
+                    margin = new RectOffset(0, 0, 0, 0),
+                    stretchWidth = false,
+                    stretchHeight = false,
+                };
+            }
+
+            _scrollContent.fixedWidth = ScrollContentWidth();
+            GUILayout.BeginVertical(_scrollContent);
+        }
+
+        internal static void EndScrollContent()
+        {
+            GUILayout.EndVertical();
+        }
+
+        internal static Rect GetShrinkRow(float height)
+        {
+            return GUILayoutUtility.GetRect(
+                0f,
+                0f,
+                height,
+                height,
+                GUIStyle.none,
+                GUILayout.MinWidth(0f),
+                GUILayout.ExpandWidth(true));
+        }
+
+        internal static float LabelColumnWidth(float rowWidth)
+        {
+            float preferred = EditorGUIUtility.labelWidth;
+            float maxLabel = Mathf.Max(48f, rowWidth - 80f);
+            return Mathf.Clamp(preferred, 48f, maxLabel);
         }
 
         internal static GUIStyle ClippedFieldStyle()
@@ -141,20 +236,50 @@ namespace UnityCliBridge.Bridge.Editor
             GUI.Label(new Rect(badgeX, row.y, usedBadgeWidth, row.height), content, style);
         }
 
-        internal static void DrawBadge(string text, BadgeKind kind, float reservedRight)
+        internal static void MeasureBadge(string text, BadgeKind kind, float available, out float width, out float height)
         {
             EnsureStyles();
             GUIStyle style = BadgeStyle(kind);
             GUIContent content = new GUIContent(text ?? string.Empty);
-            float available = Mathf.Max(48f, SectionContentWidth() - EditorGUIUtility.labelWidth - reservedRight);
-            ApplyBadgeLayout(style, content, available, out float width, out float height);
-            GUILayout.Label(
-                content,
+            ApplyBadgeLayout(style, content, Mathf.Max(32f, available), out width, out height);
+        }
+
+        internal static void DrawBadge(Rect rect, string text, BadgeKind kind)
+        {
+            EnsureStyles();
+            GUIStyle style = BadgeStyle(kind);
+            GUIContent content = new GUIContent(text ?? string.Empty);
+            ApplyBadgeLayout(style, content, Mathf.Max(32f, rect.width), out float width, out _);
+            float used = Mathf.Min(width, Mathf.Max(0f, rect.width));
+            GUI.Label(new Rect(rect.x, rect.y, used, rect.height), content, style);
+        }
+
+        internal static void DrawWrappedHelp(string message, MessageType type)
+        {
+            float width = SectionInnerWidth();
+            GUIContent content = HelpContent(message, type);
+            GUIStyle style = EditorStyles.helpBox;
+            float measured = style.CalcHeight(content, Mathf.Max(1f, width));
+            float inner = Mathf.Max(1f, width - style.padding.horizontal);
+            measured = Mathf.Max(measured, style.CalcHeight(content, inner));
+            Texture? image = content.image;
+            if (image != null)
+            {
+                float textWidth = Mathf.Max(1f, width - image!.width - 8f);
+                measured = Mathf.Max(measured, style.CalcHeight(new GUIContent(content.text), textWidth));
+                measured = Mathf.Max(measured, image!.height + style.padding.vertical);
+            }
+
+            float height = Mathf.Max(EditorGUIUtility.singleLineHeight, measured);
+            Rect rect = GUILayoutUtility.GetRect(
+                0f,
+                0f,
+                height,
+                height,
                 style,
-                GUILayout.Width(width),
-                GUILayout.Height(height),
-                GUILayout.ExpandWidth(false),
-                GUILayout.ExpandHeight(false));
+                GUILayout.MinWidth(0f),
+                GUILayout.ExpandWidth(true));
+            EditorGUI.HelpBox(rect, message ?? string.Empty, type);
         }
 
         private static void ApplyBadgeLayout(GUIStyle style, GUIContent content, float available, out float width, out float height)
@@ -181,7 +306,55 @@ namespace UnityCliBridge.Bridge.Editor
         internal static bool PrimaryButton(string text, params GUILayoutOption[] options)
         {
             EnsureStyles();
-            return GUILayout.Button(text, _primaryButton!, options);
+            return GUILayout.Button(text, _primaryButton!, ShrinkOptions(options));
+        }
+
+        internal static bool WideButton(string text, params GUILayoutOption[] options)
+        {
+            return GUILayout.Button(text, ShrinkOptions(options));
+        }
+
+        private static GUILayoutOption[] ShrinkOptions(GUILayoutOption[] options)
+        {
+            int count = options == null ? 0 : options.Length;
+            GUILayoutOption[] result = new GUILayoutOption[count + 2];
+            for (int i = 0; i < count; i++)
+            {
+                result[i] = options![i];
+            }
+
+            result[count] = GUILayout.MinWidth(0f);
+            result[count + 1] = GUILayout.ExpandWidth(true);
+            return result;
+        }
+
+        private static GUIContent HelpContent(string message, MessageType type)
+        {
+            string text = message ?? string.Empty;
+            Texture? image = HelpIcon(type);
+            return image != null ? new GUIContent(text, image!) : new GUIContent(text);
+        }
+
+        private static Texture? HelpIcon(MessageType type)
+        {
+            string? name;
+            switch (type)
+            {
+                case MessageType.Info:
+                    name = "console.infoicon";
+                    break;
+                case MessageType.Warning:
+                    name = "console.warnicon";
+                    break;
+                case MessageType.Error:
+                    name = "console.erroricon";
+                    break;
+                default:
+                    return null;
+            }
+
+            GUIContent icon = EditorGUIUtility.IconContent(name);
+            return icon != null ? icon.image : null;
         }
 
         internal static void HighlightRow(Rect row)
@@ -420,7 +593,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 EnsureStyles();
                 _rect = EditorGUILayout.BeginVertical(_section!);
-                GUILayout.Label(title, EditorStyles.boldLabel);
+                GUILayout.Label(title, EditorStyles.boldLabel, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true));
                 Rect rule = GUILayoutUtility.GetRect(0f, 1f, GUILayout.ExpandWidth(true));
                 GUILayout.Space(4f);
                 if (Event.current.type == EventType.Repaint)

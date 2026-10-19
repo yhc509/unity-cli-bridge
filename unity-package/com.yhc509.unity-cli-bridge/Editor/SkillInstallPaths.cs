@@ -253,7 +253,9 @@ namespace UnityCliBridge.Bridge.Editor
                 return null;
             }
 
-            return path.Trim().Replace('\\', '/').TrimEnd('/');
+            // IsNullOrWhiteSpace does not narrow string? on Unity 2021.3 / 6000.3.
+            string text = path!;
+            return text.Trim().Replace('\\', '/').TrimEnd('/');
         }
 
         private static string? NormalizeExistingOrFullPath(string? path)
@@ -263,9 +265,10 @@ namespace UnityCliBridge.Bridge.Editor
                 return null;
             }
 
+            string text = path!;
             try
             {
-                return TrimTrailingSeparator(Path.GetFullPath(path.Trim()));
+                return TrimTrailingSeparator(Path.GetFullPath(text.Trim()));
             }
             catch (Exception)
             {

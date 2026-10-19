@@ -105,10 +105,13 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             CliManagerStyles.EnsureStyles();
-            EditorGUIUtility.labelWidth = Mathf.Clamp(position.width * 0.34f, 108f, 150f);
+            CliManagerStyles.SetWindowWidth(position.width);
+            float contentWidth = CliManagerStyles.ScrollContentWidth();
+            EditorGUIUtility.labelWidth = Mathf.Clamp(contentWidth * 0.34f, 96f, 140f);
             CliManagerStyles.DrawHeader(_headerIcon, FormatVersion(_packageVersion));
 
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition, false, false);
+            CliManagerStyles.BeginScrollContent();
 
             GUILayout.Space(6f);
             DrawPackageInfoSection();
@@ -123,6 +126,7 @@ namespace UnityCliBridge.Bridge.Editor
             GUILayout.Space(8f);
             DrawSkillSection();
 
+            CliManagerStyles.EndScrollContent();
             EditorGUILayout.EndScrollView();
 
             ProcessPendingRemovals();
@@ -170,32 +174,9 @@ namespace UnityCliBridge.Bridge.Editor
         {
             using (new CliManagerStyles.SectionScope("Package Info"))
             {
-                EditorGUILayout.LabelField("Package Version", FormatVersion(_packageVersion));
-                EditorGUILayout.LabelField("Wire Protocol", string.IsNullOrWhiteSpace(_protocolVersion) ? "-" : _protocolVersion);
-
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    EditorGUILayout.PrefixLabel("Latest Release");
-                    if (IsUpdateAvailable())
-                    {
-                        CliManagerStyles.DrawBadge(GetLatestReleaseVersionLabel(), CliManagerStyles.BadgeKind.Update, 80f);
-                        GUILayout.FlexibleSpace();
-                    }
-                    else
-                    {
-                        EditorGUILayout.LabelField(GetLatestReleaseVersionLabel());
-                    }
-
-                    using (new EditorGUI.DisabledScope(_isFetchingLatestVersion))
-                    {
-                        if (GUILayout.Button("Refresh", GUILayout.Width(72f)))
-                        {
-                            RefreshState(true);
-                            RefreshLatestReleaseVersion(true);
-                        }
-                    }
-                }
-
+                DrawKeyValue("Package Version", FormatVersion(_packageVersion));
+                DrawKeyValue("Wire Protocol", string.IsNullOrWhiteSpace(_protocolVersion) ? "-" : _protocolVersion);
+                DrawLatestReleaseRow();
                 DrawLinkButton("Repository", CliInstallerState.GetRepositoryUrl(), "Open Repository");
                 DrawLinkButton("Release", _releasePageUrl, "Open Release");
             }
@@ -206,8 +187,8 @@ namespace UnityCliBridge.Bridge.Editor
             using (new CliManagerStyles.SectionScope("CLI Status"))
             {
                 CliManagerStyles.BadgeField("Status", GetStatusLabel(), GetStatusBadgeKind());
-                EditorGUILayout.LabelField("Platform", _platformDisplayName);
-                EditorGUILayout.LabelField("PATH Target", GetPathTargetLabel());
+                DrawKeyValue("Platform", _platformDisplayName);
+                DrawKeyValue("PATH Target", GetPathTargetLabel());
                 DrawSelectableValue("Path", _executablePath);
             }
         }
@@ -219,25 +200,29 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (!string.IsNullOrWhiteSpace(_errorMessage))
                 {
-                    EditorGUILayout.HelpBox(_errorMessage, MessageType.Error);
+                    CliManagerStyles.DrawWrappedHelp(_errorMessage, MessageType.Error);
                 }
 
                 string releaseAvailabilityMessage = GetReleaseAvailabilityMessage();
                 if (!string.IsNullOrWhiteSpace(releaseAvailabilityMessage))
                 {
-                    EditorGUILayout.HelpBox(releaseAvailabilityMessage, MessageType.Info);
+                    CliManagerStyles.DrawWrappedHelp(releaseAvailabilityMessage, MessageType.Info);
                 }
 
                 if (_status == CliInstallStatus.UpdateRequired)
                 {
-                    EditorGUILayout.HelpBox(
+                    CliManagerStyles.DrawWrappedHelp(
                         "The PATH target does not point at a managed CLI version. An older CLI Manager (package 0.4.0 or earlier) overwrites it with a single flat binary. Click Install CLI to restore version dispatch.",
                         MessageType.Warning);
                 }
 
                 if (_isDownloading)
                 {
-                    Rect progressRect = GUILayoutUtility.GetRect(18f, 18f, GUILayout.ExpandWidth(true));
+                    Rect progressRect = GUILayoutUtility.GetRect(
+                        0f,
+                        18f,
+                        GUILayout.MinWidth(0f),
+                        GUILayout.ExpandWidth(true));
                     EditorGUI.ProgressBar(progressRect, _downloadProgress, "Downloading CLI...");
                     GUILayout.Space(4f);
                     return;
@@ -257,7 +242,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     using (new EditorGUI.DisabledScope(true))
                     {
-                        GUILayout.Button("Package version unknown", GUILayout.Height(28f));
+                        CliManagerStyles.WideButton("Package version unknown", GUILayout.Height(28f));
                     }
 
                     return;
@@ -267,7 +252,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     using (new EditorGUI.DisabledScope(true))
                     {
-                        GUILayout.Button("Checking release...", GUILayout.Height(28f));
+                        CliManagerStyles.WideButton("Checking release...", GUILayout.Height(28f));
                     }
 
                     return;
@@ -277,7 +262,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     using (new EditorGUI.DisabledScope(true))
                     {
-                        GUILayout.Button("CLI " + FormatVersion(_packageVersion) + " not published", GUILayout.Height(28f));
+                        CliManagerStyles.WideButton("CLI " + FormatVersion(_packageVersion) + " not published", GUILayout.Height(28f));
                     }
 
                     return;
@@ -296,7 +281,7 @@ namespace UnityCliBridge.Bridge.Editor
                     case CliInstallStatus.UpToDate:
                         using (new EditorGUI.DisabledScope(true))
                         {
-                            GUILayout.Button("Up to date", GUILayout.Height(28f));
+                            CliManagerStyles.WideButton("Up to date", GUILayout.Height(28f));
                         }
 
                         return;
@@ -310,13 +295,13 @@ namespace UnityCliBridge.Bridge.Editor
         {
             using (new CliManagerStyles.SectionScope("Installed Versions"))
             {
-                EditorGUILayout.HelpBox(
+                CliManagerStyles.DrawWrappedHelp(
                     "Each Unity package version needs the CLI of the same version. The PATH target runs the newest one and hands off to an older one automatically when a project's bridge speaks an older protocol. Nothing is removed automatically.",
                     MessageType.None);
 
                 if (_installedVersions.Count == 0)
                 {
-                    EditorGUILayout.LabelField("No versioned CLI installs found.");
+                    GUILayout.Label("No versioned CLI installs found.", GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true));
                 }
 
                 for (int i = 0; i < _installedVersions.Count; i++)
@@ -359,8 +344,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             GUILayout.Space(8f);
-            GUILayout.Label("Unidentified Binaries", EditorStyles.boldLabel);
-            EditorGUILayout.HelpBox(
+            GUILayout.Label("Unidentified Binaries", EditorStyles.boldLabel, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true));
+            CliManagerStyles.DrawWrappedHelp(
                 "A CLI binary was found on the PATH target with no version recorded for it — typically a manual download. Its wire protocol is unknown, so it cannot be used for hand-off, but it was kept rather than deleted in case it is the only CLI you have for an older project. Remove it once you are sure you do not need it.",
                 MessageType.Warning);
 
@@ -389,11 +374,11 @@ namespace UnityCliBridge.Bridge.Editor
             using (new CliManagerStyles.SectionScope("PATH Setup"))
             {
 
-                EditorGUILayout.HelpBox("Add the install directory to your PATH to use the CLI from the terminal. A short, fixed path also saves tokens when AI agents invoke the CLI repeatedly.", MessageType.None);
+                CliManagerStyles.DrawWrappedHelp("Add the install directory to your PATH to use the CLI from the terminal. A short, fixed path also saves tokens when AI agents invoke the CLI repeatedly.", MessageType.None);
                 DrawSelectableValue("Command", _pathCommand);
 
                 EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(_pathCommand));
-                if (GUILayout.Button("Copy PATH command"))
+                if (CliManagerStyles.WideButton("Copy PATH command"))
                 {
                     EditorGUIUtility.systemCopyBuffer = _pathCommand;
                 }
@@ -407,8 +392,10 @@ namespace UnityCliBridge.Bridge.Editor
             using (new CliManagerStyles.SectionScope("AI Agent Skill"))
             {
                 EditorGUI.BeginChangeCheck();
-                _skillTarget = (SkillTarget)EditorGUILayout.EnumPopup("Target", _skillTarget);
-                _skillLocation = (SkillInstallLocation)EditorGUILayout.EnumPopup("Location", _skillLocation);
+                Rect targetRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+                _skillTarget = (SkillTarget)EditorGUI.EnumPopup(targetRow, "Target", _skillTarget);
+                Rect locationRow = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+                _skillLocation = (SkillInstallLocation)EditorGUI.EnumPopup(locationRow, "Location", _skillLocation);
                 if (EditorGUI.EndChangeCheck())
                 {
                     SaveSkillPreferences();
@@ -418,7 +405,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (_skillLocation == SkillInstallLocation.GitRepository)
                 {
-                    EditorGUILayout.HelpBox(
+                    CliManagerStyles.DrawWrappedHelp(
                         "Choose the folder that should contain the tool directory (.claude, .agents, or .grok). The Path row shows the skill directory that will be created inside it.",
                         MessageType.None);
                     DrawSelectableValue(
@@ -431,7 +418,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                     using (new EditorGUILayout.HorizontalScope())
                     {
-                        if (GUILayout.Button("Choose folder"))
+                        if (GUILayout.Button("Choose folder", GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                         {
                             ChooseSkillFolder();
                         }
@@ -441,7 +428,7 @@ namespace UnityCliBridge.Bridge.Editor
                             string clearLabel = string.IsNullOrWhiteSpace(_detectedGitRoot)
                                 ? "Clear chosen folder"
                                 : "Use detected git root";
-                            if (GUILayout.Button(clearLabel))
+                            if (GUILayout.Button(clearLabel, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                             {
                                 _skillCustomRoot = string.Empty;
                                 SaveSkillPreferences();
@@ -457,7 +444,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (!string.IsNullOrWhiteSpace(_skillRootError))
                 {
-                    EditorGUILayout.HelpBox(_skillRootError, MessageType.Warning);
+                    CliManagerStyles.DrawWrappedHelp(_skillRootError, MessageType.Warning);
                 }
 
                 using (new EditorGUI.DisabledScope(!_skillRootResolved))
@@ -466,18 +453,18 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         using (new EditorGUILayout.HorizontalScope())
                         {
-                            if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+                            if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                             {
                                 InstallSkill();
                             }
 
-                            if (GUILayout.Button("Remove Skill", GUILayout.Height(24f)))
+                            if (GUILayout.Button("Remove Skill", GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                             {
                                 RemoveSkill();
                             }
                         }
                     }
-                    else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f)))
+                    else if (GUILayout.Button(GetSkillButtonLabel(), GUILayout.Height(24f), GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true)))
                     {
                         InstallSkill();
                     }
@@ -487,26 +474,26 @@ namespace UnityCliBridge.Bridge.Editor
                     && _isGlobalSkillInstalled
                     && !SkillInstallPaths.PathsEqual(_resolvedInstallRoot, _userHomeRoot))
                 {
-                    EditorGUILayout.HelpBox(
+                    CliManagerStyles.DrawWrappedHelp(
                         "A user-home copy of this skill is also installed at `" + _globalSkillPath + "`. It may take precedence over this copy. Set Location to User (home) to update or remove that copy.",
                         MessageType.Warning);
                 }
 
                 if (!string.IsNullOrWhiteSpace(_gitRootMismatchWarning))
                 {
-                    EditorGUILayout.HelpBox(_gitRootMismatchWarning, MessageType.Warning);
+                    CliManagerStyles.DrawWrappedHelp(_gitRootMismatchWarning, MessageType.Warning);
                 }
 
                 for (int i = 0; i < _duplicateWarnings.Count; i++)
                 {
-                    EditorGUILayout.HelpBox(_duplicateWarnings[i], MessageType.Warning);
+                    CliManagerStyles.DrawWrappedHelp(_duplicateWarnings[i], MessageType.Warning);
                 }
 
                 DrawLegacyCodexCopies();
 
                 if (!string.IsNullOrWhiteSpace(_skillFeedbackMessage))
                 {
-                    EditorGUILayout.HelpBox(_skillFeedbackMessage, _skillFeedbackType);
+                    CliManagerStyles.DrawWrappedHelp(_skillFeedbackMessage, _skillFeedbackType);
                 }
             }
         }
@@ -518,7 +505,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return;
             }
 
-            EditorGUILayout.HelpBox(
+            CliManagerStyles.DrawWrappedHelp(
                 "A deprecated Codex skill is still installed under .codex/skills. Codex now reads .agents/skills, and the old copy can be loaded as well. Remove it once you no longer need it.",
                 MessageType.Warning);
 
@@ -537,25 +524,88 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
+        private void DrawLatestReleaseRow()
+        {
+            const float refreshWidth = 72f;
+            const float gap = 4f;
+            string label = GetLatestReleaseVersionLabel();
+            bool update = IsUpdateAvailable();
+
+            float predicted = CliManagerStyles.SectionInnerWidth();
+            float predictedLabel = CliManagerStyles.LabelColumnWidth(predicted);
+            float predictedValue = Mathf.Max(32f, predicted - predictedLabel - refreshWidth - (gap * 2f));
+            float height = EditorGUIUtility.singleLineHeight;
+            if (update)
+            {
+                CliManagerStyles.MeasureBadge(label, CliManagerStyles.BadgeKind.Update, predictedValue, out _, out float badgeHeight);
+                height = Mathf.Max(height, badgeHeight);
+            }
+
+            Rect row = CliManagerStyles.GetShrinkRow(height);
+            float labelWidth = CliManagerStyles.LabelColumnWidth(row.width);
+            float buttonWidth = Mathf.Min(refreshWidth, Mathf.Max(0f, row.width - labelWidth - gap));
+            Rect labelRect = new Rect(row.x, row.y, labelWidth, row.height);
+            Rect buttonRect = new Rect(row.xMax - buttonWidth, row.y, buttonWidth, EditorGUIUtility.singleLineHeight);
+            if (row.height > buttonRect.height)
+            {
+                buttonRect.y += (row.height - buttonRect.height) * 0.5f;
+            }
+
+            float valueX = labelRect.xMax + gap;
+            float valueWidth = Mathf.Max(0f, buttonRect.x - gap - valueX);
+            Rect valueRect = new Rect(valueX, row.y, valueWidth, row.height);
+
+            EditorGUI.LabelField(labelRect, "Latest Release");
+            if (update)
+            {
+                CliManagerStyles.DrawBadge(valueRect, label, CliManagerStyles.BadgeKind.Update);
+            }
+            else
+            {
+                EditorGUI.LabelField(valueRect, label, ClippedLineStyle());
+            }
+
+            using (new EditorGUI.DisabledScope(_isFetchingLatestVersion))
+            {
+                if (GUI.Button(buttonRect, "Refresh"))
+                {
+                    RefreshState(true);
+                    RefreshLatestReleaseVersion(true);
+                }
+            }
+        }
+
         private void DrawLinkButton(string label, string url, string buttonLabel)
         {
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.PrefixLabel(label);
+            Rect row = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            float labelWidth = CliManagerStyles.LabelColumnWidth(row.width);
+            Rect labelRect = new Rect(row.x, row.y, labelWidth, row.height);
+            Rect buttonRect = new Rect(labelRect.xMax, row.y, Mathf.Max(0f, row.xMax - labelRect.xMax), row.height);
+            EditorGUI.LabelField(labelRect, label);
 
-                EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(url));
-                if (GUILayout.Button(buttonLabel))
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(url)))
+            {
+                if (GUI.Button(buttonRect, buttonLabel))
                 {
                     Application.OpenURL(url);
                 }
-
-                EditorGUI.EndDisabledGroup();
             }
+        }
+
+        private static void DrawKeyValue(string label, string value)
+        {
+            Rect row = CliManagerStyles.GetShrinkRow(EditorGUIUtility.singleLineHeight);
+            float labelWidth = CliManagerStyles.LabelColumnWidth(row.width);
+            EditorGUI.LabelField(new Rect(row.x, row.y, labelWidth, row.height), label);
+            EditorGUI.LabelField(
+                new Rect(row.x + labelWidth, row.y, Mathf.Max(0f, row.width - labelWidth), row.height),
+                value ?? string.Empty,
+                ClippedLineStyle());
         }
 
         private void DrawSelectableValue(string label, string value)
         {
-            EditorGUILayout.LabelField(label);
+            GUILayout.Label(label ?? string.Empty, GUILayout.MinWidth(0f), GUILayout.ExpandWidth(true));
             DrawBoundedSelectable(value ?? string.Empty);
         }
 
