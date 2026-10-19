@@ -81,6 +81,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             Directory.Delete(destination, true);
+            RemoveEmptyParents(destination, Path.Combine(installRoot, SkillInstallPaths.ToolDirectoryName(target)));
 
             Debug.Log($"[SkillInstaller] Removed {target} skill from: {destination}");
             return true;
@@ -196,8 +197,68 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             Directory.Delete(legacySkillDirectory, true);
+            string? skillsDirectory = Path.GetDirectoryName(legacySkillDirectory);
+            string? legacyAgentRoot = skillsDirectory == null ? null : Path.GetDirectoryName(skillsDirectory);
+            if (!string.IsNullOrEmpty(legacyAgentRoot))
+            {
+                RemoveEmptyParents(legacySkillDirectory, legacyAgentRoot!);
+            }
+
             Debug.Log("[SkillInstaller] Removed legacy Codex skill from: " + legacySkillDirectory);
             return true;
+        }
+
+        /// <summary>
+        /// Deletes empty directories the installer created under the agent root
+        /// (<c>.claude</c>, <c>.agents</c>, <c>.grok</c>, or legacy <c>.codex</c>).
+        /// Stops at that root, and never deletes the install root above it.
+        /// </summary>
+        private static void RemoveEmptyParents(string deletedDirectory, string agentRoot)
+        {
+            string stopAt;
+            try
+            {
+                stopAt = Path.GetFullPath(agentRoot);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            DirectoryInfo? current = Directory.GetParent(deletedDirectory);
+            while (current != null)
+            {
+                string full;
+                try
+                {
+                    full = Path.GetFullPath(current.FullName);
+                }
+                catch (Exception)
+                {
+                    return;
+                }
+
+                if (SkillInstallPaths.PathsEqual(full, stopAt) || !IsStrictlyInside(full, stopAt))
+                {
+                    return;
+                }
+
+                if (Directory.GetFileSystemEntries(full).Length > 0)
+                {
+                    return;
+                }
+
+                DirectoryInfo? parent = current.Parent;
+                Directory.Delete(full);
+                current = parent;
+            }
+        }
+
+        private static bool IsStrictlyInside(string candidate, string root)
+        {
+            string prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            return candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
         }
 
         internal static string GetUnityProjectRoot()

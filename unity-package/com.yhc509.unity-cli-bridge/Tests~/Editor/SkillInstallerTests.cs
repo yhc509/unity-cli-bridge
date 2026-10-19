@@ -157,7 +157,8 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     out _,
                     out string? error);
                 Assert.IsFalse(resolved);
-                StringAssert.Contains(".git", error);
+                string errorText = error ?? string.Empty;
+                StringAssert.Contains(".git", errorText);
             }
             finally
             {
@@ -184,7 +185,8 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                     out string? error);
 
                 Assert.IsFalse(resolved);
-                StringAssert.Contains("chosen folder", error);
+                string errorText = error ?? string.Empty;
+                StringAssert.Contains("chosen folder", errorText);
             }
             finally
             {
@@ -200,8 +202,9 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 "/repo/client/Game",
                 "/repo");
             Assert.IsNotNull(warning);
-            StringAssert.Contains("/repo", warning);
-            StringAssert.Contains("will not see", warning);
+            string warningText = warning ?? string.Empty;
+            StringAssert.Contains("/repo", warningText);
+            StringAssert.Contains("will not see", warningText);
 
             Assert.IsNull(SkillInstallPaths.GitRootMismatchWarning(
                 SkillInstallLocation.GitRepository,
@@ -317,8 +320,45 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
                 Assert.IsTrue(SkillInstaller.RemoveLegacyCodex(found[0]));
                 Assert.IsFalse(Directory.Exists(legacy));
+                Assert.IsFalse(Directory.Exists(Path.Combine(root, ".codex", "skills")));
+                Assert.IsTrue(Directory.Exists(Path.Combine(root, ".codex")));
                 Assert.IsTrue(File.Exists(Path.Combine(agents, "SKILL.md")));
                 Assert.AreEqual(0, SkillInstaller.FindLegacyCodexInstalls(new[] { root }).Count);
+            }
+            finally
+            {
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, true);
+                }
+            }
+        }
+
+        [Test]
+        public void Remove_DeletesEmptySkillsDirectoryAndKeepsAgentRoot()
+        {
+            string root = CreateTempDirectory();
+            string skill = Path.Combine(root, ".agents", "skills", "unity-cli-bridge");
+            string siblingSkill = Path.Combine(root, ".claude", "skills", "unity-cli-bridge");
+            string siblingOther = Path.Combine(root, ".claude", "skills", "other-skill");
+            Directory.CreateDirectory(skill);
+            Directory.CreateDirectory(siblingOther);
+            Directory.CreateDirectory(siblingSkill);
+            File.WriteAllText(Path.Combine(skill, "SKILL.md"), "# skill\n");
+            File.WriteAllText(Path.Combine(siblingSkill, "SKILL.md"), "# claude\n");
+            try
+            {
+                Assert.IsTrue(SkillInstaller.Remove(SkillTarget.Codex, root));
+                Assert.IsFalse(Directory.Exists(skill));
+                Assert.IsFalse(Directory.Exists(Path.Combine(root, ".agents", "skills")));
+                Assert.IsTrue(Directory.Exists(Path.Combine(root, ".agents")));
+                Assert.IsTrue(Directory.Exists(root));
+
+                Assert.IsTrue(SkillInstaller.Remove(SkillTarget.ClaudeCode, root));
+                Assert.IsFalse(Directory.Exists(siblingSkill));
+                Assert.IsTrue(Directory.Exists(siblingOther));
+                Assert.IsTrue(Directory.Exists(Path.Combine(root, ".claude", "skills")));
+                Assert.IsTrue(Directory.Exists(Path.Combine(root, ".claude")));
             }
             finally
             {
@@ -407,7 +447,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 out string installRoot,
                 out string? error);
 
-            Assert.IsTrue(resolved, error);
+            Assert.IsTrue(resolved, error ?? string.Empty);
             Assert.IsTrue(SkillInstallPaths.PathsEqual(expected, installRoot));
         }
 

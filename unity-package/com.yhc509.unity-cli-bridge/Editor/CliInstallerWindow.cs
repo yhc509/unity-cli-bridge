@@ -105,6 +105,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             CliManagerStyles.EnsureStyles();
+            EditorGUIUtility.labelWidth = Mathf.Clamp(position.width * 0.34f, 108f, 150f);
             CliManagerStyles.DrawHeader(_headerIcon, FormatVersion(_packageVersion));
 
             _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
@@ -333,7 +334,11 @@ namespace UnityCliBridge.Bridge.Editor
                         string label = FormatVersion(installedVersion.Version)
                             + "  protocol " + installedVersion.ProtocolVersion
                             + (isPathTarget ? "  [PATH target]" : string.Empty);
-                        EditorGUILayout.LabelField(label);
+                        GUILayout.Label(
+                            label,
+                            ClippedLineStyle(),
+                            GUILayout.ExpandWidth(true),
+                            GUILayout.MinWidth(0f));
 
                         if (GUILayout.Button("Remove", GUILayout.Width(72f)))
                         {
@@ -364,10 +369,7 @@ namespace UnityCliBridge.Bridge.Editor
                 string orphanedInstall = _orphanedInstalls[i];
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUILayout.SelectableLabel(
-                        orphanedInstall,
-                        EditorStyles.textField,
-                        GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                    DrawFlexibleSelectable(orphanedInstall);
 
                     if (GUILayout.Button("Reveal", GUILayout.Width(72f)))
                     {
@@ -525,10 +527,7 @@ namespace UnityCliBridge.Bridge.Editor
                 string legacyPath = _legacyCodexPaths[i];
                 using (new EditorGUILayout.HorizontalScope())
                 {
-                    EditorGUILayout.SelectableLabel(
-                        legacyPath,
-                        EditorStyles.textField,
-                        GUILayout.Height(EditorGUIUtility.singleLineHeight));
+                    DrawFlexibleSelectable(legacyPath);
 
                     if (GUILayout.Button("Remove", GUILayout.Width(72f)))
                     {
@@ -557,10 +556,49 @@ namespace UnityCliBridge.Bridge.Editor
         private void DrawSelectableValue(string label, string value)
         {
             EditorGUILayout.LabelField(label);
-            EditorGUILayout.SelectableLabel(
-                value,
-                EditorStyles.textField,
+            DrawBoundedSelectable(value ?? string.Empty);
+        }
+
+        /// <summary>
+        /// A path or command field. The layout width is capped to the section, and the text
+        /// clips or scrolls inside the field, so a long path cannot widen the window.
+        /// </summary>
+        private static void DrawBoundedSelectable(string value)
+        {
+            GUIStyle style = CliManagerStyles.ClippedFieldStyle();
+            float width = CliManagerStyles.SectionContentWidth();
+            Rect rect = GUILayoutUtility.GetRect(
+                0f,
+                EditorGUIUtility.singleLineHeight,
+                style,
+                GUILayout.ExpandWidth(true),
+                GUILayout.MinWidth(0f),
+                GUILayout.MaxWidth(width),
                 GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            EditorGUI.SelectableLabel(rect, value, style);
+        }
+
+        private static GUIStyle ClippedLineStyle()
+        {
+            return new GUIStyle(EditorStyles.label)
+            {
+                wordWrap = false,
+                clipping = TextClipping.Clip,
+                alignment = TextAnchor.MiddleLeft,
+            };
+        }
+
+        private static void DrawFlexibleSelectable(string value)
+        {
+            GUIStyle style = CliManagerStyles.ClippedFieldStyle();
+            Rect rect = GUILayoutUtility.GetRect(
+                0f,
+                EditorGUIUtility.singleLineHeight,
+                style,
+                GUILayout.ExpandWidth(true),
+                GUILayout.MinWidth(0f),
+                GUILayout.Height(EditorGUIUtility.singleLineHeight));
+            EditorGUI.SelectableLabel(rect, value ?? string.Empty, style);
         }
 
         private void InstallSkill()
@@ -1102,7 +1140,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             else if (!string.IsNullOrWhiteSpace(rootError) && string.IsNullOrWhiteSpace(_skillRootError))
             {
-                _skillRootError = rootError;
+                _skillRootError = rootError ?? string.Empty;
             }
 
             try
@@ -1291,7 +1329,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             EnsureIcons();
             titleContent = _tabIcon != null
-                ? new GUIContent(WindowTitle, _tabIcon)
+                ? new GUIContent(WindowTitle, _tabIcon!)
                 : new GUIContent(WindowTitle);
             minSize = WindowMinSize;
         }
@@ -1316,7 +1354,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return null;
             }
 
-            string assetPath = AssetDatabase.GetAssetPath(script);
+            string assetPath = AssetDatabase.GetAssetPath(script!);
             if (string.IsNullOrEmpty(assetPath))
             {
                 return null;

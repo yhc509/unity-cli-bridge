@@ -111,7 +111,7 @@ In the Unity Editor, open `Window > Unity CLI Manager`. Select your AI tool (Cla
 | Codex | `.agents/skills/unity-cli-bridge/` |
 | Grok Build | `.grok/skills/unity-cli-bridge/` |
 
-Codex no longer installs to `.codex/skills`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens.
+Codex installs under `.agents/skills/`. It no longer writes `.codex/skills/`. If an older copy is still there, the window offers to remove it. Commit a Unity-project or git-root install if the team should share the same skill version as the package. A user-home copy can take precedence over a project copy; the window warns when that happens.
 
 The skill teaches AI agents how to pick the right commands, run them safely, and verify results with `read-console`. The installed `SKILL.md` records the package version it came from, so the CLI Manager can tell you when the skill needs an update.
 
