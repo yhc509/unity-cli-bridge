@@ -451,6 +451,30 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.IsTrue(SkillInstallPaths.PathsEqual(expected, installRoot));
         }
 
+        [Test]
+        public void PluginCommands_MatchMarketplaceNamesAndReadmeInstallLines()
+        {
+            Assert.AreEqual("unity-cli-bridge", SkillPluginCommands.MarketplaceName);
+            Assert.AreEqual("unity-cli-bridge", SkillPluginCommands.PluginName);
+            Assert.AreEqual("yhc509/unity-cli-bridge", SkillPluginCommands.RepositorySlug);
+
+            SkillPluginCommandLine[] lines = SkillPluginCommands.All();
+            Assert.AreEqual(8, lines.Length);
+            Assert.AreEqual(SkillPluginCommands.ClaudeCodeGroup, lines[0].Group);
+            Assert.AreEqual("/plugin marketplace add yhc509/unity-cli-bridge", lines[0].Command);
+            Assert.AreEqual("/plugin install unity-cli-bridge@unity-cli-bridge", lines[1].Command);
+            Assert.AreEqual(SkillPluginCommands.ClaudeCodeTerminalGroup, lines[2].Group);
+            Assert.AreEqual("claude plugin marketplace add yhc509/unity-cli-bridge", lines[2].Command);
+            Assert.AreEqual("claude plugin install unity-cli-bridge@unity-cli-bridge --scope user", lines[3].Command);
+            Assert.AreEqual(SkillPluginCommands.CodexGroup, lines[4].Group);
+            Assert.AreEqual("codex plugin marketplace add yhc509/unity-cli-bridge", lines[4].Command);
+            Assert.AreEqual("codex plugin add unity-cli-bridge@unity-cli-bridge", lines[5].Command);
+            Assert.AreEqual(SkillPluginCommands.GrokGroup, lines[6].Group);
+            Assert.AreEqual("grok plugin marketplace add yhc509/unity-cli-bridge", lines[6].Command);
+            Assert.AreEqual("grok plugin install yhc509/unity-cli-bridge --trust", lines[7].Command);
+            Assert.IsFalse(lines[7].Command.Contains("@"));
+        }
+
         private static string CreateTempDirectory()
         {
             string path = Path.Combine(Path.GetTempPath(), "unity-cli-bridge-test-" + Guid.NewGuid().ToString("N"));
