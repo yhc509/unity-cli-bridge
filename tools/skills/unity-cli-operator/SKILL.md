@@ -13,8 +13,8 @@ description: "Primary entry point for controlling Unity from outside the Editor:
 
 ## Workflow
 
-1. Run `unity-cli` (alias `ucli`). Every command and subcommand takes `--help` (`ucli qa --help`, `ucli qa key --help`).
-2. **Choose the target project.** A project folder has `Assets/` and `Packages/`; if the working directory is not one, run `ucli instances list --brief`. `--project`, `pwd -P`, multi-instance routing, and `instances use`: command-flows.md `Choosing the project`.
+1. Run `unity-cli`. `ucli` is only an optional shell alias: never try it first, and if a lookup fails see command-flows.md `Finding the executable`. Every command and subcommand takes `--help` (`unity-cli qa --help`, `unity-cli qa key --help`).
+2. **Choose the target project.** A project folder has `Assets/` and `Packages/`; if the working directory is not one, run `unity-cli instances list --brief`. `--project`, `pwd -P`, multi-instance routing, and `instances use`: command-flows.md `Choosing the project`.
 3. Check `status --project "$P" --output compact` before a write and confirm `projectName`. If no Editor is live, start it yourself with `editor launch --project "$P"` (headless, idempotent, waits until the bridge is ready).
 4. After the task, run `read-console --no-stacktrace --output compact`.
 
