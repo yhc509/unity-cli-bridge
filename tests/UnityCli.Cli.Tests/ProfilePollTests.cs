@@ -71,14 +71,14 @@ public sealed class ProfilePollTests
             profileCaptureId = "cap1",
         });
 
-        // 폴링 중 전송 예외가 throw되는 상황.
+        // A transport exception is thrown during polling.
         Task<ResponseEnvelope> Throwing(InstanceRecord _, CommandEnvelope __, int ___, CancellationToken ____)
             => throw new InvalidOperationException("socket reset");
 
         ResponseEnvelope result = await CliApp.MergeQaProfileSummaryAsync(
             target, Throwing, original, CancellationToken.None);
 
-        // 성공한 시퀀스 응답이 침몰하지 않고 그대로 유지된다.
+        // A successful sequence response is kept instead of being dropped.
         Assert.Equal(ProtocolConstants.StatusSuccess, result.status);
         Assert.DoesNotContain("profileSummary", result.data!.Value.GetRawText());
     }
@@ -96,7 +96,7 @@ public sealed class ProfilePollTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        // 폴링은 계속 Processing을 돌려주지만, 취소된 토큰이 PollProfileStatusAsync를 throw시킨다.
+        // Polling still returns Processing, but the cancelled token makes PollProfileStatusAsync throw.
         Task<ResponseEnvelope> Fake(InstanceRecord _, CommandEnvelope __, int ___, CancellationToken ____)
             => Task.FromResult(Success(new ProfileSummaryPayload { captureId = "cap1", status = "Processing" }));
 

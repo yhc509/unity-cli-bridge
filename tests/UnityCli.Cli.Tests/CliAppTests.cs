@@ -24,7 +24,7 @@ public sealed class CliAppTests
         var response = ParseResponse(result.Stdout);
         Assert.Equal("error", response.status);
         Assert.Equal("CLI_USAGE", response.error?.code);
-        Assert.Contains("알 수 없는 명령", response.error?.message);
+        Assert.Contains("Unknown command", response.error?.message);
 
         var details = ParseDetails(response.error?.details);
         Assert.Equal(GlobalUsage, details.GetProperty("usage").GetString());
@@ -41,7 +41,7 @@ public sealed class CliAppTests
 
         var response = ParseResponse(result.Stdout);
         Assert.Equal("CLI_USAGE", response.error?.code);
-        Assert.Contains("asset 하위 명령", response.error?.message);
+        Assert.Contains("asset subcommand", response.error?.message);
 
         var details = ParseDetails(response.error?.details);
         Assert.Equal("asset delete", details.GetProperty("suggestions")[0].GetString());
@@ -76,7 +76,7 @@ public sealed class CliAppTests
 
         var response = ParseResponse(result.Stdout);
         Assert.Equal("CLI_USAGE", response.error?.code);
-        Assert.Contains("지원하지 않는 옵션", response.error?.message);
+        Assert.Contains("Unsupported option", response.error?.message);
 
         var details = ParseDetails(response.error?.details);
         Assert.Equal(
@@ -94,7 +94,7 @@ public sealed class CliAppTests
 
         JsonElement response = ParseJson(result.Stdout);
         Assert.Equal("CLI_USAGE", response.GetProperty("error").GetString());
-        Assert.Contains("알 수 없는 명령", response.GetProperty("message").GetString());
+        Assert.Contains("Unknown command", response.GetProperty("message").GetString());
     }
 
     [Fact]
@@ -303,7 +303,7 @@ public sealed class CliAppTests
 
         var response = ParseResponse(result.Stdout);
         Assert.Equal("CLI_USAGE", response.error?.code);
-        Assert.Contains("중복되어", response.error?.message);
+        Assert.Contains("ambiguous", response.error?.message);
         Assert.Contains(ProtocolConstants.GetCanonicalPath(firstProjectRoot), response.error?.message);
         Assert.Contains(ProtocolConstants.GetCanonicalPath(secondProjectRoot), response.error?.message);
     }
@@ -484,7 +484,7 @@ public sealed class CliAppTests
 
         var response = ParseResponse(result.Stdout);
         Assert.Equal("CLI_USAGE", response.error?.code);
-        Assert.Contains("올바른 JSON", response.error?.message);
+        Assert.Contains("valid JSON", response.error?.message);
 
         var details = ParseDetails(response.error?.details);
         Assert.Equal(
@@ -499,8 +499,8 @@ public sealed class CliAppTests
 
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(string.Empty, result.Stdout);
-        Assert.Contains("알 수 없는 명령입니다: stats", result.Stderr);
-        Assert.Contains("유사한 명령:", result.Stderr);
+        Assert.Contains("Unknown command: stats", result.Stderr);
+        Assert.Contains("Similar commands:", result.Stderr);
         Assert.Contains("status", result.Stderr);
     }
 
@@ -511,10 +511,10 @@ public sealed class CliAppTests
 
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(string.Empty, result.Stdout);
-        Assert.Contains("알 수 없는 asset 하위 명령입니다: delte", result.Stderr);
-        Assert.Contains("유사한 `asset` 하위 명령:", result.Stderr);
+        Assert.Contains("Unknown asset subcommand: delte", result.Stderr);
+        Assert.Contains("Similar `asset` subcommands:", result.Stderr);
         Assert.Contains("asset delete", result.Stderr);
-        Assert.Contains("사용 가능한 `asset` 하위 명령:", result.Stderr);
+        Assert.Contains("Available `asset` subcommands:", result.Stderr);
         Assert.Contains("asset create", result.Stderr);
     }
 
@@ -538,7 +538,7 @@ public sealed class CliAppTests
 
         Assert.Equal(2, result.ExitCode);
         Assert.Equal(string.Empty, result.Stdout);
-        Assert.Contains("지원하지 않는 옵션입니다: --verbose", result.Stderr);
+        Assert.Contains("Unsupported option: --verbose", result.Stderr);
         Assert.Contains("usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] status", result.Stderr);
     }
 

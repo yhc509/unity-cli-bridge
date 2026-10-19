@@ -75,7 +75,7 @@ namespace UnityCliBridge.Bridge.Editor
             string normalizedPath = NormalizeAssetPath(path);
             if (!AssetExists(normalizedPath))
             {
-                throw new InvalidOperationException(commandName + " 대상 asset이 없습니다: " + normalizedPath);
+                throw new InvalidOperationException(commandName + " target asset does not exist: " + normalizedPath);
             }
 
             return normalizedPath;
@@ -91,7 +91,7 @@ namespace UnityCliBridge.Bridge.Editor
             string parentPath = GetParentFolder(path);
             if (!AssetDatabase.IsValidFolder(parentPath))
             {
-                throw new CommandFailureException("ASSET_CREATE_FAILED", "대상 폴더가 없습니다: " + parentPath);
+                throw new CommandFailureException("ASSET_CREATE_FAILED", "Target folder does not exist: " + parentPath);
             }
         }
 
@@ -105,12 +105,12 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!canOverwrite)
             {
-                throw new InvalidOperationException(commandName + " 대상 경로가 이미 있습니다. 덮어쓰려면 --force를 사용하세요: " + path);
+                throw new InvalidOperationException(commandName + " target path already exists. Pass --force to overwrite: " + path);
             }
 
             if (!AssetDatabase.DeleteAsset(path))
             {
-                throw new InvalidOperationException("기존 asset를 지우지 못했습니다: " + path);
+                throw new InvalidOperationException("Could not delete the existing asset: " + path);
             }
 
             return true;
@@ -140,7 +140,7 @@ namespace UnityCliBridge.Bridge.Editor
             string projectRoot = Path.GetDirectoryName(Application.dataPath);
             if (string.IsNullOrWhiteSpace(projectRoot))
             {
-                throw new InvalidOperationException("Unity 프로젝트 루트를 찾지 못했습니다.");
+                throw new InvalidOperationException("Could not find the Unity project root.");
             }
 
             string canonicalProjectRoot = Path.GetFullPath(projectRoot);
@@ -159,7 +159,7 @@ namespace UnityCliBridge.Bridge.Editor
             string allowedRoot = Path.GetFullPath(Path.Combine(canonicalProjectRoot, "Assets"));
             if (!AssetPathUtility.IsPhysicalPathWithinRoot(physicalPath, allowedRoot))
             {
-                throw new InvalidOperationException("asset 경로가 Unity 프로젝트 asset 루트 밖을 가리킵니다: " + normalizedPath);
+                throw new InvalidOperationException("Asset path points outside the Unity project's asset root: " + normalizedPath);
             }
 
             return physicalPath;

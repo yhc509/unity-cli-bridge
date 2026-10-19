@@ -268,7 +268,7 @@ public sealed class ProfileComparerTests : IDisposable
 
         Assert.True(payload.truncated);
         Assert.Equal(2, payload.regressions.Length);
-        // 정렬은 deltaMs 내림차순 — 가장 크게 느려진 마커가 먼저.
+        // Sorted by deltaMs descending — the marker that slowed the most comes first.
         Assert.Equal("R1", payload.regressions[0].marker);
         Assert.Equal("R2", payload.regressions[1].marker);
     }
@@ -347,7 +347,7 @@ public sealed class ProfileComparerTests : IDisposable
 
         ProfileComparePayload payload = RunCompare("base", "head");
 
-        Assert.Contains(payload.notes, n => n.Contains("프레임 수"));
+        Assert.Contains(payload.notes, n => n.Contains("frame count"));
     }
 
     [Fact]
@@ -381,7 +381,7 @@ public sealed class ProfileComparerTests : IDisposable
 
         ProfileComparePayload payload = RunCompare("base", "head");
 
-        Assert.Contains(payload.notes, n => n.Contains("프레임 수"));
+        Assert.Contains(payload.notes, n => n.Contains("frame count"));
     }
 
     [Fact]
@@ -396,7 +396,7 @@ public sealed class ProfileComparerTests : IDisposable
         Assert.False(payload.frameTimeMedianMs.deltaPercentAvailable);
         Assert.Equal(0.0, payload.frameTimeMedianMs.deltaPercent);
         Assert.Equal(25.0, payload.frameTimeMedianMs.delta, precision: 6);
-        Assert.Contains(payload.notes, n => n.Contains("base 캡처에 쓸 만한 frame-time"));
+        Assert.Contains(payload.notes, n => n.Contains("base capture has no usable frame-time"));
     }
 
     [Fact]
@@ -409,7 +409,7 @@ public sealed class ProfileComparerTests : IDisposable
 
         Assert.Equal("unchanged", payload.verdict);
         Assert.Equal(-25.0, payload.frameTimeMedianMs.delta, precision: 6);
-        Assert.Contains(payload.notes, n => n.Contains("head 캡처에 쓸 만한 frame-time"));
+        Assert.Contains(payload.notes, n => n.Contains("head capture has no usable frame-time"));
     }
 
     [Fact]

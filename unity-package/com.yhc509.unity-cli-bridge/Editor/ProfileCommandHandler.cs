@@ -222,7 +222,7 @@ namespace UnityCliBridge.Bridge.Editor
                             requestId,
                             projectHash,
                             ProtocolConstants.ErrorProfileTimeout,
-                            $"profile stats가 {ProtocolConstants.ProfileStatsTimeoutSeconds}초 안에 {frames}프레임을 수집하지 못했습니다.",
+                            $"profile stats did not collect {frames} frames within {ProtocolConstants.ProfileStatsTimeoutSeconds} seconds.",
                             true,
                             stopwatch.ElapsedMilliseconds,
                             ProtocolConstants.TransportLive));

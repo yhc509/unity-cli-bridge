@@ -50,7 +50,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!normalizedPath.StartsWith("/", StringComparison.Ordinal))
             {
-                throw new CommandFailureException("PREFAB_NODE_INVALID", commandName + " path는 `/`로 시작해야 합니다: " + normalizedPath);
+                throw new CommandFailureException("PREFAB_NODE_INVALID", commandName + " path must start with `/`: " + normalizedPath);
             }
 
             Transform current = root.transform;
@@ -81,7 +81,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (matchedChild == null)
                 {
-                    throw new CommandFailureException("PREFAB_NODE_NOT_FOUND", commandName + " path를 찾지 못했습니다: " + normalizedPath);
+                    throw new CommandFailureException("PREFAB_NODE_NOT_FOUND", commandName + " could not find path: " + normalizedPath);
                 }
 
                 current = matchedChild;
@@ -94,7 +94,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (spec == null)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", "node spec이 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", "Node spec is empty.");
             }
 
             string name = string.IsNullOrWhiteSpace(spec.Name)
@@ -119,7 +119,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (spec == null)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", "node values가 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", "Node values are empty.");
             }
 
             if (spec.Name != null)
@@ -144,7 +144,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (values == null)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", "node values가 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", "Node values are empty.");
             }
 
             string? name = InspectorMutationReaderUtility.ReadOptionalString(values, "name");
@@ -153,7 +153,7 @@ namespace UnityCliBridge.Bridge.Editor
                 target.name = InspectorPathParserUtility.RequireNodeName(name, commandName, "PREFAB");
             }
 
-            JObject? transformValues = InspectorMutationReaderUtility.ReadOptionalObject(values, "transform", "PREFAB_SPEC_INVALID", commandName + " transform 값은 object여야 합니다.");
+            JObject? transformValues = InspectorMutationReaderUtility.ReadOptionalObject(values, "transform", "PREFAB_SPEC_INVALID", commandName + " transform value must be an object.");
             Transform transform = target.transform;
             InspectorUtility.ApplyNodeStateCore(
                 target,
@@ -162,13 +162,13 @@ namespace UnityCliBridge.Bridge.Editor
                 InspectorMutationReaderUtility.ReadOptionalProperty(values, "layer"),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localPosition,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localPosition", "PREFAB_SPEC_INVALID", commandName + " transform.localPosition 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localPosition", "PREFAB_SPEC_INVALID", commandName + " transform.localPosition must be an object.")),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localEulerAngles,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localRotationEuler", "PREFAB_SPEC_INVALID", commandName + " transform.localRotationEuler 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localRotationEuler", "PREFAB_SPEC_INVALID", commandName + " transform.localRotationEuler must be an object.")),
                 InspectorMutationReaderUtility.MergeVector3(
                     transform.localScale,
-                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localScale", "PREFAB_SPEC_INVALID", commandName + " transform.localScale 값은 object여야 합니다.")),
+                    InspectorMutationReaderUtility.ReadOptionalObject(transformValues, "localScale", "PREFAB_SPEC_INVALID", commandName + " transform.localScale must be an object.")),
                 "PREFAB");
         }
 

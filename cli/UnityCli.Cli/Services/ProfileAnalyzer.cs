@@ -37,7 +37,7 @@ internal static class ProfileAnalyzer
                     "local",
                     null,
                     ProtocolConstants.ErrorProfileNotFound,
-                    $"프레임 {parsed.ProfileAnalyzeFrame.Value}이 캡처 범위에 없습니다 (0..{(sidecar.frames.Length == 0 ? 0 : sidecar.frames[^1].i)}).",
+                    $"Frame {parsed.ProfileAnalyzeFrame.Value} is outside the capture range (0..{(sidecar.frames.Length == 0 ? 0 : sidecar.frames[^1].i)}).",
                     false,
                     0,
                     "cli");
@@ -99,7 +99,7 @@ internal static class ProfileAnalyzer
                 "local",
                 null,
                 ProtocolConstants.ErrorProfileNotFound,
-                $"마커 `{markerName}`가 캡처에 없습니다. `profile analyze --gc`나 summary의 hotspots에서 정확한 이름을 확인하세요.",
+                $"Marker `{markerName}` is not in the capture. Check the exact name with `profile analyze --gc` or the summary hotspots.",
                 false,
                 0,
                 "cli");
