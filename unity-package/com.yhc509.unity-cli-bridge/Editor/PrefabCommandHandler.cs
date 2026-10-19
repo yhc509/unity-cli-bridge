@@ -32,7 +32,7 @@ namespace UnityCliBridge.Bridge.Editor
                 case ProtocolConstants.CommandPrefabListComponents:
                     return HandleListComponents(argumentsJson);
                 default:
-                    throw new InvalidOperationException("지원하지 않는 prefab 명령입니다: " + command);
+                    throw new InvalidOperationException("Unsupported prefab command: " + command);
             }
         }
 
@@ -44,7 +44,7 @@ namespace UnityCliBridge.Bridge.Editor
             string path = RequireExistingPrefabPath(args.path, "prefab-inspect");
             if (maxDepth.HasValue && maxDepth.Value <= 0)
             {
-                throw new CommandFailureException("PREFAB_INSPECT_INVALID", "`--max-depth`는 1 이상의 정수여야 합니다.");
+                throw new CommandFailureException("PREFAB_INSPECT_INVALID", "`--max-depth` must be an integer >= 1.");
             }
             GameObject root = PrefabUtility.LoadPrefabContents(path);
 
@@ -69,13 +69,13 @@ namespace UnityCliBridge.Bridge.Editor
             ValidateVersion(spec.Version, "prefab-create");
             if (spec.Root == null)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", "`root`가 필요합니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", "`root` is required.");
             }
 
             bool isOverwritten = AssetCommandSupport.AssetExists(path);
             if (isOverwritten && !args.force)
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorPrefabForceRequired, "prefab 덮어쓰기에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorPrefabForceRequired, "Overwriting a prefab requires --force.");
             }
 
             if (isOverwritten)
@@ -103,7 +103,7 @@ namespace UnityCliBridge.Bridge.Editor
                 GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, path);
                 if (saved == null)
                 {
-                    throw new CommandFailureException("PREFAB_SAVE_FAILED", "prefab을 저장하지 못했습니다: " + path);
+                    throw new CommandFailureException("PREFAB_SAVE_FAILED", "Could not save prefab: " + path);
                 }
             }
             finally
@@ -112,8 +112,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             AssetDatabase.SaveAssets();
-            // Unity 6+: SavePrefab 후 ImportAsset 대신 Refresh를 써야
-            // file watcher가 변경을 동기 인식하여 "modified externally" 대화상자가 뜨지 않음.
+            // Unity 6+: after SavePrefab, Refresh instead of ImportAsset so the
+            // file watcher sees the change and does not show "modified externally".
             AssetDatabase.Refresh();
             return ProtocolJson.Serialize(new PrefabMutationPayload
             {
@@ -132,13 +132,13 @@ namespace UnityCliBridge.Bridge.Editor
             ValidateVersion(spec.Version, "prefab-patch");
             if (spec.Operations == null || spec.Operations.Length == 0)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", "`operations`가 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", "`operations` is empty.");
             }
 
             NormalizeOperationNames(spec.Operations);
             if (HasDestructiveOperation(spec) && !args.force)
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorPrefabForceRequired, "`remove-node` 또는 `remove-component`를 쓰려면 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorPrefabForceRequired, "--force is required to use `remove-node` or `remove-component`.");
             }
 
             EnsureCurrentPrefabStageCleanForWrite(path);
@@ -165,7 +165,7 @@ namespace UnityCliBridge.Bridge.Editor
                 GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, path);
                 if (saved == null)
                 {
-                    throw new CommandFailureException("PREFAB_SAVE_FAILED", "prefab을 저장하지 못했습니다: " + path);
+                    throw new CommandFailureException("PREFAB_SAVE_FAILED", "Could not save prefab: " + path);
                 }
             }
             finally
@@ -174,8 +174,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             AssetDatabase.SaveAssets();
-            // Unity 6+: SavePrefab 후 ImportAsset 대신 Refresh를 써야
-            // file watcher가 변경을 동기 인식하여 "modified externally" 대화상자가 뜨지 않음.
+            // Unity 6+: after SavePrefab, Refresh instead of ImportAsset so the
+            // file watcher sees the change and does not show "modified externally".
             AssetDatabase.Refresh();
             return ProtocolJson.Serialize(new PrefabMutationPayload
             {
@@ -192,7 +192,7 @@ namespace UnityCliBridge.Bridge.Editor
             string path = RequireExistingPrefabPath(args.path, "prefab-list-components");
             if (string.IsNullOrWhiteSpace(args.node))
             {
-                throw new CommandFailureException("PREFAB_LIST_COMPONENTS_INVALID", "`--node`가 필요합니다.");
+                throw new CommandFailureException("PREFAB_LIST_COMPONENTS_INVALID", "`--node` is required.");
             }
 
             GameObject root = PrefabUtility.LoadPrefabContents(path);
@@ -216,7 +216,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (string.IsNullOrWhiteSpace(specJson))
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec이 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec is empty.");
             }
 
             try
@@ -225,14 +225,14 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (spec == null)
                 {
-                    throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec을 해석하지 못했습니다.");
+                    throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec could not be parsed.");
                 }
 
                 return spec;
             }
             catch (JsonException exception)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec JSON이 잘못되었습니다.", exception.Message);
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec JSON is invalid.", exception.Message);
             }
         }
 
@@ -240,7 +240,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (version > 1)
             {
-                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec version을 지원하지 않습니다: " + version);
+                throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec version is not supported: " + version);
             }
         }
 
@@ -255,7 +255,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!string.Equals(extension, ".prefab", StringComparison.OrdinalIgnoreCase))
             {
-                throw new CommandFailureException("PREFAB_PATH_INVALID", "prefab 경로는 `.prefab` 확장자를 사용해야 합니다: " + normalizedPath);
+                throw new CommandFailureException("PREFAB_PATH_INVALID", "Prefab path must use the `.prefab` extension: " + normalizedPath);
             }
 
             return normalizedPath;
@@ -284,7 +284,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorPrefabStageDirty,
-                        "'" + normalizedPath + "' prefab이 Prefab Stage에서 저장하지 않은 변경과 함께 열려 있어 진행할 수 없습니다. Prefab Stage에서 저장하거나 폐기한 뒤 다시 시도하세요.");
+                        "'" + normalizedPath + "' is open in Prefab Stage with unsaved changes, so this cannot continue. Save or discard them in Prefab Stage, then try again.");
                 }
             }
         }
@@ -293,14 +293,14 @@ namespace UnityCliBridge.Bridge.Editor
         {
             var stages = new List<PrefabStage>();
 
-            // 공개·안정 경로: 현재 stage는 리플렉션 없이 항상 잡는다(리플렉션 실패 시에도 #79 동작 보존).
+            // Stable path: always take the current stage without reflection (keeps #79 behavior if reflection fails).
             PrefabStage current = PrefabStageUtility.GetCurrentPrefabStage();
             if (current != null)
             {
                 stages.Add(current);
             }
 
-            // 확장 경로: breadcrumb history의 부모 stage들(중첩 편집). internal API라 best-effort.
+            // Extended path: parent stages from breadcrumb history (nested editing). Internal API, best-effort.
             try
             {
                 Type managerType = typeof(PrefabStage).Assembly
@@ -323,8 +323,8 @@ namespace UnityCliBridge.Bridge.Editor
             }
             catch (Exception)
             {
-                // StageNavigationManager는 internal API라 Unity 버전 간 형태가 바뀔 수 있다.
-                // 형태가 달라지면 현재 stage 단독 검사(#79 동작)로 안전하게 degrade한다 — 크래시/오탐 차단 없음.
+                // StageNavigationManager is internal API and its shape can change across Unity versions.
+                // If it does, degrade to the current-stage check only (#79 behavior) — no crash, no false positive.
             }
 
             return stages;
@@ -337,7 +337,7 @@ namespace UnityCliBridge.Bridge.Editor
             Type mainType = AssetDatabase.GetMainAssetTypeAtPath(prefabPath);
             if (mainType != typeof(GameObject))
             {
-                throw new CommandFailureException("PREFAB_PATH_INVALID", "prefab asset이 아닙니다: " + prefabPath);
+                throw new CommandFailureException("PREFAB_PATH_INVALID", "Not a prefab asset: " + prefabPath);
             }
 
             return prefabPath;

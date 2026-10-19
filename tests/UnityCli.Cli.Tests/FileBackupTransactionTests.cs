@@ -144,7 +144,7 @@ public sealed class FileBackupTransactionTests
                 options));
 
         Assert.Equal(ProtocolConstants.ErrorBackupFailed, exception.ErrorCode);
-        Assert.Contains("asset-test 백업 생성에 실패했습니다", exception.Message);
+        Assert.Contains("asset-test backup failed", exception.Message);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class FileBackupTransactionTests
 
         Assert.Equal(ProtocolConstants.ErrorBackupRestoreFailed, exception.ErrorCode);
         Assert.Contains(backupPath, exception.Message);
-        Assert.Contains("수동 복구", exception.Message);
+        Assert.Contains("Manual recovery", exception.Message);
     }
 
     [Fact]

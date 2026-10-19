@@ -29,7 +29,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return HandleSet(argumentsJson);
             }
 
-            throw new InvalidOperationException("지원하지 않는 material 명령입니다: " + command);
+            throw new InvalidOperationException("Unsupported material command: " + command);
         }
 
         private string HandleInfo(string argumentsJson)
@@ -196,7 +196,7 @@ namespace UnityCliBridge.Bridge.Editor
                 ShaderPropertyType propertyType = RequirePropertyType(material.shader, propertyName, "texture");
                 if (propertyType != ShaderPropertyType.Texture)
                 {
-                    throw new CommandFailureException("UNSUPPORTED_TYPE", $"텍스처로 설정할 수 없는 프로퍼티 타입입니다: {propertyType}", false, null);
+                    throw new CommandFailureException("UNSUPPORTED_TYPE", $"Property type cannot be set as a texture: {propertyType}", false, null);
                 }
 
                 Texture? oldTexture = material.GetTexture(propertyName);
@@ -205,7 +205,7 @@ namespace UnityCliBridge.Bridge.Editor
                 Texture? newTexture = AssetDatabase.LoadAssetAtPath<Texture>(args.textureAsset!);
                 if (newTexture == null)
                 {
-                    throw new CommandFailureException("TEXTURE_NOT_FOUND", $"텍스처 에셋을 찾지 못했습니다: {args.textureAsset}", false, null);
+                    throw new CommandFailureException("TEXTURE_NOT_FOUND", $"Could not find texture asset: {args.textureAsset}", false, null);
                 }
 
                 material.SetTexture(propertyName, newTexture);
@@ -234,7 +234,7 @@ namespace UnityCliBridge.Bridge.Editor
                         previousValue = oldFloat.ToString(CultureInfo.InvariantCulture);
                         if (!float.TryParse(args.value!, NumberStyles.Float, CultureInfo.InvariantCulture, out float newFloat))
                         {
-                            throw new CommandFailureException("INVALID_VALUE", $"Float 값을 파싱할 수 없습니다: {args.value}", false, null);
+                            throw new CommandFailureException("INVALID_VALUE", $"Could not parse float value: {args.value}", false, null);
                         }
 
                         material.SetFloat(propertyName, newFloat);
@@ -256,7 +256,7 @@ namespace UnityCliBridge.Bridge.Editor
                         previousValue = oldInt.ToString(CultureInfo.InvariantCulture);
                         if (!int.TryParse(args.value!, NumberStyles.Integer, CultureInfo.InvariantCulture, out int newInt))
                         {
-                            throw new CommandFailureException("INVALID_VALUE", $"Int 값을 파싱할 수 없습니다: {args.value}", false, null);
+                            throw new CommandFailureException("INVALID_VALUE", $"Could not parse int value: {args.value}", false, null);
                         }
 
                         material.SetInt(propertyName, newInt);
@@ -264,12 +264,12 @@ namespace UnityCliBridge.Bridge.Editor
                         break;
                     }
                     default:
-                        throw new CommandFailureException("UNSUPPORTED_TYPE", $"이 프로퍼티 타입은 직접 설정할 수 없습니다: {propertyType}", false, null);
+                        throw new CommandFailureException("UNSUPPORTED_TYPE", $"This property type cannot be set directly: {propertyType}", false, null);
                 }
             }
             else
             {
-                throw new CommandFailureException("INVALID_ARGS", "--property+--value 또는 --texture+--asset 조합이 필요합니다.", false, null);
+                throw new CommandFailureException("INVALID_ARGS", "--property+--value or --texture+--asset is required.", false, null);
             }
 
             EditorUtility.SetDirty(material);
@@ -288,13 +288,13 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                throw new CommandFailureException("INVALID_ARGS", "머터리얼 경로가 비어 있습니다.", false, null);
+                throw new CommandFailureException("INVALID_ARGS", "Material path is empty.", false, null);
             }
 
             Material? material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material == null)
             {
-                throw new CommandFailureException("MATERIAL_NOT_FOUND", $"머터리얼을 찾지 못했습니다: {path}", false, null);
+                throw new CommandFailureException("MATERIAL_NOT_FOUND", $"Could not find material: {path}", false, null);
             }
 
             return material;
@@ -310,7 +310,7 @@ namespace UnityCliBridge.Bridge.Editor
                 }
             }
 
-            throw new CommandFailureException("PROPERTY_NOT_FOUND", $"셰이더 {propertyLabel}를 찾지 못했습니다: {propertyName}", false, null);
+            throw new CommandFailureException("PROPERTY_NOT_FOUND", $"Could not find shader {propertyLabel}: {propertyName}", false, null);
         }
 
         private static Color ParseColor(string csv)
@@ -318,20 +318,20 @@ namespace UnityCliBridge.Bridge.Editor
             string[] parts = csv.Split(',');
             if (parts.Length < 3 || parts.Length > 4)
             {
-                throw new CommandFailureException("INVALID_VALUE", "Color는 `r,g,b` 또는 `r,g,b,a` 형식이어야 합니다.", false, null);
+                throw new CommandFailureException("INVALID_VALUE", "Color must be `r,g,b` or `r,g,b,a`.", false, null);
             }
 
             if (!float.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float r)
                 || !float.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float g)
                 || !float.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float b))
             {
-                throw new CommandFailureException("INVALID_VALUE", "Color 값을 파싱할 수 없습니다.", false, null);
+                throw new CommandFailureException("INVALID_VALUE", "Could not parse color value.", false, null);
             }
 
             float a = 1f;
             if (parts.Length == 4 && !float.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out a))
             {
-                throw new CommandFailureException("INVALID_VALUE", "Color alpha 값을 파싱할 수 없습니다.", false, null);
+                throw new CommandFailureException("INVALID_VALUE", "Could not parse color alpha.", false, null);
             }
 
             return new Color(r, g, b, a);
@@ -342,7 +342,7 @@ namespace UnityCliBridge.Bridge.Editor
             string[] parts = csv.Split(',');
             if (parts.Length < 2 || parts.Length > 4)
             {
-                throw new CommandFailureException("INVALID_VALUE", "Vector는 `x,y[,z[,w]]` 형식이어야 합니다.", false, null);
+                throw new CommandFailureException("INVALID_VALUE", "Vector must be `x,y[,z[,w]]`.", false, null);
             }
 
             float[] values = new float[4];
@@ -351,7 +351,7 @@ namespace UnityCliBridge.Bridge.Editor
                 string component = parts[i].Trim();
                 if (!float.TryParse(component, NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]))
                 {
-                    throw new CommandFailureException("INVALID_VALUE", $"Vector 컴포넌트를 파싱할 수 없습니다: {component}", false, null);
+                    throw new CommandFailureException("INVALID_VALUE", $"Could not parse vector component: {component}", false, null);
                 }
             }
 

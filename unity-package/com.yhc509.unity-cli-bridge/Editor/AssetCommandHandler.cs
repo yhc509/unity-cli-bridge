@@ -37,7 +37,7 @@ namespace UnityCliBridge.Bridge.Editor
                 case ProtocolConstants.CommandAssetCreate:
                     return _assetCreateHandler.Handle(argumentsJson);
                 default:
-                    throw new InvalidOperationException("지원하지 않는 asset 명령입니다: " + command);
+                    throw new InvalidOperationException("Unsupported asset command: " + command);
             }
         }
 
@@ -50,7 +50,7 @@ namespace UnityCliBridge.Bridge.Editor
             bool hasTypeTerm = !string.IsNullOrWhiteSpace(typeTerm);
             if (!hasNameTerm && !hasTypeTerm)
             {
-                throw new InvalidOperationException("asset-find에는 name 또는 type이 필요합니다.");
+                throw new InvalidOperationException("asset-find requires a name or a type.");
             }
 
             int limit = args.limit <= 0 ? ProtocolConstants.DefaultAssetFindLimit : args.limit;
@@ -108,7 +108,7 @@ namespace UnityCliBridge.Bridge.Editor
             bool hasGuid = !string.IsNullOrWhiteSpace(args.guid);
             if (hasPath == hasGuid)
             {
-                throw new InvalidOperationException("asset-info에는 path 또는 guid 중 하나만 필요합니다.");
+                throw new InvalidOperationException("asset-info requires exactly one of path or guid.");
             }
 
             AssetRecord payload = hasPath
@@ -148,7 +148,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (!AssetDatabase.IsValidFolder(path))
                 {
-                    throw new InvalidOperationException("같은 경로에 폴더가 아닌 asset이 이미 있습니다: " + path);
+                    throw new InvalidOperationException("A non-folder asset already exists at this path: " + path);
                 }
 
                 return ProtocolJson.Serialize(new AssetMutationPayload
@@ -166,7 +166,7 @@ namespace UnityCliBridge.Bridge.Editor
                 string segment = segments[index];
                 if (string.IsNullOrWhiteSpace(segment))
                 {
-                    throw new InvalidOperationException("비어 있는 폴더 이름은 만들 수 없습니다.");
+                    throw new InvalidOperationException("A folder name cannot be empty.");
                 }
 
                 string next = string.Concat(current, "/", segment);
@@ -174,7 +174,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     if (!AssetDatabase.IsValidFolder(next))
                     {
-                        throw new InvalidOperationException("폴더 경로 중간에 asset 파일이 있습니다: " + next);
+                        throw new InvalidOperationException("An asset file is in the middle of the folder path: " + next);
                     }
                 }
                 else
@@ -182,7 +182,7 @@ namespace UnityCliBridge.Bridge.Editor
                     string guid = AssetDatabase.CreateFolder(current, segment);
                     if (string.IsNullOrWhiteSpace(guid))
                     {
-                        throw new InvalidOperationException("폴더를 만들지 못했습니다: " + next);
+                        throw new InvalidOperationException("Could not create folder: " + next);
                     }
 
                     isCreated = true;
@@ -217,7 +217,7 @@ namespace UnityCliBridge.Bridge.Editor
             AssetCommandSupport.EnsureParentFolderExists(to);
             if (!args.force && AssetCommandSupport.AssetExists(to))
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "asset 덮어쓰기 또는 삭제에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "Overwriting or deleting an asset requires --force.");
             }
 
             bool isOverwritten = AssetCommandSupport.AssetExists(to);
@@ -249,12 +249,12 @@ namespace UnityCliBridge.Bridge.Editor
             string newName = args.name == null ? string.Empty : args.name.Trim();
             if (string.IsNullOrWhiteSpace(newName))
             {
-                throw new InvalidOperationException("asset-rename에는 name이 필요합니다.");
+                throw new InvalidOperationException("asset-rename requires a name.");
             }
 
             if (newName.Contains("/") || newName.Contains("\\"))
             {
-                throw new InvalidOperationException("asset-rename의 name에는 경로 구분자를 넣을 수 없습니다.");
+                throw new InvalidOperationException("asset-rename name cannot contain a path separator.");
             }
 
             string destination = AssetCommandSupport.BuildRenamedPath(path, newName);
@@ -269,7 +269,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!args.force && AssetCommandSupport.AssetExists(destination))
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "asset 덮어쓰기 또는 삭제에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "Overwriting or deleting an asset requires --force.");
             }
 
             bool isOverwritten = AssetCommandSupport.AssetExists(destination);
@@ -299,14 +299,14 @@ namespace UnityCliBridge.Bridge.Editor
             AssetPathArgs args = ProtocolJson.Deserialize<AssetPathArgs>(argumentsJson) ?? new AssetPathArgs();
             if (!args.force)
             {
-                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "asset 덮어쓰기 또는 삭제에는 --force가 필요합니다.");
+                throw new CommandFailureException(ProtocolConstants.ErrorAssetForceRequired, "Overwriting or deleting an asset requires --force.");
             }
 
             string path = AssetCommandSupport.RequireExistingAssetPath(args.path, "asset-delete");
             AssetRecord beforeDelete = AssetCommandSupport.BuildRecordFromPath(path);
             if (!AssetDatabase.DeleteAsset(path))
             {
-                throw new InvalidOperationException("asset를 삭제하지 못했습니다: " + path);
+                throw new InvalidOperationException("Could not delete asset: " + path);
             }
 
             AssetDatabase.SaveAssets();

@@ -67,13 +67,13 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (componentSpec == null || string.IsNullOrWhiteSpace(componentSpec.Type))
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", commandName + " component type이 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", commandName + " component type is empty.");
             }
 
             Type componentType = ResolveComponentType(componentSpec.Type, commandName);
             if (componentType == typeof(Transform))
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Transform은 직접 추가할 수 없습니다.");
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Transform cannot be added directly.");
             }
 
             Component? component;
@@ -83,14 +83,14 @@ namespace UnityCliBridge.Bridge.Editor
             }
             catch (Exception exception)
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "component를 추가하지 못했습니다: " + componentSpec.Type, exception.Message);
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Could not add component: " + componentSpec.Type, exception.Message);
             }
 
             if (component == null)
             {
                 throw new CommandFailureException(
                     "PREFAB_COMPONENT_ADD_FAILED",
-                    "component를 추가하지 못했습니다: " + componentSpec.Type + " @ " + PrefabInspector.BuildNodePath(target.transform));
+                    "Could not add component: " + componentSpec.Type + " @ " + PrefabInspector.BuildNodePath(target.transform));
             }
 
             if (componentSpec.Values != null)
@@ -108,7 +108,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (operation == null || string.IsNullOrWhiteSpace(operation.Operation))
                 {
-                    throw new CommandFailureException("PREFAB_SPEC_INVALID", "patch operation `op`가 비어 있습니다.");
+                    throw new CommandFailureException("PREFAB_SPEC_INVALID", "Patch operation `op` is empty.");
                 }
 
                 switch (operation.Operation)
@@ -118,7 +118,7 @@ namespace UnityCliBridge.Bridge.Editor
                         GameObject parent = PrefabInspector.ResolveNode(root, operation.Parent, "add-child");
                         if (operation.Node == null)
                         {
-                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`add-child`에는 `node`가 필요합니다.");
+                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`add-child` requires `node`.");
                         }
 
                         AddChildren(parent.transform, new[] { operation.Node }, "add-child");
@@ -130,7 +130,7 @@ namespace UnityCliBridge.Bridge.Editor
                         GameObject target = PrefabInspector.ResolveNode(root, operation.Target, "remove-node");
                         if (target == root)
                         {
-                            throw new CommandFailureException("PREFAB_NODE_INVALID", "루트 오브젝트는 삭제할 수 없습니다.");
+                            throw new CommandFailureException("PREFAB_NODE_INVALID", "The root object cannot be deleted.");
                         }
 
                         UnityEngine.Object.DestroyImmediate(target);
@@ -142,7 +142,7 @@ namespace UnityCliBridge.Bridge.Editor
                         GameObject target = PrefabInspector.ResolveNode(root, operation.Target, "set-node");
                         if (operation.Values is not JObject rawValues)
                         {
-                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`set-node`에는 `values`가 필요합니다.");
+                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`set-node` requires `values`.");
                         }
 
                         NodeMutationAnalysis analysis = InspectorMutationReaderUtility.AnalyzeNodeMutationValues(rawValues);
@@ -161,7 +161,7 @@ namespace UnityCliBridge.Bridge.Editor
                         GameObject target = PrefabInspector.ResolveNode(root, operation.Target, "add-component");
                         if (operation.Component == null)
                         {
-                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`add-component`에는 `component`가 필요합니다.");
+                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`add-component` requires `component`.");
                         }
 
                         AddComponent(target, operation.Component, "add-component");
@@ -174,7 +174,7 @@ namespace UnityCliBridge.Bridge.Editor
                         Component component = ResolveComponent(target, operation.ComponentType, operation.ComponentIndex, "remove-component");
                         if (component is Transform)
                         {
-                            throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Transform은 제거할 수 없습니다.");
+                            throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Transform cannot be removed.");
                         }
 
                         UnityEngine.Object.DestroyImmediate(component, true);
@@ -187,7 +187,7 @@ namespace UnityCliBridge.Bridge.Editor
                         Component component = ResolveComponent(target, operation.ComponentType, operation.ComponentIndex, "set-component-values");
                         if (operation.Values == null || operation.Values.Type != JTokenType.Object)
                         {
-                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`set-component-values`에는 object 형태의 `values`가 필요합니다.");
+                            throw new CommandFailureException("PREFAB_SPEC_INVALID", "`set-component-values` requires `values` as an object.");
                         }
 
                         SerializedValueApplier.Apply(component, (JObject)operation.Values);
@@ -195,7 +195,7 @@ namespace UnityCliBridge.Bridge.Editor
                         break;
                     }
                     default:
-                        throw new CommandFailureException("PREFAB_SPEC_INVALID", "지원하지 않는 patch operation입니다: " + operation.Operation);
+                        throw new CommandFailureException("PREFAB_SPEC_INVALID", "Unsupported patch operation: " + operation.Operation);
                 }
             }
 
@@ -222,7 +222,7 @@ namespace UnityCliBridge.Bridge.Editor
             int requestedIndex = componentIndex ?? 0;
             if (requestedIndex < 0)
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " component index가 범위를 벗어났습니다: " + requestedIndex);
+                throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " component index is out of range: " + requestedIndex);
             }
 
             _componentBuffer.Clear();
@@ -247,10 +247,10 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (matchedCount == 0)
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " 대상 component를 찾지 못했습니다: " + componentTypeName);
+                throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " could not find target component: " + componentTypeName);
             }
 
-            throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " component index가 범위를 벗어났습니다: " + requestedIndex);
+            throw new CommandFailureException("PREFAB_COMPONENT_NOT_FOUND", commandName + " component index is out of range: " + requestedIndex);
         }
 
         private static Type ResolveComponentType(string typeName, string commandName)
@@ -258,7 +258,7 @@ namespace UnityCliBridge.Bridge.Editor
             string normalized = string.IsNullOrWhiteSpace(typeName) ? string.Empty : typeName.Trim();
             if (string.IsNullOrWhiteSpace(normalized))
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", commandName + " component type이 비어 있습니다.");
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", commandName + " component type is empty.");
             }
 
             Type? exactMatch = null;
@@ -287,7 +287,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (exactMatchCount > 1)
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "동일한 full name의 component 타입이 여러 개 있습니다: " + normalized);
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "More than one component type has this full name: " + normalized);
             }
 
             Type? shortMatch = null;
@@ -316,10 +316,10 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (shortMatchCount > 1)
             {
-                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "짧은 이름이 같은 component 타입이 여러 개 있습니다. full name을 사용하세요: " + normalized);
+                throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "More than one component type shares this short name. Use the full name: " + normalized);
             }
 
-            throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "component 타입을 찾지 못했습니다: " + normalized);
+            throw new CommandFailureException("PREFAB_COMPONENT_INVALID", "Could not find component type: " + normalized);
         }
 
         private static bool IsResolvableComponentType(Type type)

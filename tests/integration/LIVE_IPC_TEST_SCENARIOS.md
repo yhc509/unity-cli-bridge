@@ -164,7 +164,7 @@ mkdir -p /tmp/unity-cli-live-offline
 "$UNITY_CLI" --project "$UNITY_PROJECT_PATH" refresh
 ```
 
-- 기대 결과: `AssetDatabase.Refresh 완료` 메시지가 반환된다.
+- 기대 결과: `AssetDatabase.Refresh completed` 메시지가 반환된다.
 - 확인 방법: `status: success`와 메시지 문자열을 확인한다.
 
 ### EDITOR-002 `compile`
@@ -177,7 +177,7 @@ mkdir -p /tmp/unity-cli-live-offline
 ```
 
 - 기대 결과: compile 요청이 즉시 반환된다.
-- 확인 방법: `script compilation 요청 완료`가 출력되고, 잠시 뒤 `status`가 다시 `transport: live`로 응답하는지 확인한다.
+- 확인 방법: `script compilation requested`가 출력되고, 잠시 뒤 `status`가 다시 `transport: live`로 응답하는지 확인한다.
 
 ### EDITOR-003 `execute-menu`
 

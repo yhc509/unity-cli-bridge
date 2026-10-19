@@ -1,152 +1,152 @@
 # QA Test Automation
 
-Play Mode에서 입력을 시뮬레이션하고 결과를 검증하는 흐름이다.
+How to simulate input in Play Mode and check the result.
 
-## 테스트 흐름
+## Test flow
 
 ```
-status → play → (입력 시뮬레이션) → 검증 (로그 + 스크린샷) → stop
+status → play → (simulate input) → verify (logs + screenshot) → stop
 ```
 
-1. `status --json`으로 `isCompiling: false` 확인
-2. `play`로 Play Mode 진입 (자동으로 `runInBackground = true` 설정됨)
-3. QA 커맨드로 입력 시뮬레이션
-4. **로그 검증**: `read-console --type error --limit N --no-stacktrace` + `read-console --type log --limit N --no-stacktrace`
-5. **시각 검증**: `screenshot --view game --path /tmp/qa-check.jpg` 후 이미지 확인 (기본이 jpg q75 + 1024px 축소, lossless 원본은 `--format png --max-width 0`)
-6. `stop`으로 Play Mode 종료 (`runInBackground` 원래값 복원됨)
+1. Confirm `isCompiling: false` with `status --json`
+2. Enter Play Mode with `play` (`runInBackground = true` is set automatically)
+3. Simulate input with QA commands
+4. **Log check**: `read-console --type error --limit N --no-stacktrace` plus `read-console --type log --limit N --no-stacktrace`
+5. **Visual check**: `screenshot --view game --path /tmp/qa-check.jpg`, then look at the image (the default is jpg q75 scaled to 1024px; a lossless original needs `--format png --max-width 0`)
+6. Leave Play Mode with `stop` (`runInBackground` is restored)
 
-## 입력 방식 선택
+## Choosing an input command
 
-| 커맨드 | 동작 방식 | 사용 시점 |
+| Command | How it works | When to use it |
 |--------|-----------|-----------|
-| `qa click --target <path>` | EventSystem.Execute | UI 버튼, 토글 등 클릭 |
-| `qa click --qa-id <id>` | EventSystem.Execute | [QaTarget] 어트리뷰트로 마킹된 대상 |
-| `qa ui-dump [--limit N] [--interactable-only] [--text S] [--omit-rect] [--screenshot-width W --screenshot-height H]` | Bridge UI 구조 덤프 | 클릭 가능한 UI의 path/text/rect/center 조회 |
-| `qa tap --x N --y N [--screenshot-width W --screenshot-height H]` | EventSystem raycast + Execute | 스크린샷 분석 결과 기반 UI 좌표 탭 |
-| `qa swipe --target <path> --from x,y --to x,y` | Input System target-relative swipe | UI 슬라이더, ScrollRect 드래그 |
-| `qa swipe --from x,y --to x,y [--screenshot-width W --screenshot-height H]` | Input System 스크린샷 좌표 | 스크린샷 분석 결과 기반 화면 스와이프 |
-| `qa key --key <name>` | Input System 키보드 | 키 입력 시뮬레이션 |
-| `qa wait --ms N` | CLI-side 대기 | 명령 사이 간격 |
-| `qa wait-until --scene <name>` | Bridge 폴링 | 씬 전환 대기 |
-| `qa wait-until --log-contains <text>` | Bridge 폴링 | 특정 로그 출력 대기 |
-| `qa wait-until --object-exists <path>` | Bridge 폴링 | 오브젝트 존재 대기 |
-| `qa wait-until --object-interactable <path>` | Bridge 폴링 | 버튼/대상 클릭 가능 대기 |
-| `qa wait-until --object-gone <path>` | Bridge 폴링 | 로딩/오브젝트 비활성 또는 파괴 대기 |
-| `qa run-sequence --spec-json @seq.json [--record]` | Bridge deferred state machine | 조건 대기와 입력 액션을 한 요청에서 순차 실행, 선택적으로 mp4 녹화 |
+| `qa click --target <path>` | EventSystem.Execute | Click a UI button, toggle, and similar |
+| `qa click --qa-id <id>` | EventSystem.Execute | A target marked with `[QaTarget]` |
+| `qa ui-dump [--limit N] [--interactable-only] [--text S] [--omit-rect] [--screenshot-width W --screenshot-height H]` | Bridge UI structure dump | Look up path/text/rect/center of clickable UI |
+| `qa tap --x N --y N [--screenshot-width W --screenshot-height H]` | EventSystem raycast + Execute | Tap UI coordinates read from a screenshot |
+| `qa swipe --target <path> --from x,y --to x,y` | Input System target-relative swipe | Drag a UI slider or ScrollRect |
+| `qa swipe --from x,y --to x,y [--screenshot-width W --screenshot-height H]` | Input System screenshot coordinates | Screen swipe from a screenshot |
+| `qa key --key <name>` | Input System keyboard | Simulate a key |
+| `qa wait --ms N` | CLI-side wait | Gap between commands |
+| `qa wait-until --scene <name>` | Bridge polling | Wait for a scene change |
+| `qa wait-until --log-contains <text>` | Bridge polling | Wait for a specific log line |
+| `qa wait-until --object-exists <path>` | Bridge polling | Wait until an object exists |
+| `qa wait-until --object-interactable <path>` | Bridge polling | Wait until a button or target is clickable |
+| `qa wait-until --object-gone <path>` | Bridge polling | Wait until a loading indicator or object is inactive or destroyed |
+| `qa run-sequence --spec-json @seq.json [--record]` | Bridge deferred state machine | Run condition waits and input actions in one request, optionally recording mp4 |
 
-## 입력 방식 판단 기준
+## How to pick the input path
 
-### UI 클릭 → EventSystem 경로 (click)
-- 버튼 클릭, 토글 등 EventSystem을 통해 즉시 처리하는 대상
-- `--target`으로 hierarchy path 지정: `/Canvas[0]/Button[0]`
-- EventSystem이 씬에 있어야 함 (없으면 `QA_NO_EVENT_SYSTEM` 에러)
+### UI click → EventSystem path (click)
+- Buttons, toggles, and anything EventSystem handles immediately
+- Pass a hierarchy path with `--target`: `/Canvas[0]/Button[0]`
+- The scene needs an EventSystem (otherwise `QA_NO_EVENT_SYSTEM`)
 
-### 클릭 가능 UI 탐색 → 구조화 덤프 (ui-dump)
-- `qa ui-dump`는 현재 Play Mode 화면에서 `IPointerClickHandler`가 붙은 활성 GameObject를 수집한다.
-- 응답의 `path`는 `qa click --target <path>`에 바로 사용할 수 있다.
-- `path`는 고유할 때 신뢰할 수 있다. 같은 이름의 sibling이 같은 path를 공유하면 `centerX`/`centerY`로 `qa tap`을 사용한다.
-- `centerX`/`centerY`는 스크린샷 이미지 좌표(top-left origin)이므로 `qa tap --x <centerX> --y <centerY>`에 바로 사용할 수 있다.
-- `text`는 UGUI Text/TMP_Text 같은 자식 컴포넌트의 `text` 프로퍼티를 reflection으로 읽는다. TMP 패키지가 없어도 동작한다.
-- `qa ui-dump` 자체는 raycast를 하지 않으므로 EventSystem을 요구하지 않는다. 실제 `qa click`과 좌표 기반 `qa tap --x/--y` 실행에는 EventSystem이 필요하다.
+### Finding clickable UI → structured dump (ui-dump)
+- `qa ui-dump` collects active GameObjects in the current Play Mode view that have `IPointerClickHandler`.
+- The response `path` can go straight into `qa click --target <path>`.
+- `path` is reliable when it is unique. If same-named siblings share a path, use `centerX`/`centerY` with `qa tap`.
+- `centerX`/`centerY` are screenshot image coordinates (top-left origin), so they go straight into `qa tap --x <centerX> --y <centerY>`.
+- `text` is read by reflection from a child `text` property such as UGUI Text or TMP_Text. It works without the TMP package.
+- `qa ui-dump` itself does not raycast, so it does not require an EventSystem. A real `qa click` and a coordinate `qa tap --x/--y` do.
 
-### UI 좌표 탭 → EventSystem raycast 경로 (tap)
-- 스크린샷에서 읽은 좌표로 현재 화면의 UGUI 대상을 찾을 때 사용
-- `screenshot` 응답의 `imageOrigin`은 `top-left`, `coordinateOrigin`은 `bottom-left`다. 일반적으로는 스크린샷에서 읽은 이미지 좌표 `(x, y)`를 그대로 `qa tap --x --y`에 넘기면 된다.
-- `qa tap`은 top-origin 스크린샷 좌표를 받아 실행 시 Unity 화면 좌표계(bottom-origin)로 자동 변환한다.
-- 최근 성공한 `screenshot` 캡처의 `width`/`height`를 기본값으로 사용해 현재 `Screen.width`/`Screen.height`에 맞게 자동 스케일링한다.
-- Play Mode 진입/종료 때 자동 fallback 캐시는 리셋되므로 domain reload가 꺼져 있어도 이전 세션의 스크린샷 크기를 재사용하지 않는다.
-- EventSystem이 좌표 위치를 raycast해 최상단 대상을 찾고, 클릭 핸들러가 자식에 걸려 있으면 상위 hierarchy에서 실제 `IPointerClickHandler`를 찾아 실행한다.
-- 좌표 아래에 UI 대상이 없으면 `QA_TAP_NO_TARGET` 에러를 반환한다.
+### UI coordinate tap → EventSystem raycast path (tap)
+- Use this to hit the UGUI target under coordinates read from a screenshot
+- A `screenshot` response has `imageOrigin` `top-left` and `coordinateOrigin` `bottom-left`. In the usual case, pass the image coordinates `(x, y)` you read from the screenshot straight to `qa tap --x --y`.
+- `qa tap` accepts top-origin screenshot coordinates and converts them to Unity screen space (bottom-origin) at execution time.
+- It defaults to the `width`/`height` of the last successful `screenshot` and scales to the current `Screen.width`/`Screen.height`.
+- The automatic fallback cache resets when Play Mode enters or exits, so a previous session's screenshot size is not reused even when domain reload is off.
+- EventSystem raycasts the coordinate, picks the top target, and if the click handler is on a child it walks up to the actual `IPointerClickHandler`.
+- If there is no UI target under the coordinate, the command returns `QA_TAP_NO_TARGET`.
 
-### UI 드래그 → target-relative Input System 경로 (swipe --target)
-- `--target`으로 hierarchy path 지정: `/Canvas[0]/Scroll View[0]/Viewport[0]`
-- target은 `RectTransform`이 있어야 함 (없으면 `QA_TARGET_NOT_RECT_TRANSFORM` 에러)
-- `--from/--to`는 target `RectTransform` 중심 기준 **픽셀 오프셋**
-- Bridge가 target-relative 오프셋을 화면 좌표로 변환한 뒤 multi-frame deferred swipe로 실행
-- UGUI가 입력을 소비하려면 씬에 EventSystem이 있어야 함
+### UI drag → target-relative Input System path (swipe --target)
+- Pass a hierarchy path with `--target`: `/Canvas[0]/Scroll View[0]/Viewport[0]`
+- The target needs a `RectTransform` (otherwise `QA_TARGET_NOT_RECT_TRANSFORM`)
+- `--from`/`--to` are **pixel offsets** from the center of the target `RectTransform`
+- The bridge converts those offsets to screen coordinates, then runs a multi-frame deferred swipe
+- UGUI consumes the input only when the scene has an EventSystem
 
-### 비-UI 또는 제스처/키 입력 → Input System 경로 (swipe, key)
-- 3D 오브젝트 터치, 화면 스와이프 제스처, 키보드 입력
-- Input System 패키지 필요 (없으면 `QA_INPUT_SYSTEM_REQUIRED` 에러)
-- 좌표 기반 `qa swipe`는 **스크린샷 기준 좌표계**를 사용한다.
-- Y=0은 스크린샷 상단이며, Bridge가 실행 시 Unity 화면 좌표계(bottom-origin)로 자동 변환한다.
-- 최근 성공한 `screenshot` 캡처의 `width`/`height`를 기본값으로 사용해 현재 `Screen.width`/`Screen.height`에 맞게 자동 스케일링한다.
-- Play Mode 진입/종료 때 자동 fallback 캐시는 리셋되므로 domain reload가 꺼져 있어도 이전 세션의 스크린샷 크기를 재사용하지 않는다.
-- 다른 기준 이미지 크기로 변환해야 할 때만 `--screenshot-width/--screenshot-height`를 함께 넘겨 명시적으로 덮어쓴다.
-- 모든 `swipe`와 `key`는 deferred 또는 frame-based 입력 경로를 사용
+### Non-UI, gesture, or key input → Input System path (swipe, key)
+- Touching a 3D object, a screen-swipe gesture, or a keyboard press
+- Requires the Input System package (otherwise `QA_INPUT_SYSTEM_REQUIRED`)
+- Coordinate `qa swipe` uses **screenshot space**.
+- Y=0 is the top of the screenshot. The bridge converts to Unity screen space (bottom-origin) at execution time.
+- It defaults to the `width`/`height` of the last successful `screenshot` and scales to the current `Screen.width`/`Screen.height`.
+- The automatic fallback cache resets when Play Mode enters or exits, so a previous session's screenshot size is not reused even when domain reload is off.
+- Pass `--screenshot-width`/`--screenshot-height` together only when you must convert from a different reference image size.
+- Every `swipe` and `key` uses a deferred or frame-based input path
 
-## 사전 조건
+## Prerequisites
 
 ### EventSystem
-`qa click`, 좌표 기반 `qa tap --x/--y`, UGUI 대상 `qa swipe --target`은 씬에 EventSystem이 필요하다. 월드 대상 `qa tap --target`은 direct action 또는 Input System 좌표 fallback 경로를 사용하므로 EventSystem이 필수가 아니다.
-없으면 메뉴로 추가:
+`qa click`, coordinate `qa tap --x/--y`, and UGUI `qa swipe --target` need an EventSystem in the scene. A world-object `qa tap --target` uses a direct action or an Input System coordinate fallback, so an EventSystem is not required.
+Add one from the menu:
 
 ```bash
-# 먼저 메뉴 경로 확인
+# Confirm the menu path first
 ucli execute-menu --list "GameObject/UI" --project "$P" --json
 
-# EventSystem 추가
+# Add an EventSystem
 ucli execute-menu --path "GameObject/UI (Canvas)/Event System" --project "$P" --json
 ```
 
 ### Input System
-`qa key`와 모든 `qa swipe`는 Input System 패키지가 필요하다.
-미설치 시 Bridge가 정상 동작하되, 해당 커맨드만 `QA_INPUT_SYSTEM_REQUIRED` 에러를 반환한다.
+`qa key` and every `qa swipe` need the Input System package.
+Without it the bridge still runs, and only those commands return `QA_INPUT_SYSTEM_REQUIRED`.
 
 ### Play Mode
-모든 QA 커맨드는 Play Mode에서만 실행 가능하다. Play Mode가 아니면 `QA_NOT_PLAYING` 에러.
+Every QA command runs only in Play Mode. Outside Play Mode the error is `QA_NOT_PLAYING`.
 
-## 테스트 UI 구성
+## Building test UI
 
-`execute-menu`로 Unity 기본 메뉴를 사용해 UI를 추가한다. 커스텀 커맨드 불필요.
+Add UI with Unity's built-in menus via `execute-menu`. No custom command is required.
 
 ```bash
 P="$(pwd -P)"
 
-# 메뉴 경로 조회 (Unity 버전마다 다름)
+# Menu paths differ by Unity version
 ucli execute-menu --list "GameObject/UI (Canvas)" --project "$P" --json
 
-# Canvas + EventSystem + Button 추가
+# Add Canvas + EventSystem + Button
 ucli execute-menu --path "GameObject/UI (Canvas)/Canvas" --project "$P" --json
 ucli execute-menu --path "GameObject/UI (Canvas)/Event System" --project "$P" --json
 ucli execute-menu --path "GameObject/UI (Canvas)/Button - TextMeshPro" --project "$P" --json
 ```
 
-커스텀 스크립트가 필요하면 `execute --code`로 C# 코드를 실행한다. `using` 지시문을 자유롭게 사용 가능:
+When a custom script is required, run C# with `execute --code`. `using` directives are allowed:
 
 ```bash
 ucli execute --force --project "$P" --code '
 using UnityEngine.UI;
-// 코드 본문
+// code body
 '
 ```
 
-## 검증 방법
+## How to verify
 
-### 로그 검증
-`read-console`로 Debug.Log 출력과 에러를 확인한다.
+### Logs
+Use `read-console` for `Debug.Log` output and errors.
 
 ```bash
 ucli read-console --type log --limit 5 --no-stacktrace --project "$P" --json
 ucli read-console --type error --limit 5 --no-stacktrace --project "$P" --json
 ```
 
-### 시각 검증 (스크린샷)
-`screenshot --view game`으로 Game View를 캡처해서 시각적 변화를 확인한다.
+### Visual check (screenshot)
+Capture the Game View with `screenshot --view game` and look at the visual change.
 
 ```bash
-# 기본값이 이미 jpg q75 + 1024px 축소라 옵션 없이 그대로 찍으면 된다
+# The default is already jpg q75 scaled to 1024px, so a bare capture is enough
 ucli screenshot --view game --path /tmp/qa-check.jpg --project "$P" --json
-# lossless 원본이 필요할 때만
+# Only when a lossless original is required
 ucli screenshot --view game --format png --max-width 0 --path /tmp/qa-check.png --project "$P" --json
-# 이후 이미지를 Read 도구로 확인
+# Then inspect the image with the Read tool
 ```
 
-스크린샷 좌표 기반 입력과 좌표 변환 규칙은 아래 `Coordinate-Based UI Interaction` 섹션을 참고한다.
+Coordinate input and the conversion rules are in `Coordinate-Based UI Interaction` below.
 
-**제한사항**: Play Mode에서는 `ScreenCapture.CaptureScreenshotAsTexture()`를 사용하므로 ScreenSpaceOverlay Canvas(UGUI)까지 포함해 캡처된다. 비 Play Mode에서는 `Camera.Render()` fallback을 사용하므로 ScreenSpaceOverlay Canvas는 포함되지 않는다.
+**Limit**: in Play Mode the capture uses `ScreenCapture.CaptureScreenshotAsTexture()`, so a ScreenSpaceOverlay Canvas (UGUI) is included. Outside Play Mode the fallback is `Camera.Render()`, which does not include a ScreenSpaceOverlay Canvas.
 
-검증 순서는 **로그 먼저, 스크린샷은 보조**로 사용한다. 로그가 이벤트 발생을 확인하는 1차 수단이고, 스크린샷은 시각적 상태를 보조적으로 확인한다.
+Verify **logs first, and treat the screenshot as supporting evidence**. The log is the primary proof that an event fired. The screenshot confirms visual state.
 
 ## Coordinate-Based UI Interaction
 
@@ -186,7 +186,7 @@ ucli qa run-sequence --spec-json @seq-ok.json --timeout 60000 --project "$P" --j
 ucli qa run-sequence --spec-json @seq-ok.json --record --record-path /tmp/qa-seq.mp4 --timeout 60000 --project "$P" --json
 ```
 
-`--record`를 붙이면 sequence가 실행되는 구간만 Unity Recorder로 mp4 캡처하고(`com.unity.recorder` 필요), 완료 또는 타임아웃 응답의 `recordingPath`에 최종 경로를 담는다. `--record-path`를 생략하면 `Library/com.yhc509.unity-cli-bridge/recordings/` 아래에 저장된다.
+`--record` captures only the interval the sequence runs, as mp4 through Unity Recorder (`com.unity.recorder` required). The completion or timeout response puts the final path in `recordingPath`. Omit `--record-path` and the file is written under `Library/com.yhc509.unity-cli-bridge/recordings/`.
 
 `seq-ok.json`:
 
@@ -330,7 +330,7 @@ Then reverse-calculate to screenshot coordinates:
 
 The bridge converts automatically when screenshot dimensions are known.
 
-## 예시: 버튼 클릭 테스트
+## Example: button click
 
 ```bash
 P="$(pwd -P)"
@@ -340,60 +340,60 @@ sleep 1
 
 ucli qa click --target "/Canvas/Button" --project "$P" --output compact
 
-# 로그 검증
+# Log check
 ucli read-console --type log --limit 5 --no-stacktrace --project "$P" --output compact
 
-# 시각 검증 — 기본값이 이미 jpg q75 + 1024px 축소
+# Visual check — the default is already jpg q75 scaled to 1024px
 ucli screenshot --view game --path /tmp/qa-click.jpg --project "$P" --output compact
 
 ucli stop --project "$P" --output compact
 ```
 
-## 예시: 조건 대기 후 검증
+## Example: wait for a condition, then verify
 
 ```bash
 ucli play --project "$P" --json
 sleep 1
 
-# 특정 씬으로 전환될 때까지 대기 (최대 10초)
+# Wait until a specific scene is active (10 seconds max)
 ucli qa wait-until --scene GameScene --timeout 10000 --project "$P" --json
 
-# 전환 후 입력 시뮬레이션
+# Simulate input after the transition
 ucli qa click --target "/Canvas/StartButton" --project "$P" --json
 ucli qa wait-until --log-contains "Game started" --timeout 5000 --project "$P" --json
 
 ucli stop --project "$P" --json
 ```
 
-고정 대기 대신 화면 상태를 조건으로 기다리면 불필요한 sleep을 줄일 수 있다. 여러 조건을 함께 지정하면 모두(AND) 충족돼야 한다. 버튼은 활성화와 유효 interactable 상태를 함께 기다리고, 로딩 표시는 active hierarchy에서 사라질 때까지 기다린다. `--object-interactable`은 대상 컴포넌트의 `IsInteractable()` 결과를 우선 사용하고, 없으면 public bool `interactable` 프로퍼티를 읽으며, 해당 상태가 없는 오브젝트는 active로 resolve되면 true로 취급한다.
+Waiting on screen state instead of a fixed sleep avoids extra delays. Conditions passed together must all be true (AND). A button waits for both active and a real interactable state. A loading indicator waits until it disappears from the active hierarchy. `--object-interactable` prefers the target component's `IsInteractable()` result, then a public bool `interactable` property, and treats an object with neither as true once it resolves as active.
 
 ```bash
-# 시작 버튼이 클릭 가능해질 때까지 대기 후 클릭
+# Wait until the start button is clickable, then click
 ucli qa wait-until --object-interactable StartButton --timeout 10000 --project "$P" --json
 ucli qa click --qa-id StartButton --project "$P" --json
 
-# 로딩 스피너가 비활성/파괴될 때까지 대기
+# Wait until the loading spinner is inactive or destroyed
 ucli qa wait-until --object-gone LoadingSpinner --timeout 10000 --project "$P" --json
 ```
 
-## 알려진 제한사항
+## Known limits
 
-- **좌표 기준**: `qa swipe --target`의 `--from/--to`는 절대 화면 좌표가 아니라 target `RectTransform` 중심 기준 픽셀 오프셋이다.
-- **스크린샷 좌표 변환**: `qa tap`과 좌표 기반 `qa swipe`는 스크린샷 기준 top-origin 좌표를 입력받고, 실행 시 bottom-origin Unity 화면 좌표로 변환된다.
-- **스크린샷**: Play Mode에서는 `ScreenCapture` 기반으로 Overlay Canvas까지 캡처된다. 비 Play Mode에서는 `Camera.Render()` fallback이라 ScreenSpaceOverlay Canvas는 포함되지 않는다.
-- **using 제한**: `execute --code`의 using 추출은 `using Namespace;`, `using static Namespace.Type;`, `using Alias = Namespace.Type;`를 지원한다. 단, `using Dict = Dictionary<string, int>;` 같은 generic type alias는 지원하지 않는다.
-- **Game View 갱신**: `play` 커맨드가 `runInBackground = true`를 자동 설정하므로, Unity가 포커스를 잃어도 Game View가 갱신된다. `stop` 시 원래값으로 복원된다.
+- **Coordinate basis**: `--from`/`--to` on `qa swipe --target` are pixel offsets from the target `RectTransform` center, not absolute screen coordinates.
+- **Screenshot coordinate conversion**: `qa tap` and coordinate `qa swipe` take top-origin screenshot coordinates and convert them to bottom-origin Unity screen coordinates at execution time.
+- **Screenshot**: in Play Mode a `ScreenCapture`-based capture includes an Overlay Canvas. Outside Play Mode the `Camera.Render()` fallback does not include a ScreenSpaceOverlay Canvas.
+- **using limits**: `execute --code` extracts `using Namespace;`, `using static Namespace.Type;`, and `using Alias = Namespace.Type;`. A generic type alias such as `using Dict = Dictionary<string, int>;` is not supported.
+- **Game View updates**: `play` sets `runInBackground = true` automatically, so the Game View keeps updating when Unity loses focus. `stop` restores the previous value.
 
-## 트러블슈팅
+## Troubleshooting
 
-| 에러 코드 | 원인 | 해결 |
+| Error code | Cause | Fix |
 |-----------|------|------|
-| `QA_NOT_PLAYING` | Play Mode가 아님 | `play` 먼저 실행 |
-| `QA_NO_EVENT_SYSTEM` | EventSystem 없음 | `execute-menu`로 추가 |
-| `QA_TAP_NO_TARGET` | 좌표 아래에 클릭 가능한 UI가 없음 | 좌표/해상도 기준 확인, UI가 해당 위치에 표시되는지 점검 |
-| `QA_INPUT_SYSTEM_REQUIRED` | Input System 미설치 | `package add --name com.unity.inputsystem` |
-| `QA_TARGET_NOT_FOUND` | hierarchy path 틀림 | `scene inspect`로 정확한 path 확인 |
-| `QA_TARGET_NOT_RECT_TRANSFORM` | `qa swipe --target` 대상이 UI `RectTransform`이 아님 | UI hierarchy path로 다시 지정 |
-| `QA_NO_POINTER_DEVICE` | Mouse/Touchscreen 없음 | Input System 디바이스 확인 |
-| `QA_WAIT_TIMEOUT` | 조건 미충족 타임아웃 | 조건 확인, timeout 늘리기 |
-| `BUSY` | Unity 컴파일/업데이트 중 | 컴파일 완료 후 재시도 |
+| `QA_NOT_PLAYING` | Not in Play Mode | Run `play` first |
+| `QA_NO_EVENT_SYSTEM` | No EventSystem | Add one with `execute-menu` |
+| `QA_TAP_NO_TARGET` | No clickable UI under the coordinate | Check the coordinate and resolution basis, and whether UI is actually drawn there |
+| `QA_INPUT_SYSTEM_REQUIRED` | Input System is not installed | `package add --name com.unity.inputsystem` |
+| `QA_TARGET_NOT_FOUND` | Hierarchy path is wrong | Confirm the path with `scene inspect` |
+| `QA_TARGET_NOT_RECT_TRANSFORM` | The `qa swipe --target` object is not a UI `RectTransform` | Pass a UI hierarchy path |
+| `QA_NO_POINTER_DEVICE` | No Mouse or Touchscreen | Check Input System devices |
+| `QA_WAIT_TIMEOUT` | The condition was not met in time | Recheck the condition, or raise the timeout |
+| `BUSY` | Unity is compiling or updating | Retry after compilation finishes |

@@ -49,7 +49,7 @@ namespace UnityCliBridge.Bridge.Editor
             DirectoryInfo dataPathParent = Directory.GetParent(Application.dataPath);
             if (dataPathParent == null)
             {
-                throw new InvalidOperationException("Unity project root를 확인하지 못했습니다: " + Application.dataPath);
+                throw new InvalidOperationException("Could not resolve the Unity project root: " + Application.dataPath);
             }
 
             return FileBackupTransaction.BuildBackupDirectoryForProjectRoot(dataPathParent.FullName);

@@ -364,7 +364,7 @@ public sealed class QaParserTests
         ]));
 
         Assert.Contains("--x", ex.Message);
-        Assert.Contains("정수", ex.Message);
+        Assert.Contains("an integer", ex.Message);
     }
 
     [Fact]
@@ -403,7 +403,7 @@ public sealed class QaParserTests
         ]));
 
         Assert.Contains("--from", ex.Message);
-        Assert.Contains("절대 화면 픽셀 좌표", ex.Message);
+        Assert.Contains("absolute screen pixel coordinates", ex.Message);
     }
 
     [Fact]
@@ -417,7 +417,7 @@ public sealed class QaParserTests
         ]));
 
         Assert.Contains("--from", ex.Message);
-        Assert.Contains("target 중심 기준 픽셀 오프셋", ex.Message);
+        Assert.Contains("pixel offset from the target center", ex.Message);
     }
 
     [Fact]
@@ -439,7 +439,7 @@ public sealed class QaParserTests
     {
         var ex = Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(["qa", "wait-until"]));
 
-        Assert.Contains("하나 이상", ex.Message);
+        Assert.Contains("at least one", ex.Message);
     }
 
     [Fact]
@@ -638,7 +638,7 @@ public sealed class QaParserTests
         var ex = Assert.Throws<CliUsageException>(() => parsed.ToEnvelope());
 
         Assert.Contains("--from", ex.Message);
-        Assert.Contains("절대 화면 픽셀 좌표", ex.Message);
+        Assert.Contains("absolute screen pixel coordinates", ex.Message);
     }
 
     [Fact]
@@ -654,7 +654,7 @@ public sealed class QaParserTests
         var ex = Assert.Throws<CliUsageException>(() => parsed.ToEnvelope());
 
         Assert.Contains("--from", ex.Message);
-        Assert.Contains("target 중심 기준 픽셀 오프셋", ex.Message);
+        Assert.Contains("pixel offset from the target center", ex.Message);
     }
 
     [Fact]
@@ -940,7 +940,7 @@ public sealed class QaParserTests
             CliArgumentParser.Parse(["qa", "run-sequence", "--spec-json", $"@{missingPath}"]));
 
         Assert.Contains("--spec-json", ex.Message);
-        Assert.Contains("읽기 실패", ex.Message);
+        Assert.Contains("Failed to read", ex.Message);
     }
 
     [Fact]

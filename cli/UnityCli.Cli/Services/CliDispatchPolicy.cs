@@ -126,17 +126,17 @@ internal static class CliDispatchPolicy
         IReadOnlyList<InstalledCliVersion> installedVersions)
     {
         var details = new StringBuilder();
-        details.Append("이 CLI는 protocol ")
+        details.Append("This CLI uses protocol ")
             .Append(ProtocolConstants.ProtocolVersion)
-            .Append("을 사용합니다.");
+            .Append(".");
 
         if (installedVersions.Count == 0)
         {
-            details.Append('\n').Append("설치된 CLI 버전이 없습니다: ").Append(CliInstallLayout.GetVersionsDirectory());
+            details.Append('\n').Append("No CLI versions are installed: ").Append(CliInstallLayout.GetVersionsDirectory());
         }
         else
         {
-            details.Append('\n').Append("설치된 CLI 버전:");
+            details.Append('\n').Append("Installed CLI versions:");
             foreach (InstalledCliVersion installed in installedVersions)
             {
                 details.Append('\n')
@@ -153,9 +153,9 @@ internal static class CliDispatchPolicy
             response.requestId,
             response.target,
             ProtocolConstants.ErrorProtocolMismatch,
-            "이 프로젝트의 Unity 패키지는 protocol " + requiredProtocolVersion + "을 사용하는데, "
-                + "설치된 CLI 중 protocol " + requiredProtocolVersion + "을 말하는 버전이 없습니다. "
-                + "해당 프로젝트의 Unity Editor에서 Window > Unity CLI Manager > Install CLI 를 실행하세요.",
+            "This project's Unity package uses protocol " + requiredProtocolVersion + ", "
+                + "but no installed CLI speaks protocol " + requiredProtocolVersion + ". "
+                + "In that project's Unity Editor, run Window > Unity CLI Manager > Install CLI.",
             retryable: false,
             durationMs: response.durationMs,
             transport: "cli",
@@ -186,8 +186,8 @@ internal static class CliDispatchPolicy
             retryable: false,
             durationMs: response.durationMs,
             transport: "cli",
-            details: "protocol " + (response.protocolVersion ?? string.Empty) + "을 말하는 CLI v" + match.Version
-                + " 로 전환하지 못했습니다: " + match.ExecutablePath + "\n" + failureMessage);
+            details: "Could not switch to CLI v" + match.Version + " (protocol " + (response.protocolVersion ?? string.Empty) + "): "
+                + match.ExecutablePath + "\n" + failureMessage);
 
         failure.protocolVersion = response.protocolVersion;
         return failure;

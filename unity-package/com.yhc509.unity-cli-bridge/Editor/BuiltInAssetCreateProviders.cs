@@ -153,7 +153,7 @@ namespace UnityCliBridge.Bridge.Editor
                         {
                             if (!EditorSceneManager.SaveScene(scene, request.AssetPath, false))
                             {
-                                throw new CommandFailureException("ASSET_CREATE_FAILED", "scene를 저장하지 못했습니다: " + request.AssetPath);
+                                throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not save scene: " + request.AssetPath);
                             }
                         }
                         finally
@@ -184,7 +184,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                 if (string.IsNullOrWhiteSpace(rootName))
                 {
-                    throw new CommandFailureException("ASSET_OPTION_INVALID", "prefab root 이름이 비어 있습니다.");
+                    throw new CommandFailureException("ASSET_OPTION_INVALID", "Prefab root name is empty.");
                 }
 
                 return new AssetCreateArtifact(
@@ -196,7 +196,7 @@ namespace UnityCliBridge.Bridge.Editor
                             GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, request.AssetPath);
                             if (saved == null)
                             {
-                                throw new CommandFailureException("ASSET_CREATE_FAILED", "prefab을 저장하지 못했습니다: " + request.AssetPath);
+                                throw new CommandFailureException("ASSET_CREATE_FAILED", "Could not save prefab: " + request.AssetPath);
                             }
                         }
                         finally
@@ -260,7 +260,7 @@ namespace UnityCliBridge.Bridge.Editor
                 Shader shader = Shader.Find(shaderPath.Trim());
                 if (shader == null)
                 {
-                    throw new CommandFailureException("ASSET_OPTION_INVALID", "shader를 찾지 못했습니다: " + shaderPath.Trim());
+                    throw new CommandFailureException("ASSET_OPTION_INVALID", "Could not find shader: " + shaderPath.Trim());
                 }
 
                 return shader;
@@ -278,7 +278,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return standard;
             }
 
-            throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "기본 material shader를 찾지 못했습니다.");
+            throw new CommandFailureException("ASSET_DEPENDENCY_MISSING", "Could not find the default material shader.");
         }
 
         [Serializable]

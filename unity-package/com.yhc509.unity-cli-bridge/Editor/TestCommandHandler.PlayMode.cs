@@ -75,7 +75,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (callbacks != null)
                 {
-                    callbacks.MarkFailed("PlayMode 시작 실패: " + exception.Message);
+                    callbacks.MarkFailed("Failed to enter PlayMode: " + exception.Message);
                 }
                 else
                 {
@@ -93,7 +93,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId,
                     projectHash,
                     "TEST_RUN_START_FAILED",
-                    "PlayMode test run을 시작할 수 없습니다: " + exception.Message,
+                    "Could not start the PlayMode test run: " + exception.Message,
                     false,
                     0,
                     ProtocolConstants.TransportLive,
@@ -223,7 +223,7 @@ namespace UnityCliBridge.Bridge.Editor
                             requestId!,
                             projectHash,
                             "TEST_RUN_START_FAILED",
-                            "PlayMode test run이 STARTED 응답 전에 종료되었습니다.",
+                            "The PlayMode test run finished before the STARTED response.",
                             false,
                             0,
                             ProtocolConstants.TransportLive,
@@ -291,7 +291,7 @@ namespace UnityCliBridge.Bridge.Editor
                             requestId!,
                             projectHash,
                             ProtocolConstants.ErrorTestTimeout,
-                            "PlayMode test run이 " + timeoutSec + "초 내 완료되지 않았습니다.",
+                            "PlayMode test run did not finish within " + timeoutSec + " seconds.",
                             false,
                             0,
                             ProtocolConstants.TransportLive,
@@ -328,7 +328,7 @@ namespace UnityCliBridge.Bridge.Editor
                     requestId!,
                     projectHash,
                     ProtocolConstants.ErrorTestCancelled,
-                    "PlayMode test run이 STARTED 응답 전에 취소되었습니다.",
+                    "The PlayMode test run was cancelled before the STARTED response.",
                     false,
                     0,
                     ProtocolConstants.TransportLive,
@@ -380,9 +380,9 @@ namespace UnityCliBridge.Bridge.Editor
         private static string BuildPlayModeEntryFailureMessage()
         {
             var scene = EditorSceneManager.GetActiveScene();
-            return "PlayMode test run이 "
+            return "PlayMode test run did not start entering PlayMode within "
                 + ProtocolConstants.TestPlayModeEntryTimeoutSeconds
-                + "초 안에 PlayMode 진입을 시작하지 못했습니다."
+                + " seconds."
                 + " isCompiling=" + EditorApplication.isCompiling
                 + ", isUpdating=" + EditorApplication.isUpdating
                 + ", isPlaying=" + EditorApplication.isPlaying

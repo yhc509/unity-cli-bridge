@@ -102,13 +102,13 @@ namespace UnityCliBridge.Bridge.Editor
             string normalizedType = string.IsNullOrWhiteSpace(typeId) ? string.Empty : typeId.Trim().ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(normalizedType))
             {
-                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`asset create --type` 값이 비어 있습니다.");
+                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "`asset create --type` requires a value.");
             }
 
             IAssetCreateProvider provider;
             if (!_providers.TryGetValue(normalizedType, out provider))
             {
-                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "지원하지 않는 asset 생성 타입입니다: " + typeId);
+                throw new CommandFailureException("ASSET_TYPE_NOT_FOUND", "Unsupported asset create type: " + typeId);
             }
 
             return provider;
@@ -154,13 +154,13 @@ namespace UnityCliBridge.Bridge.Editor
             AssetCreateTypeDescriptor descriptor = NormalizeDescriptor(provider.Describe());
             if (string.IsNullOrWhiteSpace(descriptor.typeId))
             {
-                throw new InvalidOperationException("asset create provider의 typeId가 비어 있습니다.");
+                throw new InvalidOperationException("Asset create provider typeId is empty.");
             }
 
             string normalizedType = descriptor.typeId.Trim().ToLowerInvariant();
             if (_providers.ContainsKey(normalizedType))
             {
-                throw new InvalidOperationException("이미 등록된 asset create type입니다: " + normalizedType);
+                throw new InvalidOperationException("Asset create type is already registered: " + normalizedType);
             }
 
             _providers.Add(normalizedType, provider);

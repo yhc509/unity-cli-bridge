@@ -296,7 +296,7 @@ namespace UnityCliBridge.Bridge.Editor
             catch (Exception exception)
             {
                 UnityEngine.Debug.LogWarning(string.Format(
-                    "Unity CLI bridge named pipe 권한 보정 실패: {0}",
+                    "Unity CLI bridge named pipe permission fix failed: {0}",
                     exception.Message));
                 return null;
             }
@@ -326,12 +326,12 @@ namespace UnityCliBridge.Bridge.Editor
                     process = Process.Start(startInfo);
                     if (process == null || !process.WaitForExit(1000))
                     {
-                        UnityEngine.Debug.LogWarning("Unity CLI bridge socket 권한 보정 실패: chmod timed out.");
+                        UnityEngine.Debug.LogWarning("Unity CLI bridge socket permission fix failed: chmod timed out.");
                     }
                     else if (process.ExitCode != 0)
                     {
                         UnityEngine.Debug.LogWarning(string.Format(
-                            "Unity CLI bridge socket 권한 보정 실패: chmod exited with {0}.",
+                            "Unity CLI bridge socket permission fix failed: chmod exited with {0}.",
                             process.ExitCode));
                     }
                 }
@@ -346,7 +346,7 @@ namespace UnityCliBridge.Bridge.Editor
             catch (Exception exception)
             {
                 UnityEngine.Debug.LogWarning(string.Format(
-                    "Unity CLI bridge socket 권한 보정 실패: {0}",
+                    "Unity CLI bridge socket permission fix failed: {0}",
                     exception.Message));
             }
         }
@@ -721,7 +721,7 @@ namespace UnityCliBridge.Bridge.Editor
                         Guid.NewGuid().ToString("N"),
                         _projectHash,
                         "INVALID_COMMAND",
-                        "command payload를 해석하지 못했습니다: " + deserializeException.Message,
+                        "Could not parse the command payload: " + deserializeException.Message,
                         false,
                         0,
                         ProtocolConstants.TransportLive,
@@ -739,7 +739,7 @@ namespace UnityCliBridge.Bridge.Editor
                         requestId,
                         _projectHash,
                         "INVALID_COMMAND",
-                        "command payload를 해석하지 못했습니다.",
+                        "Could not parse the command payload.",
                         false,
                         0,
                         ProtocolConstants.TransportLive,
@@ -812,7 +812,7 @@ namespace UnityCliBridge.Bridge.Editor
                             command.requestId,
                             _projectHash,
                             "REQUEST_CANCELLED",
-                            "요청 처리 중 브리지가 종료되었습니다.",
+                            "The bridge shut down while handling the request.",
                             true,
                             0,
                             ProtocolConstants.TransportLive,
@@ -958,7 +958,7 @@ namespace UnityCliBridge.Bridge.Editor
                 case ListenerWatchdogDecision.Restart:
                     _projectHashBeforeRestart = _projectHash;
                     UnityEngine.Debug.LogWarning(string.Format(
-                        "Unity CLI bridge listener가 죽어 재바인딩을 시도합니다 ({0}/{1}).",
+                        "Unity CLI bridge listener died; attempting to rebind ({0}/{1}).",
                         watchdog.RecoveryAttempts,
                         ListenerWatchdogMaxRecoveryAttempts));
                     StartListener();
@@ -986,7 +986,7 @@ namespace UnityCliBridge.Bridge.Editor
                 catch (Exception exception)
                 {
                     UnityEngine.Debug.LogWarning(string.Format(
-                        "Unity CLI bridge 이전 auth token 정리 실패: {0}",
+                        "Unity CLI bridge failed to remove the previous auth token: {0}",
                         exception.Message));
                 }
             }
@@ -996,15 +996,15 @@ namespace UnityCliBridge.Bridge.Editor
             RegisterInstance();
             _isInstanceRegistered = true;
             _lastHeartbeatTime = EditorApplication.timeSinceStartup;
-            UnityEngine.Debug.Log("Unity CLI bridge listener 재바인딩 완료: " + _pipeName);
+            UnityEngine.Debug.Log("Unity CLI bridge listener rebound: " + _pipeName);
         }
 
         private void AbandonListener()
         {
             _isListenerAbandoned = true;
             UnityEngine.Debug.LogError(string.Format(
-                "Unity CLI bridge listener를 {0}회 재바인딩했지만 복구하지 못했습니다. " +
-                "연결되지 않는 인스턴스를 광고하지 않도록 레지스트리에서 제거합니다. Unity Editor를 재시작하세요.",
+                "Unity CLI bridge listener failed to recover after {0} rebind attempts. " +
+                "Removing it from the registry so it is not advertised as reachable. Restart the Unity Editor.",
                 ListenerWatchdogMaxRecoveryAttempts));
 
             if (_isInstanceRegistered)
@@ -1227,9 +1227,9 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     throw new CommandFailureException(
                         ProtocolConstants.ErrorHeadlessNoGraphics,
-                        "-nographics 에디터에서는 렌더링이 초기화되지 않아 이 명령을 사용할 수 없습니다: " + command.command,
-                        "GPU가 없으면 캡처 결과가 무의미한 단색/깨진 이미지가 되므로 명령 차원에서 차단합니다. " +
-                        "-nographics 없이 -batchmode로만 띄우면 창 없이도 렌더링 명령을 쓸 수 있습니다.");
+                        "This command is unavailable in a -nographics editor because rendering is not initialized: " + command.command,
+                        "Without a GPU the capture would be a flat or broken image, so the command is rejected. " +
+                        "Launch with -batchmode and without -nographics to use rendering commands with no window.");
                 }
 
                 string data;
@@ -1297,11 +1297,11 @@ namespace UnityCliBridge.Bridge.Editor
                             break;
                         case ProtocolConstants.CommandRefresh:
                             AssetDatabase.Refresh();
-                            data = ProtocolJson.Serialize(new MessagePayload { message = "AssetDatabase.Refresh 완료" });
+                            data = ProtocolJson.Serialize(new MessagePayload { message = "AssetDatabase.Refresh completed" });
                             break;
                         case ProtocolConstants.CommandCompile:
                             CompilationPipeline.RequestScriptCompilation();
-                            data = ProtocolJson.Serialize(new MessagePayload { message = "script compilation 요청 완료" });
+                            data = ProtocolJson.Serialize(new MessagePayload { message = "script compilation requested" });
                             break;
                         case ProtocolConstants.CommandPlay:
                             EditorApplication.isPaused = false;
@@ -1334,7 +1334,7 @@ namespace UnityCliBridge.Bridge.Editor
                             data = HandleEditorQuit(command.argumentsJson);
                             break;
                         default:
-                            throw new InvalidOperationException("지원하지 않는 명령입니다: " + command.command);
+                            throw new InvalidOperationException("Unsupported command: " + command.command);
                     }
                 }
 
@@ -1395,15 +1395,15 @@ namespace UnityCliBridge.Bridge.Editor
 
         private ResponseEnvelope BuildBusyResponse(CommandEnvelope command, long durationMs)
         {
-            var busyDetails = "잠시(약 5~10초) 후 재시도하세요. 새 Unity Editor 인스턴스를 띄우지 마세요.\n" +
-                              "진단: `unity-cli instances list`로 현재 인스턴스를 확인하고, " +
-                              "`unity-cli read-console --type error`로 컴파일 에러를 확인하세요.";
+            var busyDetails = "Try again in about 5–10 seconds. Do not launch another Unity Editor instance.\n" +
+                              "Diagnostics: check the current instance with `unity-cli instances list`, " +
+                              "and check compile errors with `unity-cli read-console --type error`.";
 
             return ResponseEnvelope.Failure(
                 command.requestId,
                 _projectHash,
                 ProtocolConstants.BusyErrorCode,
-                "Unity가 compile/update 중이라 지금 명령을 처리할 수 없습니다.",
+                "Unity is compiling or updating, so this command cannot run right now.",
                 true,
                 durationMs,
                 ProtocolConstants.TransportLive,
@@ -1434,7 +1434,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (!string.IsNullOrWhiteSpace(args.path))
                 {
-                    throw new CommandFailureException("INVALID_ARGS", "execute-menu에서는 path와 list를 동시에 지정할 수 없습니다.");
+                    throw new CommandFailureException("INVALID_ARGS", "execute-menu cannot take path and list together.");
                 }
 
                 return ListMenuItems(args.prefix);
@@ -1442,7 +1442,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (string.IsNullOrWhiteSpace(args.path))
             {
-                throw new CommandFailureException("INVALID_ARGS", "execute-menu에는 path가 필요합니다.");
+                throw new CommandFailureException("INVALID_ARGS", "execute-menu requires a path.");
             }
 
             bool isExecuted = EditorApplication.ExecuteMenuItem(args.path);
@@ -1458,13 +1458,13 @@ namespace UnityCliBridge.Bridge.Editor
         {
             if (string.IsNullOrWhiteSpace(prefix))
             {
-                throw new CommandFailureException("INVALID_ARGS", "execute-menu --list에는 prefix가 필요합니다.");
+                throw new CommandFailureException("INVALID_ARGS", "execute-menu --list requires a prefix.");
             }
 
             Type? unsupportedType = typeof(EditorApplication).Assembly.GetType("UnityEditor.Unsupported");
             if (unsupportedType == null)
             {
-                throw new CommandFailureException("MENU_LIST_UNAVAILABLE", "UnityEditor.Unsupported 타입을 찾지 못했습니다.");
+                throw new CommandFailureException("MENU_LIST_UNAVAILABLE", "Could not find the UnityEditor.Unsupported type.");
             }
 
             MethodInfo? getSubmenus = unsupportedType.GetMethod(
@@ -1472,7 +1472,7 @@ namespace UnityCliBridge.Bridge.Editor
                 BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             if (getSubmenus is null)
             {
-                throw new CommandFailureException("MENU_LIST_UNAVAILABLE", "UnityEditor.Unsupported.GetSubmenus API를 찾지 못했습니다.");
+                throw new CommandFailureException("MENU_LIST_UNAVAILABLE", "Could not find the UnityEditor.Unsupported.GetSubmenus API.");
             }
 
             string[] menus = getSubmenus.Invoke(null, new object[] { prefix }) as string[] ?? Array.Empty<string>();
@@ -1507,7 +1507,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException(
                     ProtocolConstants.ErrorEditorDirty,
-                    "저장되지 않은 변경이 있어 에디터 종료를 거부했습니다. --force로 변경을 버리고 종료할 수 있습니다.",
+                    "Refusing to quit because there are unsaved changes. Pass --force to discard them and quit.",
                     string.Join("\n", dirtyTargets));
             }
 
@@ -1769,7 +1769,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             catch (Exception exception)
             {
-                UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge registry 갱신 실패: {0}", exception));
+                UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge registry update failed: {0}", exception));
             }
         }
 
@@ -1783,7 +1783,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             catch (Exception exception)
             {
-                UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge auth token 저장 실패: {0}", exception));
+                UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge auth token save failed: {0}", exception));
             }
         }
 
@@ -1873,7 +1873,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return;
             }
 
-            UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge {0} 실패: {1}", operation, exception));
+            UnityEngine.Debug.LogWarning(string.Format("Unity CLI bridge {0} failed: {1}", operation, exception));
         }
 
         private sealed class PendingRequest
