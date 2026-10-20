@@ -6,7 +6,8 @@
     "UnityCliBridge.Bridge.Runtime",
     "UnityEditor.TestRunner",
     "Unity.InputSystem",
-    "Unity.Recorder.Editor"
+    "Unity.Recorder.Editor",
+    "UnityEngine.UI"
   ],
   "includePlatforms": [
     "Editor"

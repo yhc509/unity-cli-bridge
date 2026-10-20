@@ -18,6 +18,7 @@
     "name": "yhc509"
   },
   "dependencies": {
-    "com.unity.test-framework": "1.4.5"
+    "com.unity.test-framework": "1.4.5",
+    "com.unity.ugui": "1.0.0"
   }
 }
