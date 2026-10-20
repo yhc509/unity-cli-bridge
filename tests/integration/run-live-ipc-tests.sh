@@ -1408,6 +1408,25 @@ EOF
   TEST_MESSAGE="read-console returned the freshly written log entry"
 }
 
+test_console_read_error_includes_exception() {
+  local code_file="$TEMP_DIR/code/console-exception.cs"
+  local marker="ucb-208"
+
+  cat >"$code_file" <<EOF
+UnityEngine.Debug.LogException(new System.Exception("$marker"));
+EOF
+
+  run_cli_main execute --file "$code_file" --force
+  assert_success_response || return 1
+  sleep 1
+
+  run_cli_main read-console --type error --limit 50
+  assert_success_response || return 1
+  assert_output_contains "$marker" || return 1
+  assert_output_contains "\"type\": \"Exception\"" || return 1
+  TEST_MESSAGE="read-console --type error includes a logged exception"
+}
+
 test_editor_screenshot_camera() {
   local camera_name=""
   ensure_scene_test_path || return 1
@@ -1601,6 +1620,7 @@ register_all_tests() {
   register_test "editor_execute_menu" "editor" "execute-menu invokes Assets/Refresh" "no" "test_editor_execute_menu"
   register_test "editor_execute_code" "editor" "execute runs a temporary C# file" "no" "test_editor_execute_code"
   register_test "console_read_recent_log" "console" "read-console returns a freshly written log" "no" "test_console_read_recent_log"
+  register_test "console_read_error_includes_exception" "console" "read-console --type error includes Exception entries" "no" "test_console_read_error_includes_exception"
   register_test "editor_screenshot_camera" "editor" "screenshot captures a PNG from a camera added to SampleScene" "no" "test_editor_screenshot_camera"
   register_test "editor_play" "editor" "play enters Play Mode from SampleScene" "no" "test_editor_play"
   register_test "editor_pause" "editor" "pause suspends Play Mode from SampleScene" "no" "test_editor_pause"

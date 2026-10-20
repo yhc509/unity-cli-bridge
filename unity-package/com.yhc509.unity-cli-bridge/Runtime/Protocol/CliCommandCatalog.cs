@@ -116,8 +116,8 @@ namespace UnityCli.Protocol
                 notes: new[] { "Waits by default: polls status every 2s for up to 120s (or --timeout-ms) after the refresh request succeeds. --wait is accepted for compatibility." }),
             new CliCommandDescriptor(
                 "read-console",
-                "read-console [--limit N] [--type log|warning|error] [--no-stacktrace]",
-                "Reads recent editor console entries from a running editor; add --no-stacktrace to omit stack traces from the response while keeping them in the editor buffer.",
+                "read-console [--limit N] [--type log|warning|error|exception|assert] [--no-stacktrace]",
+                "Reads recent editor console entries from a running editor. --type error matches Error, Exception, and Assert; exception and assert match only that type, and each entry keeps its original type name. Add --no-stacktrace to omit stack traces from the response while keeping them in the editor buffer.",
                 CliCommandGroup.EditorControl,
                 ProtocolConstants.CommandReadConsole,
                 canUseLocal: false,

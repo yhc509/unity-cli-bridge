@@ -637,7 +637,7 @@ public static partial class CliArgumentParser
                     parsed.ConsoleLimit = RequireInt(RequireValue(tokens, "--limit"), "--limit");
                     break;
                 case CommandKind.ReadConsole when token == "--type":
-                    parsed.ConsoleType = RequireValue(tokens, "--type");
+                    parsed.ConsoleType = RequireConsoleType(RequireValue(tokens, "--type"));
                     break;
                 case CommandKind.ReadConsole when token == "--no-stacktrace":
                     parsed.ConsoleNoStackTrace = true;

@@ -923,6 +923,28 @@ namespace UnityCli.Protocol
 
     public static class ConsoleLogProjectionUtility
     {
+        public static bool MatchesType(string? entryType, string? filter)
+        {
+            if (string.IsNullOrWhiteSpace(filter))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(entryType))
+            {
+                return false;
+            }
+
+            if (string.Equals(filter.Trim(), "error", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(entryType, "Error", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entryType, "Exception", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(entryType, "Assert", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return string.Equals(entryType, filter.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
+
         public static bool ShouldOmitStackTrace(ReadConsoleArgs args)
         {
             if (args == null)

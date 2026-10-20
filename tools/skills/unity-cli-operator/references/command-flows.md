@@ -271,7 +271,7 @@ Default check after a live command:
 ```bash
 # Omitting --type returns error, warning, and log together — no need to split this into two calls
 ucli read-console --project "$PROJECT" --limit 10 --no-stacktrace --output compact
-# Narrow only when one type is required
+# Narrow only when one type is required. --type error includes Exception and Assert; the entry type stays Exception or Assert.
 ucli read-console --project "$PROJECT" --type error --limit 10 --no-stacktrace --output compact
 ```
 

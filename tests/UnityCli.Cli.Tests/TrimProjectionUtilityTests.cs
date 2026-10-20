@@ -190,6 +190,33 @@ public sealed class TrimProjectionUtilityTests
         Assert.Same(payload, result);
     }
 
+    [Theory]
+    [InlineData("Error", "error", true)]
+    [InlineData("Exception", "error", true)]
+    [InlineData("Assert", "error", true)]
+    [InlineData("exception", "ERROR", true)]
+    [InlineData("ASSERT", "error", true)]
+    [InlineData("Warning", "error", false)]
+    [InlineData("Log", "error", false)]
+    [InlineData("Exception", "exception", true)]
+    [InlineData("Error", "exception", false)]
+    [InlineData("Assert", "exception", false)]
+    [InlineData("Assert", "assert", true)]
+    [InlineData("Exception", "assert", false)]
+    [InlineData("Warning", "warning", true)]
+    [InlineData("Error", "warning", false)]
+    [InlineData("Log", "log", true)]
+    [InlineData("Warning", "log", false)]
+    [InlineData("Exception", null, true)]
+    [InlineData("Log", "", true)]
+    [InlineData("Error", "   ", true)]
+    [InlineData(null, "error", false)]
+    [InlineData("", "error", false)]
+    public void MatchesType_FiltersConsoleTypes(string? entryType, string? filter, bool expected)
+    {
+        Assert.Equal(expected, ConsoleLogProjectionUtility.MatchesType(entryType, filter));
+    }
+
     [Fact]
     public void ConsoleProjection_DefaultKeepsStackTrace()
     {

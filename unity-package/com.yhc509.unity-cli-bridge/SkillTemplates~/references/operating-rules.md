@@ -74,7 +74,7 @@ unity-cli does not have dedicated script create/delete commands. Use this combin
 1. Write .cs file directly to the Assets/ folder via filesystem
 2. `unity-cli refresh` — refresh the AssetDatabase; it waits until the resulting compile/import finishes and the bridge is reachable again
 3. `unity-cli compile` — only when you need an explicit recompile without file changes; it also waits by default
-4. `unity-cli read-console --type error` — check for compile errors
+4. `unity-cli read-console --type error` — check for compile errors. `--type error` also includes Exception and Assert; the entry `type` stays `Exception` or `Assert`.
 
 **Delete script:**
 - `unity-cli asset delete --path Assets/Scripts/MyScript.cs --force`

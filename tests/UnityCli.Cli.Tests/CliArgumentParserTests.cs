@@ -179,6 +179,38 @@ public sealed class CliArgumentParserTests
         Assert.True(args.noStackTrace);
     }
 
+    [Theory]
+    [InlineData("errors")]
+    [InlineData("err")]
+    [InlineData("fatal")]
+    [InlineData("")]
+    public void Parse_ReadConsole_RejectsUnknownType(string type)
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["read-console", "--type", type]));
+
+        Assert.Contains("`--type` must be `log`, `warning`, `error`, `exception`, or `assert`.", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("log")]
+    [InlineData("warning")]
+    [InlineData("error")]
+    [InlineData("exception")]
+    [InlineData("assert")]
+    [InlineData("Exception")]
+    [InlineData("ASSERT")]
+    public void Parse_ReadConsole_AcceptsExceptionAndAssert(string type)
+    {
+        var parsed = CliArgumentParser.Parse(["read-console", "--type", type]);
+        var args = ProtocolJson.Deserialize<ReadConsoleArgs>(parsed.ToEnvelope().argumentsJson);
+
+        Assert.Equal(CommandKind.ReadConsole, parsed.Kind);
+        Assert.Equal(type.ToLowerInvariant(), parsed.ConsoleType);
+        Assert.NotNull(args);
+        Assert.Equal(type.ToLowerInvariant(), args!.type);
+    }
+
     [Fact]
     public void Parse_InstancesList_AcceptsBrief()
     {

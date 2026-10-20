@@ -20,7 +20,7 @@ This skill was installed with Unity package `com.yhc509.unity-cli-bridge` v{{PAC
 
 - Add `--output compact` whenever an LLM reads the output.
 - `play`, `stop`, `refresh`, and `compile` wait until Unity has settled, including the domain reload. **Do not `sleep` or poll `status` after them.** `--no-wait` returns at once.
-- Scripts: write the `.cs` file, run `refresh`, then `read-console --type error`.
+- Scripts: write the `.cs` file, run `refresh`, then `read-console --type error`. `--type error` includes Exception and Assert as well as Error; the entry `type` stays `Exception` or `Assert`.
 - `execute --force --code '...'` runs C# in the Editor. Return a value with `__pucResult = ...;`. Pass inputs with `--args '{json}'` and read the string `__pucArgsJson`. A snippet is compiled once per domain (`cacheHit: true`, `compileMs: 0` on repeats), so keep `--code` identical and vary `--args`. Long work: `--timeout <s>` (max 600) and check `__pucToken`.
 - Inside `execute`, `Object` is `UnityEngine.Object`, so `Object.FindFirstObjectByType<T>()` compiles as written.
 - Destructive or overwriting commands need `--force`. The full list, backups, and dirty-scene rules: [operating-rules.md](references/operating-rules.md).

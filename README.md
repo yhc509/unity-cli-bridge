@@ -248,7 +248,7 @@ unity-cli record start --duration 5 --wait --path /tmp/play.mp4
 unity-cli record start                     # Manual recording; stop with record stop
 unity-cli record status
 unity-cli record stop
-unity-cli read-console --type error        # Check for errors after any operation
+unity-cli read-console --type error        # Error, Exception, and Assert
 unity-cli read-console --type error --no-stacktrace
 unity-cli execute-menu --list "GameObject" # Browse Unity menus
 unity-cli execute --code "Debug.Log(1);" --force  # Run arbitrary C# (escape hatch)
@@ -257,6 +257,8 @@ unity-cli execute --code "__pucResult = new Vector3(1.5f, 0f, 3.25f);" --force
 # Cooperative timeout — user code must check __pucToken
 unity-cli execute --file my-script.cs --force --timeout 60
 ```
+
+`read-console --type error` includes Exception and Assert entries as well as Error. The response keeps the original type name (`Exception`, `Assert`, or `Error`). `exception` and `assert` match only that type.
 
 `compile`, `refresh`, `play`, and `stop` wait until Unity has settled. `--wait` is still accepted. `--no-wait` returns as soon as the request is accepted. `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload. `status` reports `isChangingPlayMode` and `domainId` for that transition.
 

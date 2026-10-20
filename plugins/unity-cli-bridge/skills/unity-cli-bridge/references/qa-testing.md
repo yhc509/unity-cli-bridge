@@ -11,7 +11,7 @@ status → play → (simulate input) → verify (logs + screenshot) → stop
 1. Confirm `isCompiling: false` with `status --json`
 2. Enter Play Mode with `play` (`runInBackground = true` is set automatically)
 3. Simulate input with QA commands
-4. **Log check**: `read-console --type error --limit N --no-stacktrace` plus `read-console --type log --limit N --no-stacktrace`
+4. **Log check**: `read-console --type error --limit N --no-stacktrace` (Error, Exception, and Assert) plus `read-console --type log --limit N --no-stacktrace`
 5. **Visual check**: `screenshot --view game --path /tmp/qa-check.jpg`, then look at the image (the default is jpg q75 scaled to 1024px; a lossless original needs `--format png --max-width 0`)
 6. Leave Play Mode with `stop` (`runInBackground` is restored)
 
@@ -132,7 +132,7 @@ using UnityEngine.UI;
 ## How to verify
 
 ### Logs
-Use `read-console` for `Debug.Log` output and errors.
+Use `read-console` for `Debug.Log` output and errors. `--type error` includes Exception and Assert as well as Error, and the entry `type` stays the original name.
 
 ```bash
 ucli read-console --type log --limit 5 --no-stacktrace --project "$P" --json
