@@ -1132,6 +1132,26 @@ public sealed class CliArgumentParserTests
     }
 
     [Fact]
+    public void Parse_SceneSetTransform_ToEnvelope_OmitsUnsetVectors()
+    {
+        var parsed = CliArgumentParser.Parse([
+            "scene", "set-transform",
+            "--node", "/Root[0]",
+            "--rotation", "0,30,0",
+        ]);
+
+        string argumentsJson = parsed.ToEnvelope().argumentsJson;
+        using var document = JsonDocument.Parse(argumentsJson);
+        Assert.False(document.RootElement.TryGetProperty("position", out _));
+        Assert.False(document.RootElement.TryGetProperty("scale", out _));
+        Assert.True(document.RootElement.TryGetProperty("rotation", out JsonElement rotation));
+        Assert.Equal(0f, rotation.GetProperty("x").GetSingle());
+        Assert.Equal(30f, rotation.GetProperty("y").GetSingle());
+        Assert.Equal(0f, rotation.GetProperty("z").GetSingle());
+        Assert.Contains("\"node\":\"/Root[0]\"", argumentsJson);
+    }
+
+    [Fact]
     public void Parse_SceneAddComponent_RequiresType()
     {
         var ex = Assert.Throws<CliUsageException>(() =>

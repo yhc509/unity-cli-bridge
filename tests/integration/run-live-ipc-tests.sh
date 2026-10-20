@@ -413,6 +413,23 @@ assert_output_matches() {
   return 0
 }
 
+assert_collapsed_vector() {
+  local name="$1"
+  local x="$2"
+  local y="$3"
+  local z="$4"
+  local collapsed
+  local pattern
+  collapsed="$(printf '%s' "$LAST_OUTPUT" | tr -d '[:space:]')"
+  pattern="\"${name}\":\\{\"x\":${x}(\\.0+)?,\"y\":${y}(\\.0+)?,\"z\":${z}(\\.0+)?\\}"
+  if ! printf '%s\n' "$collapsed" | grep -Eq "$pattern"; then
+    TEST_FAILURE="Expected ${name} (${x},${y},${z}) from: $LAST_COMMAND | output=$(compact_output "$LAST_OUTPUT")"
+    return 1
+  fi
+
+  return 0
+}
+
 extract_first_match() {
   local expression="$1"
   printf '%s\n' "$LAST_OUTPUT" | sed -nE "s/$expression/\\1/p" | head -n 1
@@ -1133,7 +1150,19 @@ test_scene_set_transform() {
   assert_output_matches '"x": 1(\.0+)?' || return 1
   assert_output_matches '"y": 2(\.0+)?' || return 1
   assert_output_matches '"z": 3(\.0+)?' || return 1
-  TEST_MESSAGE="scene set-transform updated localPosition in SampleScene"
+
+  run_cli_main scene set-transform --node "$object_path" --rotation "0,30,0"
+  assert_success_response || return 1
+  assert_output_contains '"rotation"' || return 1
+  assert_output_not_contains '"position"' || return 1
+  assert_output_not_contains '"scale"' || return 1
+
+  run_cli_main scene inspect --path "$SCENE_TEST_PATH" --node "$object_path" --with-values
+  assert_success_response || return 1
+  assert_output_contains "\"path\": \"$object_path\"" || return 1
+  assert_collapsed_vector "localPosition" "1" "2" "3" || return 1
+  assert_collapsed_vector "localScale" "1" "1" "1" || return 1
+  TEST_MESSAGE="scene set-transform updated localPosition and left scale untouched for rotation-only"
 }
 
 test_scene_add_component() {
@@ -1559,7 +1588,7 @@ register_all_tests() {
   register_test "scene_inspect_node_filter" "scene" "scene inspect --node handles root sentinels and subtrees" "no" "test_scene_inspect_node_filter"
   register_test "scene_patch" "scene" "scene patch applies an add-gameobject spec" "no" "test_scene_patch"
   register_test "scene_add_object" "scene" "scene add-object creates a node with components" "no" "test_scene_add_object"
-  register_test "scene_set_transform" "scene" "scene set-transform updates localPosition" "no" "test_scene_set_transform"
+  register_test "scene_set_transform" "scene" "scene set-transform updates only the vectors that were passed" "no" "test_scene_set_transform"
   register_test "scene_add_component" "scene" "scene add-component attaches a BoxCollider" "no" "test_scene_add_component"
   register_test "scene_remove_component" "scene" "scene remove-component removes a BoxCollider" "yes" "test_scene_remove_component"
 
