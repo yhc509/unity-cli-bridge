@@ -45,6 +45,12 @@ namespace UnityCliBridge.Bridge.Editor
                 throw new InvalidOperationException("Deferred QA command must be started through StartDeferred: " + command);
             }
 
+            if (string.Equals(command, ProtocolConstants.CommandQaWorldDump, StringComparison.Ordinal)
+                && !EditorApplication.isPlaying)
+            {
+                return HandleWorldDumpEditMode(argumentsJson);
+            }
+
             RequirePlayMode();
 
             if (string.Equals(command, ProtocolConstants.CommandQaClick, StringComparison.Ordinal))
@@ -731,6 +737,69 @@ namespace UnityCliBridge.Bridge.Editor
                 return compare;
             }
 
+            return string.CompareOrdinal(left.path, right.path);
+        }
+
+        private static string HandleWorldDumpEditMode(string argumentsJson)
+        {
+            QaWorldDumpArgs args = ProtocolJson.Deserialize<QaWorldDumpArgs>(argumentsJson) ?? new QaWorldDumpArgs();
+            List<QaWorldElement> elements = CollectEditModeWorldTappables();
+            elements.Sort(CompareEditModeWorldElements);
+            QaWorldElement[] filteredElements = QaDumpProjectionUtility.ApplyWorldDumpFilters(elements, args);
+            string activeScenePath = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().path;
+            return JsonConvert.SerializeObject(new
+            {
+                editMode = true,
+                hint = QaWorldDumpEditMode.Hint,
+                activeScenePath = string.IsNullOrEmpty(activeScenePath) ? null : activeScenePath,
+                elements = filteredElements.Select(element => new
+                {
+                    element.path,
+                    element.label,
+                    element.hasAction,
+                }).ToArray(),
+            }, BridgeJsonSettings.CamelCaseIgnoreNull);
+        }
+
+        private static List<QaWorldElement> CollectEditModeWorldTappables()
+        {
+            var elements = new List<QaWorldElement>();
+            var seenGameObjects = new HashSet<ulong>();
+
+#if UNITY_2022_2_OR_NEWER
+            MonoBehaviour[] behaviours = UnityEngine.Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+#else
+            MonoBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
+#endif
+            foreach (MonoBehaviour behaviour in behaviours)
+            {
+                if (behaviour == null
+                    || behaviour is not IQaTappable tappable
+                    || !behaviour.isActiveAndEnabled
+                    || !behaviour.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                GameObject gameObject = behaviour.gameObject;
+                if (!seenGameObjects.Add(UnityObjectIdentity.GetId(gameObject)))
+                {
+                    continue;
+                }
+
+                elements.Add(new QaWorldElement
+                {
+                    path = GetGameObjectPath(gameObject),
+                    label = tappable.QaLabel,
+                    hasAction = DetermineHasAction(tappable),
+                });
+            }
+
+            return elements;
+        }
+
+        private static int CompareEditModeWorldElements(QaWorldElement left, QaWorldElement right)
+        {
             return string.CompareOrdinal(left.path, right.path);
         }
 

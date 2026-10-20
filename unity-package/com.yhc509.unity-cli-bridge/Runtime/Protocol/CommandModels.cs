@@ -680,6 +680,12 @@ namespace UnityCli.Protocol
         public QaWorldElement[] elements = Array.Empty<QaWorldElement>();
     }
 
+    public static class QaWorldDumpEditMode
+    {
+        public const string Hint =
+            "qa world-dump image coordinates require Play Mode. Run `play`, then `qa world-dump` again. In Edit Mode, use `scene inspect --path <scene> --with-values --omit-defaults` to read the hierarchy, component enabled state, and prefab sources. Elements here are IQaTappable/QaTappable objects in loaded scenes and have no screenshot coordinates.";
+    }
+
     [Serializable]
     public sealed class QaSwipeArgs
     {

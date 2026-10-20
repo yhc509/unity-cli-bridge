@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using NUnit.Framework;
 using UnityCli.Protocol;
 using UnityEditor;
@@ -50,6 +51,23 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             AssertPrefabStageDirtyFailure(failure, prefabPath);
             Assert.That(stage.scene.isDirty, Is.True);
             AssertPrefabDoesNotHaveChild(prefabPath, "CliChild");
+        }
+
+        [Test]
+        public void Inspect_FbxPath_IsNotRejectedForExtension()
+        {
+            var handler = new PrefabCommandHandler();
+            string fbxArgs = ProtocolJson.Serialize(new PrefabInspectArgs { path = "Assets/MissingModel.fbx" });
+            var missing = Assert.Throws<InvalidOperationException>(() =>
+                handler.Handle(ProtocolConstants.CommandPrefabInspect, fbxArgs))!;
+            Assert.That(missing.Message, Does.Not.Contain("must use the `.prefab` extension"));
+
+            string pngArgs = ProtocolJson.Serialize(new PrefabInspectArgs { path = "Assets/Missing.png" });
+            CommandFailureException failure = Assert.Throws<CommandFailureException>(() =>
+                handler.Handle(ProtocolConstants.CommandPrefabInspect, pngArgs))!;
+            Assert.That(failure.ErrorCode, Is.EqualTo("PREFAB_PATH_INVALID"));
+            Assert.That(failure.Message, Does.Contain(".fbx"));
+            Assert.That(failure.Message, Does.Contain("read-only"));
         }
 
         [Test]

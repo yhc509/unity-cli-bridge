@@ -397,7 +397,8 @@ namespace UnityCli.Protocol
                     "--timeout (default 30 seconds, maximum 600) is a cooperative cancel. User code must check __pucToken (System.Threading.CancellationToken) to stop — otherwise it keeps the main thread, and that is the --force user's responsibility.",
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
-                    "Only C# 5.0 syntax and below is supported (CodeDOM limit).",
+                    "Snippets compile with Unity's CodeDOM compiler (mcs). It accepts /langversion from 1 through 7.2, plus ISO-1, ISO-2, Default, and latest. The C# 9.0 project default, and any higher -langversion in Assets/csc.rsp, Assets/mcs.rsp, or Player Settings, is passed as /langversion:latest so default literals compile. A pin of 7.2 or below is passed through. Compile failures include the compiler error text.",
+                    "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),
             new CliCommandDescriptor(
@@ -522,7 +523,7 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Detailed scene patch rules live in docs/scene-spec.md." }),
+                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Components and renderers include `enabled`. It defaults to true, so `--omit-defaults` drops true and keeps false, including inside nested prefab instances.", "A node that belongs to a prefab instance includes `prefab.assetPath`. Nested instances also set `prefab.nested`, and the instance root sets `prefab.isRoot`.", "Detailed scene patch rules live in references/scene-spec.md relative to the installed AI-agent skill folder." }),
             new CliCommandDescriptor(
                 "scene patch",
                 "scene patch --path <Assets/...> (--spec-file <file.json> | --spec-json <json>) [--force]",
@@ -532,7 +533,12 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Detailed scene patch rules live in docs/scene-spec.md." },
+                notes: new[]
+                {
+                    "Supported operations: add-gameobject, modify-gameobject, delete-gameobject, add-component, modify-component, remove-component.",
+                    "An unknown operation fails with SCENE_SPEC_INVALID, lists those operations, and suggests the closest name (`set-component-values` means `modify-component`).",
+                    "Detailed scene patch rules live in references/scene-spec.md relative to the installed AI-agent skill folder.",
+                },
                 forceRule: ForceRule.OnDestructiveOp),
             new CliCommandDescriptor(
                 "scene add-object",
@@ -598,13 +604,13 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "prefab inspect",
                 "prefab inspect --path <Assets/...> [--node <nodePath>] [--with-values] [--max-depth <N>] [--omit-defaults]",
-                "Inspects prefab hierarchy and serialized property paths; use --with-values when authoring patch specs and the other options to reduce payload size.",
+                "Inspects prefab hierarchy and serialized property paths, including read-only model assets such as .fbx; use --with-values when authoring patch specs and the other options to reduce payload size.",
                 CliCommandGroup.PrefabWorkflows,
                 ProtocolConstants.CommandPrefabInspect,
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: true,
-                notes: new[] { "Use --node to inspect one node and its subtree while preserving the root response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Detailed prefab patch rules live in docs/prefab-spec.md." }),
+                notes: new[] { "Use --node to inspect one node and its subtree while preserving the root response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Model assets (.fbx, .obj, .dae, .dxf, .3ds, .blend, .skp) can be inspected read-only. prefab patch still requires a .prefab.", "Detailed prefab patch rules live in docs/prefab-spec.md." }),
             new CliCommandDescriptor(
                 "prefab create",
                 "prefab create --path <Assets/...> (--spec-file <file.json> | --spec-json <json>) [--force]",
@@ -824,7 +830,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "qa world-dump",
                 "qa world-dump [--include-offscreen] [--limit N] [--text <substring>] [--screenshot-width <int> --screenshot-height <int>]",
-                "Dumps non-UI world objects that opt in via IQaTappable/QaTappable (label, hierarchy path, image-space center, onScreen, hasAction) as JSON; requires Play Mode. Use --limit and --text to reduce payload size; filtered responses keep onScreen when --include-offscreen is set, otherwise omit it, and omit constant hasAction when it carries no per-element signal. Feed a returned path to `qa tap --target`. Off-screen objects are excluded unless --include-offscreen is set. Coordinates use the last captured screenshot size unless overridden.",
+                "Dumps non-UI world objects that opt in via IQaTappable/QaTappable (label, hierarchy path, image-space center, onScreen, hasAction) as JSON. In Play Mode, coordinates use the last captured screenshot size unless overridden. Outside Play Mode (Edit Mode), returns a hint pointing at scene inspect instead of QA_NOT_PLAYING, plus opted-in objects without screenshot coordinates. Use --limit and --text to reduce payload size; filtered Play Mode responses keep onScreen when --include-offscreen is set, otherwise omit it, and omit constant hasAction when it carries no per-element signal. Feed a returned path to `qa tap --target`. Off-screen objects are excluded unless --include-offscreen is set.",
                 CliCommandGroup.QaWorkflows,
                 ProtocolConstants.CommandQaWorldDump,
                 canUseLocal: false,

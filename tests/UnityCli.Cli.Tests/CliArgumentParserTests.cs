@@ -1877,6 +1877,30 @@ public sealed class CliArgumentParserTests
     }
 
     [Fact]
+    public void Parse_Execute_FileKeepsTopOfFileUsings()
+    {
+        using var temp = new TempDirectory();
+        string codePath = Path.Combine(temp.Path, "setup.cs");
+        const string source = "using UnityEngine;\r\n\r\nvar btn = GameObject.Find(\"ButtonName\");\r\n";
+        File.WriteAllText(codePath, source);
+
+        ParsedCommand parsed = CliArgumentParser.Parse([
+            "execute",
+            "--file", codePath,
+            "--force"
+        ]);
+
+        var args = ProtocolJson.Deserialize<ExecuteCodeArgs>(parsed.ToEnvelope().argumentsJson);
+
+        Assert.NotNull(args);
+        Assert.StartsWith("using UnityEngine;", args!.code);
+        string stripped = UsingDirectiveUtility.StripUsingDirectives(args.code, out string[] usings);
+        Assert.Equal(["using UnityEngine;"], usings);
+        Assert.Contains("GameObject.Find", stripped);
+        Assert.DoesNotContain("using ", stripped);
+    }
+
+    [Fact]
     public void Parse_Execute_ArgsWithoutValue_Throws()
     {
         var ex = Assert.Throws<CliUsageException>(() =>

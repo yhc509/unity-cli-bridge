@@ -61,6 +61,7 @@ unity-cli execute --force --project "$P" --output compact --code '__pucResult = 
 - [operating-rules.md](references/operating-rules.md): editor lifecycle, force/backup rules, inspect sizing, `PROTOCOL_MISMATCH`, records, components, convenience commands
 - [command-flows.md](references/command-flows.md): project selection, everyday commands, assets, scenes, test runner, verification
 - [prefab-workflows.md](references/prefab-workflows.md): prefab create/inspect/patch specs
+- [scene-spec.md](references/scene-spec.md): scene inspect fields and scene patch operations
 - [qa-testing.md](references/qa-testing.md): Play Mode input, coordinates, waits, sequences
 - [profiling.md](references/profiling.md): profile/memory loops and how to read the numbers
 - [troubleshooting.md](references/troubleshooting.md): stale instances, busy, live-connection problems, logs

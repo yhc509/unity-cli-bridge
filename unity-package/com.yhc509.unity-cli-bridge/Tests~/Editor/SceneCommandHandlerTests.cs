@@ -96,6 +96,80 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(meshRenderer.sharedMaterials.Length, Is.EqualTo(beforeMaterialCount));
         }
 
+        [Test]
+        public void Inspect_OmitDefaults_KeepsDisabledRendererInsideNestedPrefab()
+        {
+            EnsureTestFolder();
+            string innerPath = CreatePrimitivePrefab("NestedInner", "NestedInner", rendererEnabled: true);
+            string outerPath = CreateOuterPrefab("NestedOuter", innerPath);
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            GameObject outerAsset = AssetDatabase.LoadAssetAtPath<GameObject>(outerPath);
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(outerAsset);
+            Assert.That(instance, Is.Not.Null);
+            MeshRenderer renderer = instance.GetComponentInChildren<MeshRenderer>();
+            Assert.That(renderer, Is.Not.Null);
+            renderer.enabled = false;
+            _scenePath = AssetDatabase.GenerateUniqueAssetPath(TestFolder + "/NestedInspect.unity");
+            Assert.That(EditorSceneManager.SaveScene(scene, _scenePath), Is.True);
+
+            string json = SceneInspector.BuildInspectPayload(_scenePath, scene, withValues: true, maxDepth: null, omitDefaults: true, _scenePath);
+
+            Assert.That(json, Does.Contain("\"enabled\":false"));
+            Assert.That(json, Does.Contain("\"m_Enabled\":false"));
+            Assert.That(json, Does.Contain(innerPath));
+            Assert.That(json, Does.Contain("\"nested\":true"));
+            Assert.That(json, Does.Not.Contain("\"enabled\":true"));
+        }
+
+        private static string CreatePrimitivePrefab(string fileName, string rootName, bool rendererEnabled)
+        {
+            EnsureTestFolder();
+            string prefabPath = AssetDatabase.GenerateUniqueAssetPath(TestFolder + "/" + fileName + ".prefab");
+            GameObject root = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            root.name = rootName;
+            try
+            {
+                MeshRenderer renderer = root.GetComponent<MeshRenderer>();
+                Assert.That(renderer, Is.Not.Null);
+                renderer.enabled = rendererEnabled;
+                GameObject saved = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+                Assert.That(saved, Is.Not.Null);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return prefabPath;
+        }
+
+        private static string CreateOuterPrefab(string fileName, string innerPath)
+        {
+            EnsureTestFolder();
+            string prefabPath = AssetDatabase.GenerateUniqueAssetPath(TestFolder + "/" + fileName + ".prefab");
+            var parentRoot = new GameObject(fileName);
+            try
+            {
+                GameObject childAsset = AssetDatabase.LoadAssetAtPath<GameObject>(innerPath);
+                Assert.That(childAsset, Is.Not.Null);
+                var childInstance = (GameObject)PrefabUtility.InstantiatePrefab(childAsset);
+                Assert.That(childInstance, Is.Not.Null);
+                childInstance.transform.SetParent(parentRoot.transform, false);
+                GameObject saved = PrefabUtility.SaveAsPrefabAsset(parentRoot, prefabPath);
+                Assert.That(saved, Is.Not.Null);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(parentRoot);
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return prefabPath;
+        }
+
         private static void EnsureTestFolder()
         {
             if (!AssetDatabase.IsValidFolder(TestFolder))

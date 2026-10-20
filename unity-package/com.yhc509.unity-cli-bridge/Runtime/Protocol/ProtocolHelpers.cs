@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace UnityCli.Protocol
 {
@@ -313,6 +314,234 @@ namespace UnityCli.Protocol
             }
 
             return observation.QuiescentUpdates >= FallbackQuiescentUpdates;
+        }
+    }
+
+    /// <summary>
+    /// Rules for scene/prefab inspect fields that agents read under <c>--omit-defaults</c>.
+    /// <c>m_Enabled</c> defaults to true, so a false value is the non-default and must be kept.
+    /// </summary>
+    public static class SceneInspectValueRules
+    {
+        public static bool IsEnabledProperty(string? propertyName)
+        {
+            return string.Equals(propertyName, "m_Enabled", StringComparison.Ordinal)
+                || string.Equals(propertyName, "enabled", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Whether the component-level <c>enabled</c> flag should be written.
+        /// Null means the component has no enabled state. True is the default and is omitted
+        /// when <paramref name="omitDefaults"/> is set. False always survives.
+        /// </summary>
+        public static bool ShouldWriteEnabledFlag(bool? enabled, bool omitDefaults)
+        {
+            if (!enabled.HasValue)
+            {
+                return false;
+            }
+
+            return !omitDefaults || enabled.Value == false;
+        }
+
+        /// <summary>
+        /// Whether a boolean serialized value should be dropped while pruning defaults.
+        /// Enabled properties drop only <c>true</c>. Every other boolean still drops <c>false</c>.
+        /// </summary>
+        public static bool ShouldPruneBoolean(string? propertyName, bool value)
+        {
+            if (IsEnabledProperty(propertyName))
+            {
+                return value;
+            }
+
+            return !value;
+        }
+
+        public static bool ShouldWritePrefabFlag(bool value, bool omitDefaults)
+        {
+            return !omitDefaults || value;
+        }
+    }
+
+    public static class ScenePatchOperationCatalog
+    {
+        public static readonly string[] Supported =
+        {
+            "add-gameobject",
+            "modify-gameobject",
+            "delete-gameobject",
+            "add-component",
+            "modify-component",
+            "remove-component",
+        };
+
+        private static readonly Dictionary<string, string> Aliases = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { "set-component-values", "modify-component" },
+            { "set-component", "modify-component" },
+            { "modify-component-values", "modify-component" },
+            { "set-node", "modify-gameobject" },
+            { "modify-node", "modify-gameobject" },
+            { "delete-component", "remove-component" },
+            { "remove-gameobject", "delete-gameobject" },
+            { "delete-node", "delete-gameobject" },
+            { "add-node", "add-gameobject" },
+            { "add-object", "add-gameobject" },
+        };
+
+        public static string DescribeSupported()
+        {
+            var builder = new System.Text.StringBuilder();
+            for (int index = 0; index < Supported.Length; index++)
+            {
+                if (index > 0)
+                {
+                    builder.Append(", ");
+                }
+
+                builder.Append('`');
+                builder.Append(Supported[index]);
+                builder.Append('`');
+            }
+
+            return builder.ToString();
+        }
+
+        public static string? Suggest(string? operation)
+        {
+            if (string.IsNullOrWhiteSpace(operation))
+            {
+                return null;
+            }
+
+            string key = operation.Trim().ToLowerInvariant();
+            for (int index = 0; index < Supported.Length; index++)
+            {
+                if (string.Equals(key, Supported[index], StringComparison.Ordinal))
+                {
+                    return null;
+                }
+            }
+
+            string? alias;
+            if (Aliases.TryGetValue(key, out alias))
+            {
+                return alias;
+            }
+
+            string? best = null;
+            int bestDistance = int.MaxValue;
+            for (int index = 0; index < Supported.Length; index++)
+            {
+                string candidate = Supported[index];
+                int distance = Levenshtein(key, candidate);
+                int limit = Math.Max(2, candidate.Length / 4);
+                if (distance <= limit && distance < bestDistance)
+                {
+                    best = candidate;
+                    bestDistance = distance;
+                }
+            }
+
+            return best;
+        }
+
+        public static string BuildUnsupportedMessage(string operation)
+        {
+            string message = "Unsupported patch operation: `" + operation + "`. Supported operations: " + DescribeSupported() + ".";
+            string? suggestion = Suggest(operation);
+            if (suggestion != null)
+            {
+                message += " Did you mean `" + suggestion + "`?";
+            }
+
+            return message;
+        }
+
+        private static int Levenshtein(string left, string right)
+        {
+            int width = right.Length + 1;
+            var previous = new int[width];
+            var current = new int[width];
+            for (int column = 0; column < width; column++)
+            {
+                previous[column] = column;
+            }
+
+            for (int row = 1; row <= left.Length; row++)
+            {
+                current[0] = row;
+                for (int column = 1; column < width; column++)
+                {
+                    int cost = left[row - 1] == right[column - 1] ? 0 : 1;
+                    int insert = current[column - 1] + 1;
+                    int delete = previous[column] + 1;
+                    int replace = previous[column - 1] + cost;
+                    int best = insert < delete ? insert : delete;
+                    current[column] = replace < best ? replace : best;
+                }
+
+                int[] swap = previous;
+                previous = current;
+                current = swap;
+            }
+
+            return previous[right.Length];
+        }
+    }
+
+    public static class ModelPrefabAssets
+    {
+        public static readonly string[] Extensions =
+        {
+            ".fbx",
+            ".obj",
+            ".dae",
+            ".dxf",
+            ".3ds",
+            ".blend",
+            ".skp",
+        };
+
+        public static bool IsModelExtension(string? extension)
+        {
+            if (string.IsNullOrEmpty(extension))
+            {
+                return false;
+            }
+
+            for (int index = 0; index < Extensions.Length; index++)
+            {
+                if (string.Equals(extension, Extensions[index], StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static string DescribeExtensions()
+        {
+            return string.Join(", ", Extensions);
+        }
+    }
+
+    public static class PrefabInspectPaths
+    {
+        public static bool IsInspectableExtension(string? extension)
+        {
+            return string.Equals(extension, ".prefab", StringComparison.OrdinalIgnoreCase)
+                || ModelPrefabAssets.IsModelExtension(extension);
+        }
+
+        public static string UnsupportedExtensionMessage(string normalizedPath)
+        {
+            return "Prefab path must use the `.prefab` extension, or a model asset extension ("
+                + ModelPrefabAssets.DescribeExtensions()
+                + ") for read-only `prefab inspect`: "
+                + normalizedPath;
         }
     }
 }

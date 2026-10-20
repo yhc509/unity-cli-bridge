@@ -1,3 +1,4 @@
+using UnityCli.Cli.Services;
 using UnityCli.Protocol;
 
 namespace UnityCli.Cli.Tests;
@@ -268,6 +269,19 @@ public sealed class TrimProjectionUtilityTests
         Assert.Contains("\"centerY\"", json, StringComparison.Ordinal);
         Assert.Contains("\"onScreen\"", json, StringComparison.Ordinal);
         Assert.Contains("\"hasAction\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QaWorldDumpEditMode_HintPointsAtSceneInspect()
+    {
+        Assert.Contains("scene inspect", QaWorldDumpEditMode.Hint, StringComparison.Ordinal);
+        Assert.Contains("`play`", QaWorldDumpEditMode.Hint, StringComparison.Ordinal);
+        Assert.Contains("Edit Mode", QaWorldDumpEditMode.Hint, StringComparison.Ordinal);
+
+        string? help = CliCommandMetadata.BuildTopicHelpText("qa world-dump");
+        Assert.NotNull(help);
+        Assert.Contains("scene inspect", help, StringComparison.Ordinal);
+        Assert.Contains("Edit Mode", help, StringComparison.Ordinal);
     }
 
     private static QaUiElement Ui(string text, bool interactable)

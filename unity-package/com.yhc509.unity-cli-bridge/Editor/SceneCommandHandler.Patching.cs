@@ -42,7 +42,9 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 if (operation == null || string.IsNullOrWhiteSpace(operation.Operation))
                 {
-                    throw new CommandFailureException("SCENE_SPEC_INVALID", "Patch operation `op` is empty.");
+                    throw new CommandFailureException(
+                        "SCENE_SPEC_INVALID",
+                        "Patch operation `op` is empty. Supported operations: " + ScenePatchOperationCatalog.DescribeSupported() + ".");
                 }
 
                 switch (operation.Operation)
@@ -124,7 +126,9 @@ namespace UnityCliBridge.Bridge.Editor
                         break;
                     }
                     default:
-                        throw new CommandFailureException("SCENE_SPEC_INVALID", "Unsupported patch operation: " + operation.Operation);
+                        throw new CommandFailureException(
+                            "SCENE_SPEC_INVALID",
+                            ScenePatchOperationCatalog.BuildUnsupportedMessage(operation.Operation));
                 }
             }
 

@@ -102,6 +102,7 @@ A project on the legacy Input Manager (no `com.unity.inputsystem`, or Active Inp
 
 ### Play Mode
 Every QA command runs only in Play Mode. Outside Play Mode the error is `QA_NOT_PLAYING`.
+`qa world-dump` is the exception: outside Play Mode it returns `editMode: true`, a hint to use `scene inspect`, and any opted-in world objects without screenshot coordinates. Run `play` when you need `centerX` / `centerY`.
 
 ## Building test UI
 
