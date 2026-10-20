@@ -6,9 +6,11 @@
 
 **unity-cli-bridge** is a command-line interface for the Unity Editor: declarative commands for scenes, prefabs, materials, assets, packages, the Test Runner, Play Mode QA, and profiling, each returning JSON on stdout.
 
+> **Maintenance:** personal side project, maintained on a best-effort basis in my spare time. See [Maintenance](#maintenance).
+
 It is for developers who script the Editor and for AI coding agents such as Claude Code, Codex, and Grok Build. An agent skill ships with the repo. The bridge runs on Unity 2021.3 LTS or later, including Unity 6. Published CLI builds are macOS Apple Silicon and Windows x64.
 
-It does not use an MCP client or a Python server. [MCP for Unity](https://github.com/CoplayDev/unity-mcp) requires both. [Unity CLI Loop](https://github.com/hatayama/unity-cli-loop) says almost any Editor operation can be done with `execute-dynamic-code`, and keeps dedicated commands for what that cannot cover. Unity's [official CLI](https://docs.unity.com/en-us/unity-cli/unity-cli) installs and manages Editors on its own; driving a running Editor uses the [Pipeline package](https://docs.unity.com/en-us/unity-cli/unity-pipeline/unity-pipeline-package) over a local HTTP API, including [`unity command eval`](https://unity.com/blog/meet-the-unity-cli) for C#. Common edits here are dedicated commands. `execute` is the escape hatch and requires `--force`. Sources and the rest of the comparison are in [How it compares](#how-it-compares).
+<!-- demo GIF: docs/assets/demo.gif (coming with 0.5.6) -->
 
 ## Requirements
 
@@ -17,16 +19,16 @@ It does not use an MCP client or a Python server. [MCP for Unity](https://github
 - **Running Editor:** commands that query or change a project need an Editor with this package loaded. The bridge starts when that Editor opens. `editor launch` can start one, including headless (`-batchmode`, GPU left available).
 - **Installed with the package:** `com.unity.test-framework` 1.4.5 (declared in `package.json`).
 - **Optional — Unity Recorder** (`com.unity.recorder` 3.0.0 or newer): required for `record` and `qa run-sequence --record`. Without it, `record start` returns an install hint and the other commands still work. On Unity 6000.4 and newer, Recorder 5.1.6 or later is required or Recorder itself does not compile.
-- **Optional — Input System** (`com.unity.inputsystem`): `qa key`, `qa swipe`, right-button `qa tap`, and the coordinate fallback of `qa tap --target` return `QA_INPUT_SYSTEM_REQUIRED` when it is not installed.
+- **Optional — Input System** (`com.unity.inputsystem`): pointer QA works without it. On the legacy Input Manager, coordinate `qa tap` with no UI hit, the `qa tap --target` world fallback, coordinate `qa swipe`, and the matching `qa run-sequence` actions send a simulated touch that Unity also reports as left mouse button 0. `qa key` is delivered to `IQaKeyHandler` components and otherwise returns `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` returns `QA_LEGACY_BUTTON_UNSUPPORTED`.
 - **Optional — Memory Profiler** (`com.unity.memoryprofiler`): required only for `profile memory snapshot`. The other `profile` commands do not use it.
 
 ## Design Philosophy
 
-Most Unity automation tools fall into two camps:
+Most Editor automation falls into two camps:
 
-**MCP mega-tools** wrap dozens of actions behind a Python/Node intermediary. Every call hops through AI → MCP server → HTTP → Unity plugin. More moving parts, more latency, more failure modes.
+**A server in the middle** wraps dozens of actions behind a Python or Node process. Every call hops through that process before it reaches the Editor. More moving parts, more failure modes.
 
-**Dynamic code execution** sends raw C# to Unity and reads results from Debug.Log. Infinitely flexible, but the LLM must generate correct C# every time, and reading results requires a second call.
+**Dynamic code execution** sends raw C# to Unity and reads results from Debug.Log. Infinitely flexible, but the caller must generate correct C# every time, and reading results requires a second call.
 
 **unity-cli-bridge takes a third path: declarative commands over direct IPC.**
 
@@ -35,13 +37,11 @@ CLI ──── local IPC ──── Unity Editor (bridge)
          (Named Pipe on Windows, Unix socket on macOS)
 ```
 
-- **One hop, no intermediary.** CLI talks directly to the Editor over local IPC. Average response: 265 ms (v0.1.0, measured 2026-04-05).
-- **Declarative, not imperative.** `scene add-object --primitive Cube --position 3,0,0` instead of writing C# code. The LLM picks options, not APIs.
-- **Token-aware responses.** `--output compact` strips envelope metadata. `--omit-defaults` cuts material info by 71% and scene inspect by 41% (same v0.1.0 run, 2026-04-05).
+- **One hop, no intermediary.** The CLI talks directly to the Editor over local IPC.
+- **Declarative, not imperative.** `scene add-object --primitive Cube --position 3,0,0` instead of writing C# code. The caller picks options, not APIs.
+- **Token-aware responses.** `--output compact` strips envelope metadata. `--omit-defaults` strips default and identity values from inspect and material responses.
 - **Structured results in stdout.** No polling, no log scraping, no file reads. Every command returns JSON immediately.
 - **Fail fast, fail loud.** Invalid options get a clear error. Unrecognized patch keys return warnings instead of silent success.
-
-> See [Benchmark: 3-Way Comparison](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison) for that 2026-04-05 v0.1.0 run. The other two approaches are anonymized there (Tool B / Tool C). They are not the named projects in [How it compares](#how-it-compares).
 
 ## Quick Start
 
@@ -68,6 +68,8 @@ Add the following to your `Packages/manifest.json`:
   }
 }
 ```
+
+The git URL above is the install path to use today. A `.unitypackage` download on itch.io is coming with 0.5.6.
 
 The bridge starts automatically when the Editor opens. No configuration needed.
 
@@ -230,10 +232,11 @@ Headless notes:
 
 ```bash
 unity-cli status --project MyGame          # Editor state, Unity version, current scene
-unity-cli play / pause / stop              # Play Mode control
-unity-cli compile                          # Trigger recompile
-unity-cli compile --wait                   # Wait until compile/import finishes and bridge is reachable
-unity-cli refresh --wait                   # Refresh assets and wait for Editor readiness
+unity-cli play / pause / stop              # play and stop wait until Play Mode settles
+unity-cli compile                          # Recompile and wait until the bridge is reachable
+unity-cli compile --no-wait                # Return as soon as the compile request is accepted
+unity-cli refresh                          # Refresh assets and wait for Editor readiness
+unity-cli refresh --no-wait                # Return as soon as the refresh request is accepted
 unity-cli screenshot --path /tmp/shot.jpg  # Game View capture (default), or --view scene
                                            # Defaults: JPEG q75, downscaled to 1024px wide
 unity-cli screenshot --format png --max-width 0 --path /tmp/shot.png   # Lossless, full resolution
@@ -251,7 +254,11 @@ unity-cli execute --code "__pucResult = new Vector3(1.5f, 0f, 3.25f);" --force
 unity-cli execute --file my-script.cs --force --timeout 60
 ```
 
-`execute --args` exposes the supplied JSON as `__pucArgsJson`; do not declare variables with the reserved `__puc_internal_*` prefix in user code. Avoid putting secrets or credentials in `--args`, because CodeDOM compilation can briefly create temporary `.cs` files under the OS temp directory.
+`compile`, `refresh`, `play`, and `stop` wait until Unity has settled. `--wait` is still accepted. `--no-wait` returns as soon as the request is accepted. `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload. `status` reports `isChangingPlayMode` and `domainId` for that transition.
+
+`execute --args` exposes the supplied JSON as `__pucArgsJson`; do not declare variables with the reserved `__puc_internal_*` prefix in user code. Avoid putting secrets or credentials in `--args`, because CodeDOM compilation can briefly create temporary `.cs` files under the OS temp directory. A repeated `execute` with the same wrapped source is served from an in-Editor compile cache until the next domain reload (`cacheHit: true`). Put changing values in `--args` so the source stays identical.
+
+`PucFrameLoop` (`Start`, `Status`, `Stop`, `Running`, available inside `execute`) runs that code once per editor frame. Use it for a Play Mode autopilot instead of calling `execute` in a shell loop.
 
 Assign a value to `__pucResult` when the caller needs a structured return value. The response includes `hasResult: true` and `result` as type-preserving JSON, with `float` formatted using G9 and `double` using G17 for round-trip precision. Editor-assembly custom `[PucCommand]` methods can return `ExecuteValueSerializer.Serialize(obj)`; runtime-assembly commands must serialize precise JSON themselves.
 
@@ -298,6 +305,10 @@ unity-cli scene remove-component --path Assets/Scenes/Main.unity --node "/Player
 unity-cli scene patch --path ... --spec-file patch.json
 ```
 
+`scene inspect` reports `enabled` on components and renderers, including inside nested prefab instances, and `prefab.assetPath` (plus `prefab.nested` / `prefab.isRoot`) for prefab instances. `--omit-defaults` drops `enabled: true` and keeps `enabled: false`.
+
+Scene patch operations are `add-gameobject`, `modify-gameobject`, `delete-gameobject`, `add-component`, `modify-component`, and `remove-component`. An unknown name fails with `SCENE_SPEC_INVALID` and suggests the closest match. The prefab operation `set-component-values` is `modify-component` on a scene. See [Scene Spec](docs/scene-spec.md).
+
 ### Prefabs
 
 ```bash
@@ -314,7 +325,9 @@ unity-cli prefab add-component --path Assets/Prefabs/Player.prefab --node "/Visu
 unity-cli prefab remove-component --path Assets/Prefabs/Player.prefab --node "/Visual[0]" --type BoxCollider --force
 ```
 
-Patch ops: `add-child`, `remove-node`, `set-node`, `add-component`, `remove-component`, `set-component-values`
+Prefab patch ops: `add-child`, `remove-node`, `set-node`, `add-component`, `remove-component`, `set-component-values`
+
+`prefab inspect` reads prefab assets and model assets such as `.fbx`.
 
 Friendly component keys are available in scene/prefab value patches for common Unity components:
 - Rigidbody: `mass`, `damping`, `angularDamping`, `useGravity`, `isKinematic`, `constraints`
@@ -389,9 +402,9 @@ unity-cli qa run-sequence --spec-json @seq.json --record --record-path /tmp/qa-s
 
 `qa ui-dump` returns clickable UI elements with hierarchy `path`, visible `text`, `interactable`, and image-space rect/center fields. Feed a returned `path` to `qa click --target`, or `centerX`/`centerY` to `qa tap --x --y`. Add `--limit N`, `--interactable-only`, and `--text <substring>` to filter server-side after top-to-bottom sorting; add `--omit-rect` to omit `x`/`y`/`width`/`height` while keeping `centerX`/`centerY`.
 
-`qa world-dump` lists non-UI world objects that opt in via `IQaTappable` (implement on your own component) or the `QaTappable` marker component. Each entry has a `label`, hierarchy `path`, image-space `centerX`/`centerY`, `onScreen`, and `hasAction`. Feed a `path` to `qa tap --target`: left click invokes the object's `TryQaTap()` action when present, otherwise simulates an Input System tap at the object's anchor; right click uses pointer handlers when available and otherwise simulates right-button Input System input. Off-screen objects are excluded unless `--include-offscreen` is passed. Add `--limit N` and `--text <substring>` to filter server-side; filtered responses keep `onScreen` when `--include-offscreen` is passed, otherwise omit it, and omit constant `hasAction` when it carries no per-element signal.
+`qa world-dump` lists non-UI world objects that opt in via `IQaTappable` (implement on your own component) or the `QaTappable` marker component. Each entry has a `label`, hierarchy `path`, image-space `centerX`/`centerY`, `onScreen`, and `hasAction`. Feed a `path` to `qa tap --target`: left click invokes the object's `TryQaTap()` action when present, otherwise taps at the object's anchor. With the Input System active, that fallback is a pointer tap, and right click uses pointer handlers or a right-button tap. On the legacy Input Manager the fallback is a simulated touch that also reports as left mouse button 0, and `--button right` returns `QA_LEGACY_BUTTON_UNSUPPORTED`. Off-screen objects are excluded unless `--include-offscreen` is passed. Add `--limit N` and `--text <substring>` to filter server-side; filtered responses keep `onScreen` when `--include-offscreen` is passed, otherwise omit it, and omit constant `hasAction` when it carries no per-element signal. Outside Play Mode, `qa world-dump` returns an edit-mode hint pointing at `scene inspect`, plus any opted-in world objects without screenshot coordinates.
 
-`qa click`, `qa tap`, and `qa swipe` default to `--button left`; pass `--button right` to drive right-click or right-drag input paths.
+`qa click`, `qa tap`, and `qa swipe` default to `--button left`; pass `--button right` to drive right-click or right-drag input paths. `qa key` uses the Input System when it is active. On the legacy Input Manager it calls `IQaKeyHandler.TryQaKey` and otherwise returns `QA_LEGACY_KEY_UNSUPPORTED`.
 
 When multiple `qa wait-until` conditions are supplied, every condition must be satisfied (AND). `qa wait-until --object-interactable` waits for an active target whose effective interactable state is true; non-Selectable objects without that state are treated as interactable once active. `qa wait-until --object-gone` waits until an active target can no longer be resolved, which covers deactivated or destroyed objects.
 
@@ -452,8 +465,8 @@ For AI agent workflows, minimize token consumption:
 unity-cli asset info --path ... --output compact
 
 # --omit-defaults: strip default/identity values from inspect and material responses
-unity-cli scene inspect --path ... --with-values --omit-defaults    # 41% smaller (v0.1.0, 2026-04-05)
-unity-cli material info --path ... --omit-defaults                  # 71% smaller (v0.1.0, 2026-04-05)
+unity-cli scene inspect --path ... --with-values --omit-defaults
+unity-cli material info --path ... --omit-defaults
 
 # --max-depth: limit hierarchy traversal depth
 unity-cli scene inspect --path ... --max-depth 2
@@ -508,26 +521,11 @@ Unity -batchmode -quit -projectPath . -noUnityCliBridge -executeMethod Build.Run
 
 A disabled bridge constructs nothing and logs one line saying so.
 
-## How it compares
-
-Facts in this table were read from the linked pages on 2026-10-19. They describe what those pages say. They are not a timed benchmark. The only timed numbers in this README are the v0.1.0 figures above, from the anonymized [wiki benchmark](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison) (2026-04-05).
-
-| | unity-cli-bridge | [MCP for Unity](https://github.com/CoplayDev/unity-mcp) | [Unity CLI Loop](https://github.com/hatayama/unity-cli-loop) | [Unity CLI](https://docs.unity.com/en-us/unity-cli/unity-cli) + [Pipeline](https://docs.unity.com/en-us/unity-cli/unity-pipeline/unity-pipeline-package) |
-| --- | --- | --- | --- | --- |
-| Transport to a running Editor | Local named pipe on Windows, Unix socket on macOS. No TCP port. | An MCP client talks to a Python server over stdio or HTTP ([transport modes](https://coplaydev.github.io/unity-mcp/architecture/transports)). Stdio discovers Editors through status files and a TCP port ([instance routing](https://coplaydev.github.io/unity-mcp/architecture/instance-routing)). HTTP has Editors connect over a WebSocket ([v8 networking](https://coplaydev.github.io/unity-mcp/migrations/v8)). | Unix domain socket on macOS/Linux, named pipe on Windows. The README says this path uses no TCP port. | Local HTTP API, as the Pipeline package page describes it. |
-| Extra runtime | None beyond the Editor. The published CLI is a self-contained binary. | Python 3.10+ via [`uv`](https://docs.astral.sh/uv/), plus an MCP client. Stated in the README quickstart. | The V3 README says there is no Node.js setup. Install is a `uloop` binary. | The `unity` binary. Pipeline is a package in the Unity project. |
-| How edits are expressed | Dedicated commands for scenes, prefabs, materials, assets, and packages. `execute` runs C# only with `--force`. | MCP tools. The README lists managing assets, controlling scenes, editing scripts, running tests, profiling, and building. | The README says almost any Editor operation can be done with `execute-dynamic-code`. Dedicated commands are for what that cannot cover (input simulation, screenshots) and for frequent steps such as compile and logs. | Registered Pipeline commands, plus `unity command eval` for C# in the running Editor ([Unity blog, 2026-07-20](https://unity.com/blog/meet-the-unity-cli)). |
-| Minimum Unity | 2021.3 LTS, including Unity 6. Checked on 2021.3.45f2. | README quickstart: Unity 2021.3 LTS through 6.x. | README: Unity 2022.3 or later. | The CLI manages Editor installs on its own. The Pipeline page requires Unity 6.0 or later to drive a running Editor ([also stated here](https://docs.unity.com/en-us/unity-cli/replace-mcp-server-unity-cli)). |
-| Operating systems | Published CLI: macOS Apple Silicon and Windows x64. No Intel Mac build. No Linux build. | No host OS matrix on the README quickstart. | README install: macOS, Linux (x86_64), and Windows. On Linux, `focus-window` is not supported. | [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli): Windows 10 21H1 or newer, Linux (RHEL 9 and Ubuntu 22.04 or later, glibc 2.34+), macOS 14 or newer. |
-| License | [Apache-2.0](LICENSE) | MIT, stated in the README. | MIT, stated in the README. | The [replacement guide](https://docs.unity.com/en-us/unity-cli/replace-mcp-server-unity-cli) says the CLI is free and is not a Unity AI subscription. Those pages do not name an open-source license. |
-
-Also named on those same pages: this repo documents Play Mode `qa` (click, tap, swipe, ui-dump, world-dump, wait-until, run-sequence) and the `profile` commands. Unity CLI Loop's README lists `simulate-mouse-ui`, `simulate-mouse-input`, `simulate-keyboard`, and `replay-input`. MCP for Unity's README lists running tests and profiling. Unity's CLI reference lists `unity test` for the Test Runner.
-
 ## FAQ
 
-### Is this an MCP server?
+### How does the CLI talk to the Editor?
 
-No. `unity-cli` talks to the Editor over a local named pipe (Windows) or Unix socket (macOS) and prints JSON. There is no MCP server to configure and no Python process. [MCP for Unity](https://github.com/CoplayDev/unity-mcp) is a different project; its README requires an MCP client and Python 3.10+. Claude Code, Codex, and Grok Build use this repo through the plugin skill in [Install the agent skill](#3-install-the-agent-skill).
+`unity-cli` talks to the Editor over a local named pipe (Windows) or Unix socket (macOS) and prints JSON. There is no extra server process to configure. Claude Code, Codex, and Grok Build use this repo through the plugin skill in [Install the agent skill](#3-install-the-agent-skill).
 
 ### How do I use it with Claude Code, Codex, or Grok Build?
 
@@ -535,15 +533,11 @@ Install the skill as a plugin, at user scope, so it loads whichever folder the a
 
 ### Which Unity versions and platforms are supported? Does it run on Linux?
 
-Unity 2021.3 LTS or newer, including Unity 6. It was checked on 2021.3.45f2. Published CLI binaries are macOS Apple Silicon and Windows x64. No Intel Mac build is published, and no Linux build is published. A summary that says this project supports Linux is repeating an old diagram label; the listener line now says macOS.
+Unity 2021.3 LTS or newer, including Unity 6. It was checked on 2021.3.45f2. Published CLI binaries are macOS Apple Silicon and Windows x64. No Intel Mac build is published, and no Linux build is published.
 
 ### Does the Editor have to be open already?
 
 Commands that query or change the project need a running Editor with this package loaded. The bridge starts when that Editor opens. `unity-cli editor launch` starts the Editor for the project, headless (`-batchmode`, GPU kept) unless you pass `--gui`, and waits until the bridge answers (default 300 seconds). If that Editor is already running, launch reuses it.
-
-### How is this different from Unity's official `unity` CLI?
-
-Unity's CLI is Unity Technologies' binary for installing Editors, modules, and projects. Driving a running Editor with it requires the Pipeline package, which the docs say needs Unity 6.0 or later and uses a local HTTP API. `unity command eval` runs C# in that Editor. This repository is a separate Apache-2.0 package and `unity-cli` binary. Scenes, prefabs, materials, assets, tests, QA, and profiling are dedicated commands. `execute` runs C# only when you pass `--force`.
 
 ### Can it run in CI or batchmode?
 
@@ -555,7 +549,7 @@ Destructive commands require `--force`, including asset delete, `execute`, packa
 
 ### Is it free?
 
-Yes. The repository is [Apache License 2.0](LICENSE).
+Yes. The repository is [Apache License 2.0](LICENSE). Forks and adaptations are allowed under that license. See [Maintenance](#maintenance).
 
 ## Documentation
 
@@ -564,7 +558,6 @@ Yes. The repository is [Apache License 2.0](LICENSE).
 - [Scene Spec](docs/scene-spec.md)
 - [Prefab Spec](docs/prefab-spec.md)
 - [llms.txt](llms.txt)
-- [Benchmark (v0.1.0, 2026-04-05)](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-Unity-Editor-CLI-Tool-Comparison)
 - [Unity Package](unity-package/com.yhc509.unity-cli-bridge/README.md)
 
 ## AI Agent Skill
@@ -589,3 +582,14 @@ dotnet run --project cli/UnityCli.DocGen -- --check   # Verify docs match code
 - Live IPC required — Unity commands fail fast when no Editor is running (`editor launch` can start one for you)
 - Scene patching targets saved `Assets/...unity` scenes; multi-scene orchestration is out of scope
 - Prefab-internal object references and nested variants are not yet supported
+
+## Maintenance
+
+unity-cli-bridge is a personal side project, maintained on a best-effort
+basis in my spare time.
+
+- Supported: Unity 2021.3 LTS and newer, on macOS (Apple Silicon) and Windows (x64).
+- Priorities: bug fixes and compatibility with new Unity versions.
+- Issues and pull requests are welcome, but there is no guaranteed response time.
+- Large feature requests may be declined if they don't fit the project's scope.
+- You're free to fork and adapt it under the Apache-2.0 license.
