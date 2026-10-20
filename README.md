@@ -558,6 +558,7 @@ Yes. The repository is [Apache License 2.0](LICENSE). Forks and adaptations are 
 - [Scene Spec](docs/scene-spec.md)
 - [Prefab Spec](docs/prefab-spec.md)
 - [llms.txt](llms.txt)
+- [Benchmarks (v0.5.6)](https://github.com/yhc509/unity-cli-bridge/wiki/Benchmark-v0.5.6)
 - [Unity Package](unity-package/com.yhc509.unity-cli-bridge/README.md)
 
 ## AI Agent Skill
