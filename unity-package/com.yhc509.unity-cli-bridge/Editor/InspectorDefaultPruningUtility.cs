@@ -1,6 +1,6 @@
 #nullable enable
-using System;
 using Newtonsoft.Json.Linq;
+using UnityCli.Protocol;
 
 namespace UnityCliBridge.Bridge.Editor
 {
@@ -13,7 +13,14 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 JToken? next = token.Next;
                 var property = (JProperty)token;
-                if (ShouldOmitInspectableValue(property.Value))
+                if (property.Value.Type == JTokenType.Boolean)
+                {
+                    if (SceneInspectValueRules.ShouldPruneBoolean(property.Name, property.Value.Value<bool>()))
+                    {
+                        property.Remove();
+                    }
+                }
+                else if (ShouldOmitInspectableValue(property.Value))
                 {
                     property.Remove();
                 }

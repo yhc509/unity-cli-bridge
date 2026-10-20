@@ -45,7 +45,7 @@ for (int i = 0; i < workItems.Count; i++)
 - **Attach `--output compact` by default whenever an LLM consumes the command.** The reason and the exceptions are in [references/command-flows.md](command-flows.md) under `Checking status`.
 - Before `scene patch`, run `scene inspect --with-values` when you can, and take GameObject paths and field names from that result.
 - Before `prefab patch`, run `prefab inspect --with-values` when you can, and take paths and field names from that result. Add `--force` when the spec contains a destructive op such as `remove-node` or `remove-component`.
-- When an inspect response is large, cap depth with `--max-depth N` and drop defaults with `--omit-defaults`. **Always pair `--with-values` with `--omit-defaults`** so 0/null/false/empty defaults are omitted (about 30–55% smaller per component).
+- When an inspect response is large, cap depth with `--max-depth N` and drop defaults with `--omit-defaults`. **Always pair `--with-values` with `--omit-defaults`** so 0/null/false/empty defaults are omitted (about 30–55% smaller per component). `enabled` / `m_Enabled` default to true, so `false` is kept, including on renderers inside nested prefab instances. Those nodes also include `prefab.assetPath` (and `prefab.nested` when the instance is nested).
 - `material info` also supports `--omit-defaults`. On URP/Lit that is 48 properties reduced to the ones that changed, about 71% fewer tokens.
 - `--omit-defaults` output is read-only. Feeding it back as a patch input does not restore the omitted fields.
 - Do not guess `SerializedProperty.propertyPath`. Use the inspect result.

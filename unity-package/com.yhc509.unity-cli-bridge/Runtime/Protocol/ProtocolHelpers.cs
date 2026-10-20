@@ -315,4 +315,51 @@ namespace UnityCli.Protocol
             return observation.QuiescentUpdates >= FallbackQuiescentUpdates;
         }
     }
+
+    /// <summary>
+    /// Rules for scene/prefab inspect fields that agents read under <c>--omit-defaults</c>.
+    /// <c>m_Enabled</c> defaults to true, so a false value is the non-default and must be kept.
+    /// </summary>
+    public static class SceneInspectValueRules
+    {
+        public static bool IsEnabledProperty(string? propertyName)
+        {
+            return string.Equals(propertyName, "m_Enabled", StringComparison.Ordinal)
+                || string.Equals(propertyName, "enabled", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Whether the component-level <c>enabled</c> flag should be written.
+        /// Null means the component has no enabled state. True is the default and is omitted
+        /// when <paramref name="omitDefaults"/> is set. False always survives.
+        /// </summary>
+        public static bool ShouldWriteEnabledFlag(bool? enabled, bool omitDefaults)
+        {
+            if (!enabled.HasValue)
+            {
+                return false;
+            }
+
+            return !omitDefaults || enabled.Value == false;
+        }
+
+        /// <summary>
+        /// Whether a boolean serialized value should be dropped while pruning defaults.
+        /// Enabled properties drop only <c>true</c>. Every other boolean still drops <c>false</c>.
+        /// </summary>
+        public static bool ShouldPruneBoolean(string? propertyName, bool value)
+        {
+            if (IsEnabledProperty(propertyName))
+            {
+                return value;
+            }
+
+            return !value;
+        }
+
+        public static bool ShouldWritePrefabFlag(bool value, bool omitDefaults)
+        {
+            return !omitDefaults || value;
+        }
+    }
 }

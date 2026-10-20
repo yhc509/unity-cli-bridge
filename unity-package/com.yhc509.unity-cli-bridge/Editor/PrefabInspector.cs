@@ -27,7 +27,16 @@ namespace UnityCliBridge.Bridge.Editor
             InspectorJsonWriterUtility.WriteAssetToken(writer, path);
             writer.WritePropertyName("root");
             GameObject inspectRoot = targetRoot ?? root;
-            WriteNode(writer, inspectRoot, BuildNodePath(inspectRoot.transform), withValues, maxDepth, omitDefaults, 0);
+            InspectorJsonWriterUtility.BeginPrefabModificationCache();
+            try
+            {
+                WriteNode(writer, inspectRoot, BuildNodePath(inspectRoot.transform), withValues, maxDepth, omitDefaults, 0);
+            }
+            finally
+            {
+                InspectorJsonWriterUtility.EndPrefabModificationCache();
+            }
+
             writer.WriteEndObject();
             writer.Flush();
             return builder.ToString();
@@ -204,6 +213,7 @@ namespace UnityCliBridge.Bridge.Editor
                 InspectorJsonWriterUtility.WriteTransformToken(writer, gameObject.transform, omitDefaults);
             }
 
+            InspectorJsonWriterUtility.WritePrefabSource(writer, gameObject, omitDefaults);
             WriteComponents(writer, gameObject, withValues, omitDefaults);
             WriteChildren(writer, gameObject.transform, nodePath, withValues, maxDepth, omitDefaults, currentDepth);
             writer.WriteEndObject();
@@ -248,10 +258,17 @@ namespace UnityCliBridge.Bridge.Editor
                 writer.WriteValue(componentType.FullName);
                 writer.WritePropertyName("componentIndex");
                 writer.WriteValue(CountPriorComponentMatches(_componentBuffer, index, componentType));
+                bool? enabled = InspectorJsonWriterUtility.ResolveComponentEnabled(component);
+                InspectorJsonWriterUtility.WriteEnabledProperty(writer, enabled, omitDefaults);
 
                 if (withValues)
                 {
                     JObject values = SerializedValueApplier.BuildInspectableValues(component);
+                    if (enabled.HasValue)
+                    {
+                        values["m_Enabled"] = enabled.Value;
+                    }
+
                     if (omitDefaults)
                     {
                         InspectorDefaultPruningUtility.PruneDefaultInspectableValues(values);

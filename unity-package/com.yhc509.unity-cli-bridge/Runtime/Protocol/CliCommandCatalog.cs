@@ -522,7 +522,7 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Detailed scene patch rules live in docs/scene-spec.md." }),
+                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Components and renderers include `enabled`. It defaults to true, so `--omit-defaults` drops true and keeps false, including inside nested prefab instances.", "A node that belongs to a prefab instance includes `prefab.assetPath`. Nested instances also set `prefab.nested`, and the instance root sets `prefab.isRoot`.", "Detailed scene patch rules live in docs/scene-spec.md." }),
             new CliCommandDescriptor(
                 "scene patch",
                 "scene patch --path <Assets/...> (--spec-file <file.json> | --spec-json <json>) [--force]",

@@ -24,6 +24,8 @@ Use `--with-values` when you need data for authoring a patch.
 - Child paths look like `/Environment[0]/Props[0]/Torch[1]`
 - Component types are reported by full name
 - Component values are reported by writable `SerializedProperty.propertyPath`
+- Components and renderers that have an enabled checkbox include `enabled`. The default is `true`. `--omit-defaults` drops `enabled: true` and `m_Enabled: true`, and keeps `false` (including on nested prefab instances, where the checkbox can live on an outer prefab override)
+- A node that is part of a prefab instance includes `prefab.assetPath` (the nearest prefab or model asset). `prefab.isRoot` is true on the instance root. `prefab.nested` is true when that instance sits inside another prefab instance. `prefab.added` is true for objects added onto an instance. These fields are kept under `--omit-defaults` when they carry a signal (`assetPath` always, flags only when true)
 
 Do not guess GameObject paths or field names when writing `scene patch`. Use `scene inspect --with-values` as the source of truth.
 

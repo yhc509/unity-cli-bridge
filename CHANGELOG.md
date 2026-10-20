@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Every command and subcommand accepts `--help` / `-h` (`unity-cli qa --help`, `unity-cli qa key --help`, `unity-cli help scene patch`) and prints that command's usage with exit code 0.
 - QA input works on projects that use the legacy Input Manager (Active Input Handling = Input Manager (Old), or no `com.unity.inputsystem`). Coordinate `qa tap` with no UI hit, the `qa tap --target` world fallback, coordinate `qa swipe`, and the matching `qa run-sequence` actions send a simulated touch that Unity also reports as left mouse button 0 and `Input.anyKeyDown`. Unity cannot inject legacy keyboard state, so `qa key` calls MonoBehaviours that implement the new `IQaKeyHandler` interface and otherwise fails with `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` on legacy input fails with `QA_LEGACY_BUTTON_UNSUPPORTED`. `QA_INPUT_SYSTEM_REQUIRED` is no longer returned.
 
+### Fixed
+- `scene inspect` reports `enabled` on components and renderers, including inside nested prefab instances, and `prefab.assetPath` (plus `prefab.nested` / `prefab.isRoot`) for prefab instances. `--omit-defaults` still drops `enabled: true` and keeps `enabled: false`.
+
 ### Changed
 - `compile`, `refresh`, `play`, and `stop` wait until Unity has settled by default (`--no-wait` opts out; `--wait` stays accepted). `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload.
 - The `execute` wrapper aliases `Object` to `UnityEngine.Object`, so `Object.FindFirstObjectByType<T>()` compiles without an ambiguous-reference error. A user alias with the same name wins.
