@@ -1,0 +1,27 @@
+# unity-cli-bridge
+
+> Command-line interface for the Unity Editor for scripts and AI coding agents (Claude Code, Codex, Grok Build). Declarative commands return JSON over a local named pipe (Windows) or Unix socket (macOS). Unity 2021.3 LTS or later. Published CLI builds: macOS Apple Silicon and Windows x64. Personal side project, maintained on a best-effort basis.
+
+## Docs
+
+- [README](https://github.com/yhc509/unity-cli-bridge/blob/main/README.md): install, requirements, maintenance, FAQ, commands, limits
+- [CLI reference](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/cli-reference.md): generated command list
+- [Scene spec](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/scene-spec.md): scene patch paths and operations (`add-gameobject`, `modify-gameobject`, `delete-gameobject`, `add-component`, `modify-component`, `remove-component`)
+- [Prefab spec](https://github.com/yhc509/unity-cli-bridge/blob/main/docs/prefab-spec.md): prefab inspect and patch (`set-component-values` is the prefab op; scene patch uses `modify-component`)
+- [Agent skill](https://github.com/yhc509/unity-cli-bridge/tree/main/plugins/unity-cli-bridge/skills/unity-cli-bridge): skill installed by the Claude Code, Codex, and Grok Build plugin
+- [Changelog](https://github.com/yhc509/unity-cli-bridge/blob/main/CHANGELOG.md)
+
+## Install
+
+- Unity package (current): `https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#main`
+- `.unitypackage` download on itch.io: coming with 0.5.6 (no URL yet)
+- CLI: Window > Unity CLI Manager, or the archives on the GitHub Releases page (macOS Apple Silicon and Windows x64)
+- Skill: plugin install is the recommended path (see the README). A file copy for Codex goes under `.agents/skills/unity-cli-bridge/`
+
+## Current command behavior
+
+- `compile`, `refresh`, `play`, and `stop` wait until Unity settles. `--no-wait` returns immediately. `--wait` is still accepted.
+- `execute` requires `--force`. Identical wrapped source is served from a compile cache until the next domain reload. `PucFrameLoop` runs code once per editor frame.
+- `scene inspect` reports component `enabled` and, for prefab instances, `prefab.assetPath`. `prefab inspect` also reads model assets such as `.fbx`.
+- Legacy Input Manager: coordinate `qa tap` (no UI hit), `qa tap --target` world fallback, and coordinate `qa swipe` send a simulated touch. `qa key` needs `IQaKeyHandler` or returns `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` returns `QA_LEGACY_BUTTON_UNSUPPORTED`.
+- `qa world-dump` outside Play Mode returns an edit-mode hint pointing at `scene inspect`.

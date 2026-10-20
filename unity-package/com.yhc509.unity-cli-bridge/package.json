@@ -4,6 +4,16 @@
   "version": "0.5.5",
   "unity": "2021.3",
   "description": "Project-aware Unity Editor bridge for CLI control without manual servers or per-project ports.",
+  "keywords": [
+    "unity",
+    "unity-editor",
+    "cli",
+    "command-line",
+    "automation",
+    "editor-scripting",
+    "ai-agent",
+    "claude-code"
+  ],
   "author": {
     "name": "yhc509"
   },
