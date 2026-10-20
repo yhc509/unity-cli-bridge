@@ -830,7 +830,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "qa world-dump",
                 "qa world-dump [--include-offscreen] [--limit N] [--text <substring>] [--screenshot-width <int> --screenshot-height <int>]",
-                "Dumps non-UI world objects that opt in via IQaTappable/QaTappable (label, hierarchy path, image-space center, onScreen, hasAction) as JSON; requires Play Mode. Use --limit and --text to reduce payload size; filtered responses keep onScreen when --include-offscreen is set, otherwise omit it, and omit constant hasAction when it carries no per-element signal. Feed a returned path to `qa tap --target`. Off-screen objects are excluded unless --include-offscreen is set. Coordinates use the last captured screenshot size unless overridden.",
+                "Dumps non-UI world objects that opt in via IQaTappable/QaTappable (label, hierarchy path, image-space center, onScreen, hasAction) as JSON. In Play Mode, coordinates use the last captured screenshot size unless overridden. Outside Play Mode (Edit Mode), returns a hint pointing at scene inspect instead of QA_NOT_PLAYING, plus opted-in objects without screenshot coordinates. Use --limit and --text to reduce payload size; filtered Play Mode responses keep onScreen when --include-offscreen is set, otherwise omit it, and omit constant hasAction when it carries no per-element signal. Feed a returned path to `qa tap --target`. Off-screen objects are excluded unless --include-offscreen is set.",
                 CliCommandGroup.QaWorkflows,
                 ProtocolConstants.CommandQaWorldDump,
                 canUseLocal: false,

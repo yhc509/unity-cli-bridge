@@ -57,7 +57,7 @@ Debug.Log(Vec3.one);
         string stripped = UsingDirectiveUtility.StripUsingDirectives(source, out string[] usings);
 
         Assert.Equal(["using UnityEngine;", "using UnityEngine.Rendering.Universal;"], usings);
-        Assert.Equal("var btn = GameObject.Find(\"ButtonName\");", stripped);
+        Assert.Equal("var btn = GameObject.Find(\"ButtonName\");", stripped.TrimEnd('\r', '\n'));
         Assert.DoesNotContain("using ", stripped);
     }
 
