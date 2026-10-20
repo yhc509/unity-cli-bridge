@@ -67,10 +67,34 @@ jobs:
           path: unity-cli-win-x64.zip
           if-no-files-found: error
 
+  # .unitypackage is produced without Unity, from the UPM tree and its .meta GUIDs.
+  build-unitypackage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build .unitypackage
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          scripts/check-unitypackage.sh \
+            --output "com.yhc509.unity-cli-bridge-${version}.unitypackage" \
+            --expect-version "$version"
+
+      - name: Upload .unitypackage artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: unitypackage
+          path: com.yhc509.unity-cli-bridge-*.unitypackage
+          if-no-files-found: error
+
   release:
     needs:
       - build-osx-arm64
       - build-win-x64
+      - build-unitypackage
     runs-on: ubuntu-latest
 
     steps:
@@ -89,3 +113,4 @@ jobs:
           files: |
             release-assets/unity-cli-osx-arm64/unity-cli-osx-arm64.tar.gz
             release-assets/unity-cli-win-x64/unity-cli-win-x64.zip
+            release-assets/unitypackage/com.yhc509.unity-cli-bridge-*.unitypackage

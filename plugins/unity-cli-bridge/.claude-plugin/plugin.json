@@ -1,6 +1,6 @@
 {
   "name": "unity-cli-bridge",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Agent skill for Unity CLI Bridge (unity-cli / ucli): scenes, prefabs, assets, Play Mode QA, and profiling.",
   "author": {
     "name": "yhc509",

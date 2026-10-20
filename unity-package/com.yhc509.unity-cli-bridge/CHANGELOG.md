@@ -6,14 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-21
+
 ### Added
-- `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0` (cold compile is still ~0.5 s). Changing values should go through `--args` so the source stays identical.
+- GitHub Releases include `com.yhc509.unity-cli-bridge-<version>.unitypackage` starting with this version. The archive imports as `Packages/com.yhc509.unity-cli-bridge/` and is built from the package's existing `.meta` GUIDs.
+- `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0`. Changing values should go through `--args` so the source stays identical.
 - `PucFrameLoop` (available inside `execute` as `PucFrameLoop.Start` / `Status` / `Stop` / `Running`) runs agent code once per editor frame for Play Mode autopilots and watchers. Prefer it over a shell loop of `execute` calls. The skill documents the pattern.
 - `status` reports `isChangingPlayMode` and `domainId` so the CLI can tell when a Play Mode enter/exit (and its domain reload) has finished.
 - Every command and subcommand accepts `--help` / `-h` (`unity-cli qa --help`, `unity-cli qa key --help`, `unity-cli help scene patch`) and prints that command's usage with exit code 0.
 - QA input works on projects that use the legacy Input Manager (Active Input Handling = Input Manager (Old), or no `com.unity.inputsystem`). Coordinate `qa tap` with no UI hit, the `qa tap --target` world fallback, coordinate `qa swipe`, and the matching `qa run-sequence` actions send a simulated touch that Unity also reports as left mouse button 0 and `Input.anyKeyDown`. Unity cannot inject legacy keyboard state, so `qa key` calls MonoBehaviours that implement the new `IQaKeyHandler` interface and otherwise fails with `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` on legacy input fails with `QA_LEGACY_BUTTON_UNSUPPORTED`. `QA_INPUT_SYSTEM_REQUIRED` is no longer returned.
 
 ### Fixed
+- Declares a `com.unity.ugui` dependency so minimal Unity 6 projects compile.
 - `qa world-dump` outside Play Mode returns an edit-mode hint pointing at `scene inspect`, plus any opted-in world objects without screenshot coordinates, instead of `QA_NOT_PLAYING`.
 - `execute` compiles snippets with Unity's bundled mcs. Versions above 7.2, including the C# 9.0 project default, are passed as `/langversion:latest` (mcs rejects `/langversion:9.0` with CS1617), so `default` literals compile. A project pin of 7.2 or below is passed through. Top-of-file `using` directives in `--file` are hoisted above the wrapper. Compile failures include the compiler error text. The compile cache from the previous release is unchanged.
 - `scene patch` `--help` and `SCENE_SPEC_INVALID` list the supported operations and suggest the closest name (`set-component-values` means `modify-component`). `prefab inspect` reads model assets such as `.fbx` instead of failing with `PREFAB_PATH_INVALID`.
