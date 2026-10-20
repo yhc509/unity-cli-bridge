@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using NUnit.Framework;
 using UnityCli.Protocol;
 
@@ -38,6 +39,45 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
             Assert.That(payload, Is.Not.Null);
             Assert.That(payload!.success, Is.True);
+        }
+
+        [Test]
+        public void Handle_DefaultLiteral_CompilesAndSecondCallHitsCache()
+        {
+            var handler = new ExecuteCodeHandler();
+            string argsJson = ProtocolJson.Serialize(new ExecuteCodeArgs
+            {
+                code = "int value = default; __pucResult = value;",
+                force = true,
+            });
+
+            ExecuteCodePayload? first = ProtocolJson.Deserialize<ExecuteCodePayload>(
+                handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson));
+            ExecuteCodePayload? second = ProtocolJson.Deserialize<ExecuteCodePayload>(
+                handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson));
+
+            Assert.That(first, Is.Not.Null);
+            Assert.That(first!.success, Is.True);
+            Assert.That(first.cacheHit, Is.False);
+            Assert.That(second, Is.Not.Null);
+            Assert.That(second!.cacheHit, Is.True);
+            Assert.That(second.compileMs, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void BuildWrappedCode_FileHeaderUsings_SitAboveTheWrapper()
+        {
+            const string source = "\uFEFFusing UnityEngine; // camera\r\nusing UnityEngine.Rendering;\r\n\r\nvar btn = GameObject.Find(\"Button\");\r\n";
+
+            string wrapped = ExecuteCodeHandler.BuildWrappedCode(source);
+            int classAt = wrapped.IndexOf("public static class PucExecuteWrapper", StringComparison.Ordinal);
+            int usingAt = wrapped.IndexOf("using UnityEngine;", StringComparison.Ordinal);
+            int methodAt = wrapped.IndexOf("public static string Execute", StringComparison.Ordinal);
+
+            Assert.That(usingAt, Is.GreaterThanOrEqualTo(0));
+            Assert.That(usingAt, Is.LessThan(classAt));
+            Assert.That(wrapped.Substring(methodAt), Does.Not.Contain("using UnityEngine;"));
+            Assert.That(wrapped, Does.Contain("var btn = GameObject.Find(\"Button\");"));
         }
     }
 }

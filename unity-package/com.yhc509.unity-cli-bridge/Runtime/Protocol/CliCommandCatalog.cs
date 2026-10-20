@@ -397,7 +397,8 @@ namespace UnityCli.Protocol
                     "--timeout (default 30 seconds, maximum 600) is a cooperative cancel. User code must check __pucToken (System.Threading.CancellationToken) to stop — otherwise it keeps the main thread, and that is the --force user's responsibility.",
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
-                    "Only C# 5.0 syntax and below is supported (CodeDOM limit).",
+                    "Snippets compile with the Unity project's C# language version: Assets/csc.rsp (or mcs.rsp) -langversion, then PlayerSettings additional compiler arguments, otherwise C# 9.0. default literals and the rest of that version are supported.",
+                    "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),
             new CliCommandDescriptor(

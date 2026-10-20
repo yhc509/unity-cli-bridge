@@ -300,11 +300,15 @@ public static class PucExecuteWrapper
         private static Assembly CompileCode(string code)
         {
             using var provider = new CSharpCodeProvider();
+            // The cache key stays a hash of the wrapped source (see GetOrCompileWrapperType).
+            // Language version is fixed for the domain, so a cache hit still skips this compile.
+            string languageVersion = ResolveProjectLanguageVersion();
             var parameters = new CompilerParameters
             {
                 GenerateInMemory = true,
                 GenerateExecutable = false,
                 IncludeDebugInformation = false,
+                CompilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion),
                 TempFiles = new TempFileCollection(System.IO.Path.GetTempPath(), keepFiles: false),
             };
 
@@ -342,6 +346,52 @@ public static class PucExecuteWrapper
             }
 
             return result.CompiledAssembly;
+        }
+
+        private static string ResolveProjectLanguageVersion()
+        {
+            string responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "csc.rsp"));
+            if (string.IsNullOrEmpty(responseFile))
+            {
+                responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "mcs.rsp"));
+            }
+
+            return CSharpLanguageVersion.Resolve(responseFile, ReadAdditionalCompilerArguments());
+        }
+
+        private static string ReadTextIfExists(string path)
+        {
+            try
+            {
+                return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string[] ReadAdditionalCompilerArguments()
+        {
+            try
+            {
+                BuildTargetGroup group = EditorUserBuildSettings.selectedBuildTargetGroup;
+                if (group == BuildTargetGroup.Unknown)
+                {
+                    return Array.Empty<string>();
+                }
+
+                // 2021.3 exposes the build-target-group overload. Later editors mark it obsolete
+                // in favor of NamedBuildTarget, but the method still returns the same arguments.
+#pragma warning disable CS0618
+                string[] arguments = PlayerSettings.GetAdditionalCompilerArgumentsForGroup(group);
+#pragma warning restore CS0618
+                return arguments ?? Array.Empty<string>();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<string>();
+            }
         }
 
         private static string MergeOutput(string consoleOutput, IEnumerable<string> logEntries)
