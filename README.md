@@ -10,7 +10,9 @@
 
 It is for developers who script the Editor and for AI coding agents such as Claude Code, Codex, and Grok Build. An agent skill ships with the repo. The bridge runs on Unity 2021.3 LTS or later, including Unity 6. Published CLI builds are macOS Apple Silicon and Windows x64.
 
-<!-- demo GIF: docs/assets/demo.gif (coming with 0.5.6) -->
+![unity-cli-bridge demo: creating a cube, assigning a material, adding a component and entering Play Mode from the terminal](docs/assets/demo.gif)
+
+CLI v0.5.6: `status`, `scene add-object`, `scene assign-material`, `scene add-component`, `play`, `read-console --type error`, `stop`.
 
 ## Requirements
 
