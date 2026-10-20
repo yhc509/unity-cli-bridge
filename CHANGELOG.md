@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-21
+
 ### Added
-- `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0` (cold compile is still ~0.5 s). Changing values should go through `--args` so the source stays identical.
+- GitHub Releases include `com.yhc509.unity-cli-bridge-<version>.unitypackage` starting with this version. The archive imports as `Packages/com.yhc509.unity-cli-bridge/` and is built from the package's existing `.meta` GUIDs.
+- `execute` now caches compiled snippets by SHA-256 of the wrapped source until the next domain reload. A repeated/trivial call reports `cacheHit: true` and `compileMs: 0`. Changing values should go through `--args` so the source stays identical.
 - `PucFrameLoop` (available inside `execute` as `PucFrameLoop.Start` / `Status` / `Stop` / `Running`) runs agent code once per editor frame for Play Mode autopilots and watchers. Prefer it over a shell loop of `execute` calls. The skill documents the pattern.
 - `status` reports `isChangingPlayMode` and `domainId` so the CLI can tell when a Play Mode enter/exit (and its domain reload) has finished.
 - Every command and subcommand accepts `--help` / `-h` (`unity-cli qa --help`, `unity-cli qa key --help`, `unity-cli help scene patch`) and prints that command's usage with exit code 0.

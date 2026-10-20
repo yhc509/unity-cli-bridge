@@ -34,6 +34,12 @@ jobs:
         shell: bash
         run: scripts/sync-plugin-skill.sh --check
 
+      # No Unity Editor. The release archive is built on Ubuntu too.
+      - name: Verify .unitypackage
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: scripts/check-unitypackage.sh
+
       - name: Setup .NET 9
         uses: actions/setup-dotnet@v5
         with:

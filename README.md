@@ -69,11 +69,11 @@ Add the following to your `Packages/manifest.json`:
 }
 ```
 
-The git URL above is the install path to use today. A `.unitypackage` download on itch.io is coming with 0.5.6.
+The git URL above is the install path to use today. From 0.5.6, each GitHub Release also attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
 
 The bridge starts automatically when the Editor opens. No configuration needed.
 
-`#main` always tracks the latest release. For a build you need to reproduce later, pin a release tag instead — `...#v0.5.5` — and commit `Packages/packages-lock.json`.
+`#main` always tracks the latest release. For a build you need to reproduce later, pin a release tag instead — `...#v0.5.6` — and commit `Packages/packages-lock.json`.
 
 Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` 3.0.0 or newer if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
 

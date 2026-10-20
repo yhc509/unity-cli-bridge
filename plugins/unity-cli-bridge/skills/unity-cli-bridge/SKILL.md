@@ -3,12 +3,12 @@ name: unity-cli-bridge
 description: "Use when the user wants to operate Unity through Unity CLI Bridge (`unity-cli`/`ucli`), including live command selection, asset commands, scene/prefab inspect/patch flows, QA test automation (Play Mode input simulation), console-log verification, or Unity CLI Bridge troubleshooting."
 ---
 
-<!-- unity-cli-bridge-package-version: 0.5.5 -->
+<!-- unity-cli-bridge-package-version: 0.5.6 -->
 <!-- unity-cli-bridge-skill-channel: plugin -->
 
 # Unity CLI Bridge
 
-This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bridge` 0.5.5. It is one skill for every project, so the open project may be on a different package version. Warn the user when the versions differ, then keep going.
+This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bridge` 0.5.6. It is one skill for every project, so the open project may be on a different package version. Warn the user when the versions differ, then keep going.
 
 `unity-cli status` does not include the package version. Use it to confirm the live editor (`projectName`, `projectRoot`, `unityVersion`, and the play/compile flags). Read `version` from the resolved package file: `Packages/com.yhc509.unity-cli-bridge/package.json` when the package is embedded, otherwise `Library/PackageCache/com.yhc509.unity-cli-bridge@*/package.json`. Ignore `Packages/packages-lock.json` for this check when the dependency is `git` or `file:` — that `version` is a URL or path.
 
