@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - QA input works on projects that use the legacy Input Manager (Active Input Handling = Input Manager (Old), or no `com.unity.inputsystem`). Coordinate `qa tap` with no UI hit, the `qa tap --target` world fallback, coordinate `qa swipe`, and the matching `qa run-sequence` actions send a simulated touch that Unity also reports as left mouse button 0 and `Input.anyKeyDown`. Unity cannot inject legacy keyboard state, so `qa key` calls MonoBehaviours that implement the new `IQaKeyHandler` interface and otherwise fails with `QA_LEGACY_KEY_UNSUPPORTED`. `--button right` on legacy input fails with `QA_LEGACY_BUTTON_UNSUPPORTED`. `QA_INPUT_SYSTEM_REQUIRED` is no longer returned.
 
 ### Fixed
+- `scene patch` `--help` and `SCENE_SPEC_INVALID` list the supported operations and suggest the closest name (`set-component-values` means `modify-component`). `prefab inspect` reads model assets such as `.fbx` instead of failing with `PREFAB_PATH_INVALID`.
 - The AI-agent skill now ships `references/scene-spec.md` (the same text as `docs/scene-spec.md`). `scene inspect` / `scene patch` `--help` and `SKILL.md` point at that bundled path.
 - `scene inspect` reports `enabled` on components and renderers, including inside nested prefab instances, and `prefab.assetPath` (plus `prefab.nested` / `prefab.isRoot`) for prefab instances. `--omit-defaults` still drops `enabled: true` and keeps `enabled: false`.
 

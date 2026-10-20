@@ -79,6 +79,7 @@ Example:
 Rules:
 
 - `version` is currently `1`
+- An unknown `op` fails with `SCENE_SPEC_INVALID`, lists the supported operations, and suggests the closest name. Prefab's `set-component-values` is `modify-component` here.
 - `delete-gameobject` and `remove-component` require `--force`
 - if the target scene is already loaded in the Editor, `scene inspect` expects it to be clean and `scene patch` refuses unsaved target-scene changes even with `--force`
 - `scene patch` writes through a `Library/com.yhc509.unity-cli-bridge/backups/` backup for the `.unity` file and `.meta`

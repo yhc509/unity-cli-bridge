@@ -4,6 +4,7 @@
 
 - For a simple empty prefab, prefer `prefab create` over `asset create --type prefab`.
 - Before a structural edit, run `prefab inspect --with-values`.
+- `prefab inspect` also reads model assets (`.fbx`, `.obj`, `.dae`, `.dxf`, `.3ds`, `.blend`, `.skp`) as read-only. `prefab patch` still requires a `.prefab`.
 - Node paths in a patch spec use `/`, `/Visual[0]`, `/Visual[0]/MeshRoot[0]`.
 - Component field values follow `SerializedProperty.propertyPath`.
 

@@ -532,7 +532,12 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Detailed scene patch rules live in references/scene-spec.md, bundled with the AI-agent skill." },
+                notes: new[]
+                {
+                    "Supported operations: add-gameobject, modify-gameobject, delete-gameobject, add-component, modify-component, remove-component.",
+                    "An unknown operation fails with SCENE_SPEC_INVALID, lists those operations, and suggests the closest name (`set-component-values` means `modify-component`).",
+                    "Detailed scene patch rules live in references/scene-spec.md, bundled with the AI-agent skill.",
+                },
                 forceRule: ForceRule.OnDestructiveOp),
             new CliCommandDescriptor(
                 "scene add-object",
@@ -598,13 +603,13 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "prefab inspect",
                 "prefab inspect --path <Assets/...> [--node <nodePath>] [--with-values] [--max-depth <N>] [--omit-defaults]",
-                "Inspects prefab hierarchy and serialized property paths; use --with-values when authoring patch specs and the other options to reduce payload size.",
+                "Inspects prefab hierarchy and serialized property paths, including read-only model assets such as .fbx; use --with-values when authoring patch specs and the other options to reduce payload size.",
                 CliCommandGroup.PrefabWorkflows,
                 ProtocolConstants.CommandPrefabInspect,
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: true,
-                notes: new[] { "Use --node to inspect one node and its subtree while preserving the root response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Detailed prefab patch rules live in docs/prefab-spec.md." }),
+                notes: new[] { "Use --node to inspect one node and its subtree while preserving the root response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Model assets (.fbx, .obj, .dae, .dxf, .3ds, .blend, .skp) can be inspected read-only. prefab patch still requires a .prefab.", "Detailed prefab patch rules live in docs/prefab-spec.md." }),
             new CliCommandDescriptor(
                 "prefab create",
                 "prefab create --path <Assets/...> (--spec-file <file.json> | --spec-json <json>) [--force]",

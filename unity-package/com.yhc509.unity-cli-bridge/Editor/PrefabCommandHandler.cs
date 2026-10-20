@@ -41,12 +41,12 @@ namespace UnityCliBridge.Bridge.Editor
             JObject arguments = InspectorMutationReaderUtility.ParseArgumentsObject(argumentsJson);
             PrefabInspectArgs args = InspectorMutationReaderUtility.DeserializeArguments<PrefabInspectArgs>(arguments);
             int? maxDepth = args.maxDepth ?? InspectorMutationReaderUtility.ParseOptionalMaxDepth(arguments, "PREFAB_INSPECT_INVALID");
-            string path = RequireExistingPrefabPath(args.path, "prefab-inspect");
+            string path = RequireInspectablePrefabPath(args.path);
             if (maxDepth.HasValue && maxDepth.Value <= 0)
             {
                 throw new CommandFailureException("PREFAB_INSPECT_INVALID", "`--max-depth` must be an integer >= 1.");
             }
-            GameObject root = PrefabUtility.LoadPrefabContents(path);
+            GameObject root = LoadPrefabForInspect(path, out bool unloadContents);
 
             try
             {
@@ -55,7 +55,10 @@ namespace UnityCliBridge.Bridge.Editor
             }
             finally
             {
-                PrefabUtility.UnloadPrefabContents(root);
+                if (unloadContents)
+                {
+                    PrefabUtility.UnloadPrefabContents(root);
+                }
             }
         }
 
@@ -242,6 +245,59 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 throw new CommandFailureException("PREFAB_SPEC_INVALID", commandName + " spec version is not supported: " + version);
             }
+        }
+
+        private static string RequireInspectablePrefabPath(string? path)
+        {
+            string normalizedPath = AssetCommandSupport.NormalizeAssetPath(path ?? string.Empty);
+            string extension = Path.GetExtension(normalizedPath);
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                normalizedPath += ".prefab";
+            }
+            else if (!PrefabInspectPaths.IsInspectableExtension(extension))
+            {
+                throw new CommandFailureException(
+                    "PREFAB_PATH_INVALID",
+                    PrefabInspectPaths.UnsupportedExtensionMessage(normalizedPath));
+            }
+
+            normalizedPath = AssetCommandSupport.RequireExistingAssetPath(normalizedPath, "prefab-inspect");
+            Type mainType = AssetDatabase.GetMainAssetTypeAtPath(normalizedPath);
+            if (mainType != typeof(GameObject))
+            {
+                throw new CommandFailureException("PREFAB_PATH_INVALID", "Not a prefab asset: " + normalizedPath);
+            }
+
+            if (!string.Equals(Path.GetExtension(normalizedPath), ".prefab", StringComparison.OrdinalIgnoreCase))
+            {
+                GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(normalizedPath);
+                if (model == null || PrefabUtility.GetPrefabAssetType(model) != PrefabAssetType.Model)
+                {
+                    throw new CommandFailureException("PREFAB_PATH_INVALID", "Not a model prefab asset: " + normalizedPath);
+                }
+            }
+
+            return normalizedPath;
+        }
+
+        private static GameObject LoadPrefabForInspect(string path, out bool unloadContents)
+        {
+            GameObject asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (asset != null && PrefabUtility.GetPrefabAssetType(asset) == PrefabAssetType.Model)
+            {
+                unloadContents = false;
+                return asset;
+            }
+
+            unloadContents = true;
+            GameObject contents = PrefabUtility.LoadPrefabContents(path);
+            if (contents == null)
+            {
+                throw new CommandFailureException("PREFAB_PATH_INVALID", "Could not load prefab contents: " + path);
+            }
+
+            return contents;
         }
 
         private static string ResolvePrefabPath(string? path)

@@ -88,7 +88,7 @@ Commands for inspecting, creating, and patching prefab assets.
 
 | Command | Synopsis | Modes | Force Rule | Summary |
 | --- | --- | --- | --- | --- |
-| `prefab inspect` | `prefab inspect --path <Assets/...> [--node <nodePath>] [--with-values] [--max-depth <N>] [--omit-defaults]` | live | `None` | Inspects prefab hierarchy and serialized property paths; use --with-values when authoring patch specs and the other options to reduce payload size. |
+| `prefab inspect` | `prefab inspect --path <Assets/...> [--node <nodePath>] [--with-values] [--max-depth <N>] [--omit-defaults]` | live | `None` | Inspects prefab hierarchy and serialized property paths, including read-only model assets such as .fbx; use --with-values when authoring patch specs and the other options to reduce payload size. |
 | `prefab create` | `prefab create --path <Assets/...> (--spec-file <file.json> \| --spec-json <json>) [--force]` | live | `OnOverwrite` | Creates a prefab from a JSON structure spec; use --force to overwrite an existing asset. |
 | `prefab patch` | `prefab patch --path <Assets/...> (--spec-file <file.json> \| --spec-json <json>) [--force]` | live | `OnDestructiveOp` | Applies a deterministic patch spec to an existing prefab; destructive operations require --force. |
 | `prefab add-component` | `prefab add-component --path <Assets/...> --node <nodePath> --type <ComponentType> [--values <json>]` | live | `None` | Adds a component to a prefab node; shortcut for a single add-component prefab patch operation. |
