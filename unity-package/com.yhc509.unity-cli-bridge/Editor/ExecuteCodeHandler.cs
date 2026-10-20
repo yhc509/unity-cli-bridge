@@ -316,14 +316,14 @@ public static class PucExecuteWrapper
             };
 
             var referencedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(assembly.Location)
-                        && referencedAssemblies.Add(assembly.Location))
+                    if (!string.IsNullOrWhiteSpace(loadedAssembly.Location)
+                        && referencedAssemblies.Add(loadedAssembly.Location))
                     {
-                        parameters.ReferencedAssemblies.Add(assembly.Location);
+                        parameters.ReferencedAssemblies.Add(loadedAssembly.Location);
                     }
                 }
                 catch
