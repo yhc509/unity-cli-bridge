@@ -51,31 +51,33 @@ Unity version, CLI platforms, and optional packages are in [Requirements](#requi
 
 ### 1. Add the Unity Package
 
-**Option A: Unity Package Manager**
+Add the package in either of these ways.
 
-In Unity, open Package Manager and choose **Add package from git URL**. Paste:
+**Option A: .unitypackage**
+
+Download `com.yhc509.unity-cli-bridge-0.5.6.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.5.6 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.5.6). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
+
+**Option B: Git URL** (easier to update)
+
+In Package Manager, choose **Add package from git URL** and paste:
 
 ```
-https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#main
+https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.6
 ```
 
-**Option B: Edit `Packages/manifest.json` manually**
+Use `#main` instead of `#v0.5.6` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
 
-Add the following to your `Packages/manifest.json`:
+The same URL can be written into `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#main"
+    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.6"
   }
 }
 ```
 
-The git URL above is the install path to use today. From 0.5.6, each GitHub Release also attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
-
 The bridge starts automatically when the Editor opens. No configuration needed.
-
-`#main` always tracks the latest release. For a build you need to reproduce later, pin a release tag instead — `...#v0.5.6` — and commit `Packages/packages-lock.json`.
 
 Unity Recorder is optional and is not installed for you. Add `com.unity.recorder` 3.0.0 or newer if you want the `record` commands or `qa run-sequence --record`; without it those commands fail with an install hint and everything else works normally.
 
@@ -83,11 +85,11 @@ Unity Recorder is optional and is not installed for you. Add `com.unity.recorder
 
 ### 2. Install the CLI
 
-**Option A: From Unity Editor** (recommended)
+**From the Editor** (recommended)
 
-Open `Window > Unity CLI Manager` in the Editor menu. Click **Install CLI** — the CLI matching this project's package version is downloaded automatically.
+Open **Window > Unity CLI Manager** and click **Install CLI**. It downloads the CLI that matches this project's package version from GitHub Releases and installs it under `~/.unity-cli-bridge/`. Add `~/.unity-cli-bridge/unity-cli/` to your PATH. The **PATH Setup** section has a **Copy PATH command** button.
 
-The install is versioned, and `~/.unity-cli-bridge/unity-cli/` stays the directory you put on your PATH:
+The install is versioned. `~/.unity-cli-bridge/unity-cli/` stays the directory on your PATH:
 
 ```
 ~/.unity-cli-bridge/
@@ -104,20 +106,20 @@ Old versions are never deleted automatically (each binary is ~78 MB). The CLI Ma
 
 > **Heads-up when upgrading:** a project still on package `0.4.0` or earlier has the old CLI Manager, which installs a single flat binary over `~/.unity-cli-bridge/unity-cli/` and clobbers the dispatcher. To recover, open **Window > Unity CLI Manager** in any project on `0.4.1`+ and click **Install CLI** — it restores the PATH target and files away the flat binary it found.
 >
-> **What happens to that flat binary.** If a previous CLI Manager installed it, its version is on record: it is filed under `versions/<version>/` and stays available for hand-off — which is how a project still on `0.3.x` keeps working without any change of its own. If it was downloaded by hand (Option B), there is no version on record and nothing in the binary reports one, so its wire protocol is unknown and it cannot be a hand-off candidate. It is **not deleted** — it is moved to `~/.unity-cli-bridge/orphaned/` and listed in the CLI Manager under **Unidentified Binaries**, so you can still get at it or remove it yourself.
+> **What happens to that flat binary.** If a previous CLI Manager installed it, its version is on record: it is filed under `versions/<version>/` and stays available for hand-off — which is how a project still on `0.3.x` keeps working without any change of its own. If it was downloaded by hand (the manual download below), there is no version on record and nothing in the binary reports one, so its wire protocol is unknown and it cannot be a hand-off candidate. It is **not deleted** — it is moved to `~/.unity-cli-bridge/orphaned/` and listed in the CLI Manager under **Unidentified Binaries**, so you can still get at it or remove it yourself.
 >
 > Either way, the old Manager cannot install a versioned CLI for its own project. If a `0.3.x` project ends up with no CLI that speaks its protocol, upgrade that project's package to `0.4.1`+ and install from its own CLI Manager.
 
-**Option B: Manual download**
+**Manual download**
 
-Download from [GitHub Releases](https://github.com/yhc509/unity-cli-bridge/releases):
+A CLI archive is the alternative. Download it from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or [GitHub Releases](https://github.com/yhc509/unity-cli-bridge/releases):
 
 | Platform | File |
 |----------|------|
 | macOS (Apple Silicon) | `unity-cli-osx-arm64.tar.gz` |
 | Windows (x64) | `unity-cli-win-x64.zip` |
 
-Extract and add the binary to your PATH. A manually placed binary carries no version metadata, so it is not a hand-off candidate: it only talks to projects whose package speaks its own protocol. Use Option A if you work across projects on different package versions.
+Extract it and put the binary on your PATH. A hand-placed binary carries no version information, so it is not a hand-off candidate: it only talks to projects whose package speaks its own protocol. The CLI Manager install is recommended.
 
 > **Tip:** A short, fixed install path (`~/.unity-cli-bridge/unity-cli/`) saves tokens when AI agents invoke the CLI repeatedly — every character in the path is repeated on each call.
 
