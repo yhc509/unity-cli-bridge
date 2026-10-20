@@ -144,7 +144,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         }
     }
 
-    public sealed class SerializedValueApplierTests
+    public sealed class SerializedValueApplierVisibilityTests
     {
         [Test]
         public void Apply_RejectsHiddenTopLevelProperty()

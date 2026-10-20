@@ -54,6 +54,8 @@ public sealed class SkillTemplateReferenceSyncTests
         Assert.NotNull(inspectHelp);
         Assert.Contains("references/scene-spec.md", patchHelp);
         Assert.Contains("references/scene-spec.md", inspectHelp);
+        Assert.Contains("installed AI-agent skill folder", patchHelp);
+        Assert.Contains("installed AI-agent skill folder", inspectHelp);
         Assert.DoesNotContain("docs/scene-spec.md", patchHelp);
         Assert.DoesNotContain("docs/scene-spec.md", inspectHelp);
     }

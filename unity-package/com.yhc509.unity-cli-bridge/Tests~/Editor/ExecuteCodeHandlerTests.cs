@@ -65,6 +65,24 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         }
 
         [Test]
+        public void Handle_TopOfFileUsing_Compiles()
+        {
+            var handler = new ExecuteCodeHandler();
+            string argsJson = ProtocolJson.Serialize(new ExecuteCodeArgs
+            {
+                code = "using System.Text;\nvar builder = new StringBuilder();\nbuilder.Append(\"ok\");\n__pucResult = builder.ToString();",
+                force = true,
+            });
+
+            ExecuteCodePayload? payload = ProtocolJson.Deserialize<ExecuteCodePayload>(
+                handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson));
+
+            Assert.That(payload, Is.Not.Null);
+            Assert.That(payload!.success, Is.True);
+            Assert.That(payload.result, Does.Contain("ok"));
+        }
+
+        [Test]
         public void BuildWrappedCode_FileHeaderUsings_SitAboveTheWrapper()
         {
             const string source = "\uFEFFusing UnityEngine; // camera\r\nusing UnityEngine.Rendering;\r\n\r\nvar btn = GameObject.Find(\"Button\");\r\n";

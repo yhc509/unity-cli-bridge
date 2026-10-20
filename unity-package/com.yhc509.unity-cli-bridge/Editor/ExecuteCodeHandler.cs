@@ -302,13 +302,16 @@ public static class PucExecuteWrapper
             using var provider = new CSharpCodeProvider();
             // The cache key stays a hash of the wrapped source (see GetOrCompileWrapperType).
             // Language version is fixed for the domain, so a cache hit still skips this compile.
+            // Unity's CodeDOM host is mcs, which rejects /langversion:9.0. ToCompilerOption
+            // maps that project default (and anything above 7.2) to /langversion:latest.
             string languageVersion = ResolveProjectLanguageVersion();
+            string compilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion);
             var parameters = new CompilerParameters
             {
                 GenerateInMemory = true,
                 GenerateExecutable = false,
                 IncludeDebugInformation = false,
-                CompilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion),
+                CompilerOptions = compilerOptions,
                 TempFiles = new TempFileCollection(System.IO.Path.GetTempPath(), keepFiles: false),
             };
 
@@ -331,21 +334,109 @@ public static class PucExecuteWrapper
             CompilerResults result = provider.CompileAssemblyFromSource(parameters, code);
             if (result.Errors.HasErrors)
             {
-                var errors = new StringBuilder();
-                foreach (CompilerError error in result.Errors)
-                {
-                    if (!error.IsWarning)
-                    {
-                        errors.AppendLine($"Line {error.Line}: {error.ErrorText}");
-                    }
-                }
-
-                throw new CommandFailureException(
-                    "COMPILE_FAILED",
-                    "Code compilation failed:\n" + errors.ToString().TrimEnd());
+                throw CompileFailure(result, compilerOptions, fallback: null);
             }
 
-            return result.CompiledAssembly;
+            if (!TryGetCompiledAssembly(result, out Assembly? assembly, out string? failure) || assembly == null)
+            {
+                throw CompileFailure(result, compilerOptions, failure);
+            }
+
+            return assembly;
+        }
+
+        private static CommandFailureException CompileFailure(CompilerResults result, string compilerOptions, string? fallback)
+        {
+            string[] errors = ReadCompilerErrors(result, includeWarnings: false);
+            if (errors.Length == 0)
+            {
+                errors = ReadCompilerErrors(result, includeWarnings: true);
+            }
+
+            return new CommandFailureException(
+                "COMPILE_FAILED",
+                CSharpLanguageVersion.FormatCompilerFailure(
+                    compilerOptions,
+                    errors,
+                    ReadCompilerOutput(result),
+                    fallback));
+        }
+
+        private static bool TryGetCompiledAssembly(CompilerResults result, out Assembly? assembly, out string? failure)
+        {
+            assembly = null;
+            failure = null;
+            try
+            {
+                assembly = result.CompiledAssembly;
+            }
+            catch (Exception ex)
+            {
+                failure = ex.Message;
+                return false;
+            }
+
+            if (assembly == null)
+            {
+                failure = "Compiler failed to produce the assembly.";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string[] ReadCompilerErrors(CompilerResults result, bool includeWarnings)
+        {
+            var lines = new List<string>();
+            foreach (CompilerError error in result.Errors)
+            {
+                if (error.IsWarning && !includeWarnings)
+                {
+                    continue;
+                }
+
+                var line = new StringBuilder();
+                if (error.Line > 0)
+                {
+                    line.Append("Line ");
+                    line.Append(error.Line);
+                    line.Append(": ");
+                }
+
+                if (!string.IsNullOrEmpty(error.ErrorNumber))
+                {
+                    line.Append(error.ErrorNumber);
+                    line.Append(": ");
+                }
+
+                if (!string.IsNullOrEmpty(error.ErrorText))
+                {
+                    line.Append(error.ErrorText);
+                }
+
+                if (line.Length > 0)
+                {
+                    lines.Add(line.ToString());
+                }
+            }
+
+            return lines.ToArray();
+        }
+
+        private static string[] ReadCompilerOutput(CompilerResults result)
+        {
+            if (result.Output == null || result.Output.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var lines = new string[result.Output.Count];
+            for (int index = 0; index < result.Output.Count; index++)
+            {
+                lines[index] = result.Output[index] ?? string.Empty;
+            }
+
+            return lines;
         }
 
         private static string ResolveProjectLanguageVersion()

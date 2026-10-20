@@ -9,14 +9,16 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 {
     public sealed class SkillInstallerTests
     {
-        [TestCase(SkillTarget.ClaudeCode, SkillScope.Project, ".claude")]
-        [TestCase(SkillTarget.Codex, SkillScope.Project, ".agents")]
-        [TestCase(SkillTarget.GrokBuild, SkillScope.Project, ".grok")]
-        [TestCase(SkillTarget.ClaudeCode, SkillScope.Global, ".claude")]
-        [TestCase(SkillTarget.Codex, SkillScope.Global, ".agents")]
-        [TestCase(SkillTarget.GrokBuild, SkillScope.Global, ".grok")]
-        public void GetDestination_UsesExpectedTargetAndScopePath(SkillTarget target, SkillScope scope, string toolDirectoryName)
+        [TestCase("ClaudeCode", "Project", ".claude")]
+        [TestCase("Codex", "Project", ".agents")]
+        [TestCase("GrokBuild", "Project", ".grok")]
+        [TestCase("ClaudeCode", "Global", ".claude")]
+        [TestCase("Codex", "Global", ".agents")]
+        [TestCase("GrokBuild", "Global", ".grok")]
+        public void GetDestination_UsesExpectedTargetAndScopePath(string targetName, string scopeName, string toolDirectoryName)
         {
+            var target = (SkillTarget)Enum.Parse(typeof(SkillTarget), targetName);
+            var scope = (SkillScope)Enum.Parse(typeof(SkillScope), scopeName);
             string root = scope == SkillScope.Project
                 ? GetProjectRoot()
                 : GetHomeDirectory();

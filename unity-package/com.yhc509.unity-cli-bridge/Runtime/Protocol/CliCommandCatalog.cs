@@ -397,7 +397,7 @@ namespace UnityCli.Protocol
                     "--timeout (default 30 seconds, maximum 600) is a cooperative cancel. User code must check __pucToken (System.Threading.CancellationToken) to stop — otherwise it keeps the main thread, and that is the --force user's responsibility.",
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
-                    "Snippets compile with the Unity project's C# language version: Assets/csc.rsp (or mcs.rsp) -langversion, then PlayerSettings additional compiler arguments, otherwise C# 9.0. default literals and the rest of that version are supported.",
+                    "Snippets compile with Unity's CodeDOM compiler (mcs). It accepts /langversion from 1 through 7.2, plus ISO-1, ISO-2, Default, and latest. The C# 9.0 project default, and any higher -langversion in Assets/csc.rsp, Assets/mcs.rsp, or Player Settings, is passed as /langversion:latest so default literals compile. A pin of 7.2 or below is passed through. Compile failures include the compiler error text.",
                     "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),
@@ -523,7 +523,7 @@ namespace UnityCli.Protocol
                 canUseLocal: false,
                 canUseLive: true,
                 isAllowedWhileBusy: false,
-                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Components and renderers include `enabled`. It defaults to true, so `--omit-defaults` drops true and keeps false, including inside nested prefab instances.", "A node that belongs to a prefab instance includes `prefab.assetPath`. Nested instances also set `prefab.nested`, and the instance root sets `prefab.isRoot`.", "Detailed scene patch rules live in references/scene-spec.md, bundled with the AI-agent skill." }),
+                notes: new[] { "Use --node to inspect one node and its subtree while preserving the scene.roots[] response shape.", "Use --with-values before authoring a patch spec.", "Use --max-depth and --omit-defaults to reduce inspect payload size.", "Output with --omit-defaults is read-only; omitted fields are not restored when used as patch input.", "Components and renderers include `enabled`. It defaults to true, so `--omit-defaults` drops true and keeps false, including inside nested prefab instances.", "A node that belongs to a prefab instance includes `prefab.assetPath`. Nested instances also set `prefab.nested`, and the instance root sets `prefab.isRoot`.", "Detailed scene patch rules live in references/scene-spec.md relative to the installed AI-agent skill folder." }),
             new CliCommandDescriptor(
                 "scene patch",
                 "scene patch --path <Assets/...> (--spec-file <file.json> | --spec-json <json>) [--force]",
@@ -537,7 +537,7 @@ namespace UnityCli.Protocol
                 {
                     "Supported operations: add-gameobject, modify-gameobject, delete-gameobject, add-component, modify-component, remove-component.",
                     "An unknown operation fails with SCENE_SPEC_INVALID, lists those operations, and suggests the closest name (`set-component-values` means `modify-component`).",
-                    "Detailed scene patch rules live in references/scene-spec.md, bundled with the AI-agent skill.",
+                    "Detailed scene patch rules live in references/scene-spec.md relative to the installed AI-agent skill folder.",
                 },
                 forceRule: ForceRule.OnDestructiveOp),
             new CliCommandDescriptor(
