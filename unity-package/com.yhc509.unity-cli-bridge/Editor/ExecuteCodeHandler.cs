@@ -1,14 +1,11 @@
 #nullable enable
 using System;
-using System.CodeDom.Compiler;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.CSharp;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
@@ -224,6 +221,7 @@ public static class PucExecuteWrapper
         // exactly when cached assemblies could go stale (project scripts recompiled).
         private const int MaxCachedWrappers = 256;
         private static readonly Dictionary<string, Type> _compiledCache = new Dictionary<string, Type>(StringComparer.Ordinal);
+        private static readonly CompileBackendSelector BackendSelector = new CompileBackendSelector(new CodeDomBackend());
 
         internal static int CachedWrapperCount
         {
@@ -299,208 +297,13 @@ public static class PucExecuteWrapper
 
         private static Assembly CompileCode(string code)
         {
-            using var provider = new CSharpCodeProvider();
-            // The cache key stays a hash of the wrapped source (see GetOrCompileWrapperType).
-            // Language version and scripting defines are fixed for the domain, so a cache hit
-            // still skips this compile.
-            // Unity's CodeDOM host is mcs, which rejects /langversion:9.0. ToCompilerOption
-            // maps that project default (and anything above 7.2) to /langversion:latest.
-            // /define always includes UNITY_ASSERTIONS so Debug.Assert and Debug.LogAssertion
-            // are kept, plus the Editor's active scripting define symbols.
-            string languageVersion = ResolveProjectLanguageVersion();
-            string compilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion)
-                + " "
-                + ExecuteCompilerDefines.BuildDefineOption(ReadActiveScriptingDefines());
-            var parameters = new CompilerParameters
+            CompileResult result = BackendSelector.Select().TryCompile(CompileRequestBuilder.Build(code));
+            if (!result.Succeeded || result.Assembly == null)
             {
-                GenerateInMemory = true,
-                GenerateExecutable = false,
-                IncludeDebugInformation = false,
-                CompilerOptions = compilerOptions,
-                TempFiles = new TempFileCollection(System.IO.Path.GetTempPath(), keepFiles: false),
-            };
-
-            var referencedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Assembly loadedAssembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                try
-                {
-                    if (!string.IsNullOrWhiteSpace(loadedAssembly.Location)
-                        && referencedAssemblies.Add(loadedAssembly.Location))
-                    {
-                        parameters.ReferencedAssemblies.Add(loadedAssembly.Location);
-                    }
-                }
-                catch
-                {
-                }
+                throw new CommandFailureException("COMPILE_FAILED", result.FormatFailureMessage());
             }
 
-            CompilerResults result = provider.CompileAssemblyFromSource(parameters, code);
-            if (result.Errors.HasErrors)
-            {
-                throw CompileFailure(result, compilerOptions, fallback: null);
-            }
-
-            if (!TryGetCompiledAssembly(result, out Assembly? assembly, out string? failure) || assembly == null)
-            {
-                throw CompileFailure(result, compilerOptions, failure);
-            }
-
-            return assembly;
-        }
-
-        private static CommandFailureException CompileFailure(CompilerResults result, string compilerOptions, string? fallback)
-        {
-            string[] errors = ReadCompilerErrors(result, includeWarnings: false);
-            if (errors.Length == 0)
-            {
-                errors = ReadCompilerErrors(result, includeWarnings: true);
-            }
-
-            return new CommandFailureException(
-                "COMPILE_FAILED",
-                CSharpLanguageVersion.FormatCompilerFailure(
-                    compilerOptions,
-                    errors,
-                    ReadCompilerOutput(result),
-                    fallback));
-        }
-
-        private static bool TryGetCompiledAssembly(CompilerResults result, out Assembly? assembly, out string? failure)
-        {
-            assembly = null;
-            failure = null;
-            try
-            {
-                assembly = result.CompiledAssembly;
-            }
-            catch (Exception ex)
-            {
-                failure = ex.Message;
-                return false;
-            }
-
-            if (assembly == null)
-            {
-                failure = "Compiler failed to produce the assembly.";
-                return false;
-            }
-
-            return true;
-        }
-
-        private static string[] ReadCompilerErrors(CompilerResults result, bool includeWarnings)
-        {
-            var lines = new List<string>();
-            foreach (CompilerError error in result.Errors)
-            {
-                if (error.IsWarning && !includeWarnings)
-                {
-                    continue;
-                }
-
-                var line = new StringBuilder();
-                if (error.Line > 0)
-                {
-                    line.Append("Line ");
-                    line.Append(error.Line);
-                    line.Append(": ");
-                }
-
-                if (!string.IsNullOrEmpty(error.ErrorNumber))
-                {
-                    line.Append(error.ErrorNumber);
-                    line.Append(": ");
-                }
-
-                if (!string.IsNullOrEmpty(error.ErrorText))
-                {
-                    line.Append(error.ErrorText);
-                }
-
-                if (line.Length > 0)
-                {
-                    lines.Add(line.ToString());
-                }
-            }
-
-            return lines.ToArray();
-        }
-
-        private static string[] ReadCompilerOutput(CompilerResults result)
-        {
-            if (result.Output == null || result.Output.Count == 0)
-            {
-                return Array.Empty<string>();
-            }
-
-            var lines = new string[result.Output.Count];
-            for (int index = 0; index < result.Output.Count; index++)
-            {
-                lines[index] = result.Output[index] ?? string.Empty;
-            }
-
-            return lines;
-        }
-
-        private static string[] ReadActiveScriptingDefines()
-        {
-            try
-            {
-                string[] defines = EditorUserBuildSettings.activeScriptCompilationDefines;
-                return defines ?? Array.Empty<string>();
-            }
-            catch (Exception)
-            {
-                return Array.Empty<string>();
-            }
-        }
-
-        private static string ResolveProjectLanguageVersion()
-        {
-            string responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "csc.rsp"));
-            if (string.IsNullOrEmpty(responseFile))
-            {
-                responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "mcs.rsp"));
-            }
-
-            return CSharpLanguageVersion.Resolve(responseFile, ReadAdditionalCompilerArguments());
-        }
-
-        private static string ReadTextIfExists(string path)
-        {
-            try
-            {
-                return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
-            }
-            catch (Exception)
-            {
-                return string.Empty;
-            }
-        }
-
-        private static string[] ReadAdditionalCompilerArguments()
-        {
-            try
-            {
-                BuildTargetGroup group = EditorUserBuildSettings.selectedBuildTargetGroup;
-                if (group == BuildTargetGroup.Unknown)
-                {
-                    return Array.Empty<string>();
-                }
-
-                // 2021.3 exposes the build-target-group overload. Later editors mark it obsolete
-                // in favor of NamedBuildTarget, but the method still returns the same arguments.
-#pragma warning disable CS0618
-                string[] arguments = PlayerSettings.GetAdditionalCompilerArgumentsForGroup(group);
-#pragma warning restore CS0618
-                return arguments ?? Array.Empty<string>();
-            }
-            catch (Exception)
-            {
-                return Array.Empty<string>();
-            }
+            return result.Assembly;
         }
 
         private static string MergeOutput(string consoleOutput, IEnumerable<string> logEntries)

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged.
+
 ## [0.5.7] - 2026-10-21
 
 ### Added
