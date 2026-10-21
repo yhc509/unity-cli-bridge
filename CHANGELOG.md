@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged.
+- Internal: groundwork for a resident Roslyn compiler for `execute`. The package now carries the source of a small compile host (`RoslynHost~/`, which Unity does not import) and Editor-only helpers that build it with the C# compiler bundled in the Unity editor install, run it on the editor's bundled .NET runtime only, and talk to it over a length-prefixed stdin/stdout pipe. Nothing builds, starts, or uses the host yet: `execute` still compiles with mcs and behaves exactly as before.
 
 ## [0.5.7] - 2026-10-21
 
