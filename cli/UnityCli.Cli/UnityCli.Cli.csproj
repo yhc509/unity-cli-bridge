@@ -21,6 +21,12 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- ReadyToRun plus tiered compilation off: the process exits in well under a second, so a
+         second JIT tier and PGO do not pay for themselves. InvariantGlobalization stays off;
+         it would change non-ASCII path and DateTime parsing behavior. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredCompilation>false</TieredCompilation>
+    <TieredPGO>false</TieredPGO>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <_EnableMacOSCodeSign>false</_EnableMacOSCodeSign>
