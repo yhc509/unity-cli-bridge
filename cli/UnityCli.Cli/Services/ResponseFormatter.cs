@@ -59,6 +59,11 @@ public static class ResponseFormatter
             lines.Add($"durationMs: {response.durationMs}");
         }
 
+        if (response.timings is { } timings)
+        {
+            lines.Add("timings: " + FormatTimings(timings));
+        }
+
         if (response.data is { } data)
         {
             lines.Add("data:");
@@ -116,7 +121,46 @@ public static class ResponseFormatter
         }
 
         lines.Add($"retryable: {response.retryable.ToString().ToLowerInvariant()}");
+        if (response.timings is { } timings)
+        {
+            lines.Add("timings: " + FormatTimings(timings));
+        }
+
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatTimings(ResponseTimings timings)
+    {
+        var parts = new List<string>
+        {
+            "queueWaitMs=" + timings.queueWaitMs.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        if (!string.IsNullOrEmpty(timings.compiler))
+        {
+            parts.Add("compiler=" + timings.compiler);
+        }
+
+        AppendTiming(parts, "wrapMs", timings.wrapMs);
+        AppendTiming(parts, "compileMs", timings.compileMs);
+        AppendTiming(parts, "loadMs", timings.loadMs);
+        AppendTiming(parts, "invokeMs", timings.invokeMs);
+        AppendTiming(parts, "serializeMs", timings.serializeMs);
+        if (timings.cacheHit is { } cacheHit)
+        {
+            parts.Add("cacheHit=" + (cacheHit ? "true" : "false"));
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static void AppendTiming(List<string> parts, string name, long? value)
+    {
+        if (!value.HasValue)
+        {
+            return;
+        }
+
+        parts.Add(name + "=" + value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static string CompactData(JsonElement data)

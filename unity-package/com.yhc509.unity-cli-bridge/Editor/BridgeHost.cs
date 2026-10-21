@@ -785,7 +785,8 @@ namespace UnityCliBridge.Bridge.Editor
                     return;
                 }
 
-                var pending = new PendingRequest(command);
+                // Stamp on the socket thread, before the request waits for the next editor tick.
+                var pending = new PendingRequest(command, Stopwatch.GetTimestamp());
                 _pendingRequests.Enqueue(pending);
 
                 // Constructed only now, never before the bounded read: a
@@ -819,6 +820,7 @@ namespace UnityCliBridge.Bridge.Editor
                             null);
                     }
 
+                    pending.ApplyQueueWait(response);
                     await WriteResponseAsync(writer, response).ConfigureAwait(false);
                 }
             }
@@ -905,6 +907,9 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     continue;
                 }
+
+                // Dispatch start. durationMs begins later, inside the handler, and does not include this wait.
+                pending.RecordQueueWait(Stopwatch.GetTimestamp());
 
                 if (_qaCommandHandler.CanHandle(pending.Command.command) && _qaCommandHandler.IsDeferred(pending.Command.command, pending.Command.argumentsJson))
                 {
@@ -1212,7 +1217,10 @@ namespace UnityCliBridge.Bridge.Editor
 
         private ResponseEnvelope HandleCommand(CommandEnvelope command)
         {
+            // durationMs is handler time only. Queue wait is timings.queueWaitMs, measured from
+            // socket-thread accept to dispatch start, and is attached when the response is written.
             var stopwatch = Stopwatch.StartNew();
+            ResponseTimings? commandTimings = null;
 
             try
             {
@@ -1253,7 +1261,8 @@ namespace UnityCliBridge.Bridge.Editor
                 }
                 else if (_executeCodeHandler.CanHandle(command.command))
                 {
-                    data = _executeCodeHandler.Handle(command.command, command.argumentsJson);
+                    commandTimings = new ResponseTimings();
+                    data = _executeCodeHandler.Handle(command.command, command.argumentsJson, commandTimings);
                 }
                 else if (_customCommandHandler.CanHandle(command.command))
                 {
@@ -1349,45 +1358,53 @@ namespace UnityCliBridge.Bridge.Editor
                 stopwatch.Stop();
                 if (string.Equals(command.command, ProtocolConstants.CommandTestResults, StringComparison.Ordinal))
                 {
-                    return TestCommandHandler.BuildTestRunResultEnvelope(
+                    return ResponseEnvelope.WithTimings(
+                        TestCommandHandler.BuildTestRunResultEnvelope(
+                            command.requestId,
+                            _projectHash,
+                            data,
+                            stopwatch.ElapsedMilliseconds),
+                        commandTimings);
+                }
+
+                return ResponseEnvelope.WithTimings(
+                    ResponseEnvelope.Success(
                         command.requestId,
                         _projectHash,
                         data,
-                        stopwatch.ElapsedMilliseconds);
-                }
-
-                return ResponseEnvelope.Success(
-                    command.requestId,
-                    _projectHash,
-                    data,
-                    stopwatch.ElapsedMilliseconds,
-                    ProtocolConstants.TransportLive);
+                        stopwatch.ElapsedMilliseconds,
+                        ProtocolConstants.TransportLive),
+                    commandTimings);
             }
             catch (CommandFailureException exception)
             {
                 stopwatch.Stop();
-                return ResponseEnvelope.Failure(
-                    command.requestId,
-                    _projectHash,
-                    exception.ErrorCode,
-                    exception.Message,
-                    exception.IsRetryable,
-                    stopwatch.ElapsedMilliseconds,
-                    ProtocolConstants.TransportLive,
-                    exception.Details);
+                return ResponseEnvelope.WithTimings(
+                    ResponseEnvelope.Failure(
+                        command.requestId,
+                        _projectHash,
+                        exception.ErrorCode,
+                        exception.Message,
+                        exception.IsRetryable,
+                        stopwatch.ElapsedMilliseconds,
+                        ProtocolConstants.TransportLive,
+                        exception.Details),
+                    commandTimings);
             }
             catch (Exception exception)
             {
                 stopwatch.Stop();
-                return ResponseEnvelope.Failure(
-                    command.requestId,
-                    _projectHash,
-                    "COMMAND_FAILED",
-                    exception.Message,
-                    false,
-                    stopwatch.ElapsedMilliseconds,
-                    ProtocolConstants.TransportLive,
-                    ProtocolErrorDetails.FromString(exception.ToString()));
+                return ResponseEnvelope.WithTimings(
+                    ResponseEnvelope.Failure(
+                        command.requestId,
+                        _projectHash,
+                        "COMMAND_FAILED",
+                        exception.Message,
+                        false,
+                        stopwatch.ElapsedMilliseconds,
+                        ProtocolConstants.TransportLive,
+                        ProtocolErrorDetails.FromString(exception.ToString())),
+                    commandTimings);
             }
         }
 
@@ -1899,9 +1916,10 @@ namespace UnityCliBridge.Bridge.Editor
 
         private sealed class PendingRequest
         {
-            public PendingRequest(CommandEnvelope command)
+            public PendingRequest(CommandEnvelope command, long receivedTimestamp)
             {
                 Command = command;
+                ReceivedTimestamp = receivedTimestamp;
                 State = new PendingRequestState();
                 Completion = new TaskCompletionSource<ResponseEnvelope>(
                     command.requestId,
@@ -1909,8 +1927,27 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             public CommandEnvelope Command { get; private set; }
+            public long ReceivedTimestamp { get; private set; }
             public PendingRequestState State { get; private set; }
             public TaskCompletionSource<ResponseEnvelope> Completion { get; private set; }
+            public bool QueueWaitRecorded { get; private set; }
+            public long QueueWaitMs { get; private set; }
+
+            public void RecordQueueWait(long dispatchTimestamp)
+            {
+                QueueWaitMs = ResponseTimings.QueueWaitMilliseconds(ReceivedTimestamp, dispatchTimestamp);
+                QueueWaitRecorded = true;
+            }
+
+            public void ApplyQueueWait(ResponseEnvelope response)
+            {
+                if (!QueueWaitRecorded || response == null)
+                {
+                    return;
+                }
+
+                ResponseTimings.ApplyQueueWait(response, QueueWaitMs);
+            }
         }
 
         private sealed class InstanceRecordProjectNameComparer : IComparer<InstanceRecord>

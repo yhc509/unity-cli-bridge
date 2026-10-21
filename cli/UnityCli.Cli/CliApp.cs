@@ -1615,15 +1615,17 @@ public static class CliApp
         string errorCode,
         string message)
     {
-        return ResponseEnvelope.Failure(
-            source.requestId,
-            source.target,
-            errorCode,
-            message,
-            retryable: false,
-            source.durationMs,
-            source.transport,
-            GetDataDetailsJson(source, result));
+        return ResponseEnvelope.WithTimings(
+            ResponseEnvelope.Failure(
+                source.requestId,
+                source.target,
+                errorCode,
+                message,
+                retryable: false,
+                source.durationMs,
+                source.transport,
+                GetDataDetailsJson(source, result)),
+            source.timings);
     }
 
     private static string GetDataDetailsJson(ResponseEnvelope source, TestRunResultPayload fallback)
@@ -1651,15 +1653,17 @@ public static class CliApp
         string errorCode,
         string message)
     {
-        return ResponseEnvelope.Failure(
-            source.requestId,
-            source.target,
-            errorCode,
-            message,
-            retryable: false,
-            source.durationMs,
-            source.transport,
-            GetRecordDataDetailsJson(source, result));
+        return ResponseEnvelope.WithTimings(
+            ResponseEnvelope.Failure(
+                source.requestId,
+                source.target,
+                errorCode,
+                message,
+                retryable: false,
+                source.durationMs,
+                source.transport,
+                GetRecordDataDetailsJson(source, result)),
+            source.timings);
     }
 
     private static string GetRecordResultErrorCode(string? status)

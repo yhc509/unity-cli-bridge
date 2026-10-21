@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using Stopwatch = System.Diagnostics.Stopwatch;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -63,7 +64,7 @@ public static class PucExecuteWrapper
             return string.Equals(command, ProtocolConstants.CommandExecuteCode, StringComparison.Ordinal);
         }
 
-        public string Handle(string command, string argumentsJson)
+        public string Handle(string command, string argumentsJson, ResponseTimings? timings = null)
         {
             ExecuteCodeArgs args = ProtocolJson.Deserialize<ExecuteCodeArgs>(argumentsJson) ?? new ExecuteCodeArgs();
             if (!args.force)
@@ -83,8 +84,22 @@ public static class PucExecuteWrapper
 
             try
             {
-                string wrappedCode = BuildWrappedCode(args.code);
-                Type wrapperType = GetOrCompileWrapperType(wrappedCode, out bool cacheHit, out long compileMs);
+                var wrapWatch = Stopwatch.StartNew();
+                string wrappedCode;
+                try
+                {
+                    wrappedCode = BuildWrappedCode(args.code);
+                }
+                finally
+                {
+                    wrapWatch.Stop();
+                    if (timings != null)
+                    {
+                        timings.wrapMs = wrapWatch.ElapsedMilliseconds;
+                    }
+                }
+
+                Type wrapperType = GetOrCompileWrapperType(wrappedCode, out bool cacheHit, out long compileMs, timings);
                 FieldInfo? argsField = wrapperType.GetField("__puc_internal_argsJson", BindingFlags.NonPublic | BindingFlags.Static);
                 if (argsField == null)
                 {
@@ -108,19 +123,42 @@ public static class PucExecuteWrapper
                     }
                 }
 
-                Application.logMessageReceived += OnLogMessageReceived;
+                var invokeWatch = Stopwatch.StartNew();
+                string output;
+                bool hasResult;
+                object? rawResult;
                 try
                 {
-                    string consoleOutput = (string)(executeMethod.Invoke(null, new object[] { cts.Token }) ?? string.Empty);
-                    string output = MergeOutput(consoleOutput, logEntries);
-                    object? noResult = wrapperType
-                        .GetField("__pucNoResult", BindingFlags.NonPublic | BindingFlags.Static)
-                        ?.GetValue(null);
-                    object? rawResult = wrapperType
-                        .GetField("__pucResult", BindingFlags.NonPublic | BindingFlags.Static)
-                        ?.GetValue(null);
-                    bool hasResult = !ReferenceEquals(rawResult, noResult);
+                    Application.logMessageReceived += OnLogMessageReceived;
+                    try
+                    {
+                        string consoleOutput = (string)(executeMethod.Invoke(null, new object[] { cts.Token }) ?? string.Empty);
+                        output = MergeOutput(consoleOutput, logEntries);
+                        object? noResult = wrapperType
+                            .GetField("__pucNoResult", BindingFlags.NonPublic | BindingFlags.Static)
+                            ?.GetValue(null);
+                        rawResult = wrapperType
+                            .GetField("__pucResult", BindingFlags.NonPublic | BindingFlags.Static)
+                            ?.GetValue(null);
+                        hasResult = !ReferenceEquals(rawResult, noResult);
+                    }
+                    finally
+                    {
+                        Application.logMessageReceived -= OnLogMessageReceived;
+                    }
+                }
+                finally
+                {
+                    invokeWatch.Stop();
+                    if (timings != null)
+                    {
+                        timings.invokeMs = invokeWatch.ElapsedMilliseconds;
+                    }
+                }
 
+                var serializeWatch = Stopwatch.StartNew();
+                try
+                {
                     return ProtocolJson.Serialize(new ExecuteCodePayload
                     {
                         output = output,
@@ -133,7 +171,11 @@ public static class PucExecuteWrapper
                 }
                 finally
                 {
-                    Application.logMessageReceived -= OnLogMessageReceived;
+                    serializeWatch.Stop();
+                    if (timings != null)
+                    {
+                        timings.serializeMs = serializeWatch.ElapsedMilliseconds;
+                    }
                 }
             }
             catch (CommandFailureException)
@@ -228,20 +270,39 @@ public static class PucExecuteWrapper
             get { return _compiledCache.Count; }
         }
 
-        private static Type GetOrCompileWrapperType(string wrappedCode, out bool cacheHit, out long compileMs)
+        private static Type GetOrCompileWrapperType(
+            string wrappedCode,
+            out bool cacheHit,
+            out long compileMs,
+            ResponseTimings? timings)
         {
             string key = HashCode(wrappedCode);
             if (_compiledCache.TryGetValue(key, out Type? cached))
             {
                 cacheHit = true;
                 compileMs = 0;
+                if (timings != null)
+                {
+                    timings.compiler = BackendSelector.Select().Id;
+                    timings.cacheHit = true;
+                    timings.compileMs = 0;
+                    timings.loadMs = 0;
+                }
+
                 return cached;
             }
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            Assembly assembly = CompileCode(wrappedCode);
-            compileMs = sw.ElapsedMilliseconds;
             cacheHit = false;
+            if (timings != null)
+            {
+                timings.cacheHit = false;
+            }
+
+            // Payload compileMs stays the whole cache-miss path (reference setup, compiler, load).
+            // timings.compileMs / loadMs split the compiler call from assembly materialization.
+            var sw = Stopwatch.StartNew();
+            Assembly assembly = CompileCode(wrappedCode, timings);
+            compileMs = sw.ElapsedMilliseconds;
             Type? wrapperType = assembly.GetType("PucExecuteWrapper");
             if (wrapperType == null)
             {
@@ -295,9 +356,29 @@ public static class PucExecuteWrapper
             }
         }
 
-        private static Assembly CompileCode(string code)
+        private static Assembly CompileCode(string code, ResponseTimings? timings)
         {
+            // Select() is the only compile entry. Phase times come back on the result so this
+            // method does not call CodeDOM itself.
+            if (timings != null)
+            {
+                timings.compiler = BackendSelector.Select().Id;
+            }
+
             CompileResult result = BackendSelector.Select().TryCompile(CompileRequestBuilder.Build(code));
+            if (timings != null)
+            {
+                if (result.CompileMilliseconds.HasValue)
+                {
+                    timings.compileMs = result.CompileMilliseconds.Value;
+                }
+
+                if (result.LoadMilliseconds.HasValue)
+                {
+                    timings.loadMs = result.LoadMilliseconds.Value;
+                }
+            }
+
             if (!result.Succeeded || result.Assembly == null)
             {
                 throw new CommandFailureException("COMPILE_FAILED", result.FormatFailureMessage());
@@ -453,7 +534,7 @@ public static class PucExecuteWrapper
             }
             catch (Exception ex)
             {
-                Debug.LogException(ex);
+                UnityEngine.Debug.LogException(ex);
                 Finish(state, "error", ex.GetType().Name + ": " + ex.Message);
                 return;
             }

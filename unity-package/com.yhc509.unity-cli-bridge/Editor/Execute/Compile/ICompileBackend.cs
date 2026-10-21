@@ -10,7 +10,7 @@ namespace UnityCliBridge.Bridge.Editor
     /// </summary>
     internal interface ICompileBackend
     {
-        /// <summary>Stable internal identifier, e.g. <c>codedom</c>. Not sent on the wire.</summary>
+        /// <summary>Stable identifier, e.g. <c>codedom</c>. <c>ExecuteCodeHandler</c> copies it to <c>timings.compiler</c>.</summary>
         string Id { get; }
 
         CompileResult TryCompile(CompileRequest request);
