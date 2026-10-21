@@ -35,6 +35,7 @@
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileRequest.cs" Link="UnityEditor\Execute\Compile\CompileRequest.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileResult.cs" Link="UnityEditor\Execute\Compile\CompileResult.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ICompileBackend.cs" Link="UnityEditor\Execute\Compile\ICompileBackend.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ResponseFileWriter.cs" Link="UnityEditor\Execute\Compile\ResponseFileWriter.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\SkillPluginCommands.cs" Link="UnityEditor\SkillPluginCommands.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\NamedPipeOwnershipLock.cs" Link="UnityEditor\NamedPipeOwnershipLock.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\PendingRequestState.cs" Link="UnityEditor\PendingRequestState.cs" />
