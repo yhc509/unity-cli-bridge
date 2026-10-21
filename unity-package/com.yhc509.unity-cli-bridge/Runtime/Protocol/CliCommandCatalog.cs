@@ -911,7 +911,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "doctor",
                 "doctor",
-                "Shows registry, project detection, Unity path, and live reachability diagnostics.",
+                "Shows registry, project detection, Unity path, bundled .NET/Roslyn/mcs toolchain, and live reachability diagnostics.",
                 CliCommandGroup.Diagnostics,
                 protocolCommand: null,
                 canUseLocal: true,
