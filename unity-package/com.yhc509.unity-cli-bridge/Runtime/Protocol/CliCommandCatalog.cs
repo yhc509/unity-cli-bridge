@@ -417,6 +417,7 @@ namespace UnityCli.Protocol
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
                     "Snippets compile with Unity's CodeDOM compiler (mcs). It accepts /langversion from 1 through 7.2, plus ISO-1, ISO-2, Default, and latest. The C# 9.0 project default, and any higher -langversion in Assets/csc.rsp, Assets/mcs.rsp, or Player Settings, is passed as /langversion:latest so default literals compile. A pin of 7.2 or below is passed through. Compile failures include the compiler error text.",
+                    "Snippets compile with the Editor's active scripting define symbols, and UNITY_ASSERTIONS is always defined, so Debug.Assert and Debug.LogAssertion log Assert entries instead of being compiled out.",
                     "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),

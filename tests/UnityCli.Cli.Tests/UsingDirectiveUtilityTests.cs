@@ -168,4 +168,23 @@ public sealed class CSharpLanguageVersionTests
     {
         Assert.Equal("9.0", CSharpLanguageVersion.Resolve("-langversion:9.0;injection", null));
     }
+
+    [Fact]
+    public void BuildDefineOption_AlwaysIncludesAssertionsAndEditorDefines()
+    {
+        Assert.Equal("/define:UNITY_ASSERTIONS", ExecuteCompilerDefines.BuildDefineOption(null));
+        Assert.Equal("/define:UNITY_ASSERTIONS", ExecuteCompilerDefines.BuildDefineOption(Array.Empty<string>()));
+        Assert.Equal(
+            "/define:UNITY_ASSERTIONS;UNITY_EDITOR;ENABLE_INPUT_SYSTEM",
+            ExecuteCompilerDefines.BuildDefineOption(new[]
+            {
+                "UNITY_EDITOR",
+                "UNITY_ASSERTIONS",
+                " ENABLE_INPUT_SYSTEM ",
+                "UNITY_EDITOR",
+                "HAS SPACE",
+                "A-B",
+                "",
+            }));
+    }
 }
