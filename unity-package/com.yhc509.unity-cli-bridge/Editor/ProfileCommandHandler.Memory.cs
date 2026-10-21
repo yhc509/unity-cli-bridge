@@ -23,30 +23,9 @@ namespace UnityCliBridge.Bridge.Editor
     internal sealed partial class ProfileCommandHandler
     {
         // Counter names missing on the current Unity version resolve to recorder.Valid == false and are
-        // reported through `unavailable` instead of failing the command. Prune dead names once measured live.
+        // reported through `unavailable` instead of failing the command. Names live in ProfileCounterCatalog.
         private static readonly ProfileCounterSpec[] MemoryReportCounters =
-        {
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "System Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "GC Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "GC Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Gfx Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Gfx Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Audio Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Video Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Material Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Material Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "AnimationClip Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "AnimationClip Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Asset Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Scene Object Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Object Count", "count"),
-        };
+            BuildCounterSpecs(ProfilerCategory.Memory, ProfileCounterCatalog.MemoryReport);
 
         private void StartMemoryDeferred(
             ProfileMemoryArgs args,

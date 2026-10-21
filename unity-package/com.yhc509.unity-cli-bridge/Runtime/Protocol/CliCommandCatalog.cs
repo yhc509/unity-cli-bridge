@@ -262,6 +262,7 @@ namespace UnityCli.Protocol
                 {
                     "Live-only. Waits N editor frames before responding; the CLI raises its IPC timeout accordingly.",
                     "Counters missing on the current Unity version are listed under `unavailable` instead of failing.",
+                    "The render preset also samples Shadow Casters Count, Visible Skinned Meshes Count, Render Textures Count/Bytes, and Used Textures Count/Bytes. The memory preset also samples App Resident/Committed Memory, AudioClip Count/Memory, Physics Used Memory, Profiler Used/Reserved Memory, and System Total Used Memory.",
                 }),
             new CliCommandDescriptor(
                 "profile capture start",
@@ -335,7 +336,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "profile memory",
                 "profile memory [--frames <n> (default: 30)]",
-                "Samples memory profiler counters (total/GC/graphics plus per-asset-type count and memory) over N frames and writes the report to a local sidecar for later comparison. Works in Edit Mode and Play Mode.",
+                "Samples memory profiler counters (total/GC/graphics, per-asset-type count and memory, plus App Resident/Committed, AudioClip, Physics, Profiler, and System Total Used when the Unity version exposes them) over N frames and writes the report to a local sidecar for later comparison. Works in Edit Mode and Play Mode.",
                 CliCommandGroup.Diagnostics,
                 ProtocolConstants.CommandProfileMemory,
                 canUseLocal: false,

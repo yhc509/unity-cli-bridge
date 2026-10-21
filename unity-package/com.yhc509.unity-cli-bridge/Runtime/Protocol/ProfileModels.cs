@@ -3,6 +3,88 @@ using System;
 
 namespace UnityCli.Protocol
 {
+    public sealed class ProfileCounterName
+    {
+        public ProfileCounterName(string name, string unit)
+        {
+            Name = name;
+            Unit = unit;
+        }
+
+        public string Name { get; }
+        public string Unit { get; }
+    }
+
+    /// <summary>
+    /// ProfilerRecorder names sampled by profile stats and profile memory.
+    /// A name the running Unity version does not expose is reported as unavailable; it must not throw.
+    /// </summary>
+    public static class ProfileCounterCatalog
+    {
+        public static readonly ProfileCounterName[] RenderStats =
+        {
+            new ProfileCounterName("Draw Calls Count", "count"),
+            new ProfileCounterName("SetPass Calls Count", "count"),
+            new ProfileCounterName("Batches Count", "count"),
+            new ProfileCounterName("Triangles Count", "count"),
+            new ProfileCounterName("Vertices Count", "count"),
+            new ProfileCounterName("Shadow Casters Count", "count"),
+            new ProfileCounterName("Visible Skinned Meshes Count", "count"),
+            new ProfileCounterName("Render Textures Count", "count"),
+            new ProfileCounterName("Render Textures Bytes", "bytes"),
+            new ProfileCounterName("Used Textures Count", "count"),
+            new ProfileCounterName("Used Textures Bytes", "bytes"),
+        };
+
+        public static readonly ProfileCounterName[] MemoryStats =
+        {
+            new ProfileCounterName("Total Used Memory", "bytes"),
+            new ProfileCounterName("System Used Memory", "bytes"),
+            new ProfileCounterName("Texture Memory", "bytes"),
+            new ProfileCounterName("Mesh Memory", "bytes"),
+            new ProfileCounterName("App Resident Memory", "bytes"),
+            new ProfileCounterName("App Committed Memory", "bytes"),
+            new ProfileCounterName("AudioClip Count", "count"),
+            new ProfileCounterName("AudioClip Memory", "bytes"),
+            new ProfileCounterName("Physics Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Reserved Memory", "bytes"),
+            new ProfileCounterName("System Total Used Memory", "bytes"),
+        };
+
+        public static readonly ProfileCounterName[] MemoryReport =
+        {
+            new ProfileCounterName("Total Used Memory", "bytes"),
+            new ProfileCounterName("Total Reserved Memory", "bytes"),
+            new ProfileCounterName("System Used Memory", "bytes"),
+            new ProfileCounterName("GC Used Memory", "bytes"),
+            new ProfileCounterName("GC Reserved Memory", "bytes"),
+            new ProfileCounterName("Gfx Used Memory", "bytes"),
+            new ProfileCounterName("Gfx Reserved Memory", "bytes"),
+            new ProfileCounterName("Audio Used Memory", "bytes"),
+            new ProfileCounterName("Video Used Memory", "bytes"),
+            new ProfileCounterName("Texture Count", "count"),
+            new ProfileCounterName("Texture Memory", "bytes"),
+            new ProfileCounterName("Mesh Count", "count"),
+            new ProfileCounterName("Mesh Memory", "bytes"),
+            new ProfileCounterName("Material Count", "count"),
+            new ProfileCounterName("Material Memory", "bytes"),
+            new ProfileCounterName("AnimationClip Count", "count"),
+            new ProfileCounterName("AnimationClip Memory", "bytes"),
+            new ProfileCounterName("Asset Count", "count"),
+            new ProfileCounterName("Scene Object Count", "count"),
+            new ProfileCounterName("Object Count", "count"),
+            new ProfileCounterName("App Resident Memory", "bytes"),
+            new ProfileCounterName("App Committed Memory", "bytes"),
+            new ProfileCounterName("AudioClip Count", "count"),
+            new ProfileCounterName("AudioClip Memory", "bytes"),
+            new ProfileCounterName("Physics Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Reserved Memory", "bytes"),
+            new ProfileCounterName("System Total Used Memory", "bytes"),
+        };
+    }
+
     [Serializable]
     public sealed class ProfileStatsArgs
     {

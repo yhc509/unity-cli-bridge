@@ -122,13 +122,7 @@ namespace UnityCliBridge.Bridge.Editor
         };
 
         private static readonly ProfileCounterSpec[] RenderCounters =
-        {
-            new ProfileCounterSpec(ProfilerCategory.Render, "Draw Calls Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "SetPass Calls Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Batches Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Triangles Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Vertices Count", "count"),
-        };
+            BuildCounterSpecs(ProfilerCategory.Render, ProfileCounterCatalog.RenderStats);
 
         private static readonly ProfileCounterSpec[] GcCounters =
         {
@@ -139,12 +133,18 @@ namespace UnityCliBridge.Bridge.Editor
         };
 
         private static readonly ProfileCounterSpec[] MemoryCounters =
+            BuildCounterSpecs(ProfilerCategory.Memory, ProfileCounterCatalog.MemoryStats);
+
+        private static ProfileCounterSpec[] BuildCounterSpecs(ProfilerCategory category, ProfileCounterName[] names)
         {
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "System Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Memory", "bytes"),
-        };
+            var specs = new ProfileCounterSpec[names.Length];
+            for (int index = 0; index < names.Length; index++)
+            {
+                specs[index] = new ProfileCounterSpec(category, names[index].Name, names[index].Unit);
+            }
+
+            return specs;
+        }
 
         private static ProfileCounterSpec[] ResolvePreset(string preset)
         {
