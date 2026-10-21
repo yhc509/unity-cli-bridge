@@ -78,6 +78,7 @@ public enum CommandKind
     ProfileCompare,
     ProfileMemory,
     ProfileMemoryCompare,
+    ProfileMemoryTop,
     ProfileMemorySnapshot,
     EditorLaunch,
     EditorStop,
@@ -153,6 +154,8 @@ public sealed class ParsedCommand
     public string? ProfileCompareBaseId { get; set; }
     public string? ProfileCompareHeadId { get; set; }
     public double? ProfileThresholdPercent { get; set; }
+    public string? ProfileMemoryTopType { get; set; }
+    public string? ProfileMemoryTopScope { get; set; }
     public bool QaSequenceProfile { get; set; }
     public string? ExecuteCodeSnippet { get; set; }
     public string? ExecuteCodeFile { get; set; }
@@ -350,6 +353,7 @@ public sealed class ParsedCommand
                 CommandKind.ProfileCaptureStop => ProtocolConstants.CommandProfileCaptureStop,
                 CommandKind.ProfileStatus => ProtocolConstants.CommandProfileStatus,
                 CommandKind.ProfileMemory => ProtocolConstants.CommandProfileMemory,
+                CommandKind.ProfileMemoryTop => ProtocolConstants.CommandProfileMemoryTop,
                 CommandKind.ProfileMemorySnapshot => ProtocolConstants.CommandProfileMemorySnapshot,
                 CommandKind.EditorStop => ProtocolConstants.CommandEditorQuit,
                 _ => throw new CliUsageException($"Unsupported live command: {Kind}"),
@@ -457,6 +461,12 @@ public sealed class ParsedCommand
             CommandKind.ProfileMemory => new ProfileMemoryArgs
             {
                 frames = ProfileFrames ?? 0,
+            },
+            CommandKind.ProfileMemoryTop => new ProfileMemoryTopArgs
+            {
+                type = ProfileMemoryTopType ?? string.Empty,
+                limit = ProfileLimit ?? 0,
+                scope = ProfileMemoryTopScope ?? string.Empty,
             },
             CommandKind.ProfileMemorySnapshot => new ProfileMemorySnapshotArgs(),
             CommandKind.EditorStop => new EditorQuitArgs

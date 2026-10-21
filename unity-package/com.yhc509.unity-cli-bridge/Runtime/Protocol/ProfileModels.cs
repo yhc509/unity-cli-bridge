@@ -3,6 +3,88 @@ using System;
 
 namespace UnityCli.Protocol
 {
+    public sealed class ProfileCounterName
+    {
+        public ProfileCounterName(string name, string unit)
+        {
+            Name = name;
+            Unit = unit;
+        }
+
+        public string Name { get; }
+        public string Unit { get; }
+    }
+
+    /// <summary>
+    /// ProfilerRecorder names sampled by profile stats and profile memory.
+    /// A name the running Unity version does not expose is reported as unavailable; it must not throw.
+    /// </summary>
+    public static class ProfileCounterCatalog
+    {
+        public static readonly ProfileCounterName[] RenderStats =
+        {
+            new ProfileCounterName("Draw Calls Count", "count"),
+            new ProfileCounterName("SetPass Calls Count", "count"),
+            new ProfileCounterName("Batches Count", "count"),
+            new ProfileCounterName("Triangles Count", "count"),
+            new ProfileCounterName("Vertices Count", "count"),
+            new ProfileCounterName("Shadow Casters Count", "count"),
+            new ProfileCounterName("Visible Skinned Meshes Count", "count"),
+            new ProfileCounterName("Render Textures Count", "count"),
+            new ProfileCounterName("Render Textures Bytes", "bytes"),
+            new ProfileCounterName("Used Textures Count", "count"),
+            new ProfileCounterName("Used Textures Bytes", "bytes"),
+        };
+
+        public static readonly ProfileCounterName[] MemoryStats =
+        {
+            new ProfileCounterName("Total Used Memory", "bytes"),
+            new ProfileCounterName("System Used Memory", "bytes"),
+            new ProfileCounterName("Texture Memory", "bytes"),
+            new ProfileCounterName("Mesh Memory", "bytes"),
+            new ProfileCounterName("App Resident Memory", "bytes"),
+            new ProfileCounterName("App Committed Memory", "bytes"),
+            new ProfileCounterName("AudioClip Count", "count"),
+            new ProfileCounterName("AudioClip Memory", "bytes"),
+            new ProfileCounterName("Physics Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Reserved Memory", "bytes"),
+            new ProfileCounterName("System Total Used Memory", "bytes"),
+        };
+
+        public static readonly ProfileCounterName[] MemoryReport =
+        {
+            new ProfileCounterName("Total Used Memory", "bytes"),
+            new ProfileCounterName("Total Reserved Memory", "bytes"),
+            new ProfileCounterName("System Used Memory", "bytes"),
+            new ProfileCounterName("GC Used Memory", "bytes"),
+            new ProfileCounterName("GC Reserved Memory", "bytes"),
+            new ProfileCounterName("Gfx Used Memory", "bytes"),
+            new ProfileCounterName("Gfx Reserved Memory", "bytes"),
+            new ProfileCounterName("Audio Used Memory", "bytes"),
+            new ProfileCounterName("Video Used Memory", "bytes"),
+            new ProfileCounterName("Texture Count", "count"),
+            new ProfileCounterName("Texture Memory", "bytes"),
+            new ProfileCounterName("Mesh Count", "count"),
+            new ProfileCounterName("Mesh Memory", "bytes"),
+            new ProfileCounterName("Material Count", "count"),
+            new ProfileCounterName("Material Memory", "bytes"),
+            new ProfileCounterName("AnimationClip Count", "count"),
+            new ProfileCounterName("AnimationClip Memory", "bytes"),
+            new ProfileCounterName("Asset Count", "count"),
+            new ProfileCounterName("Scene Object Count", "count"),
+            new ProfileCounterName("Object Count", "count"),
+            new ProfileCounterName("App Resident Memory", "bytes"),
+            new ProfileCounterName("App Committed Memory", "bytes"),
+            new ProfileCounterName("AudioClip Count", "count"),
+            new ProfileCounterName("AudioClip Memory", "bytes"),
+            new ProfileCounterName("Physics Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Used Memory", "bytes"),
+            new ProfileCounterName("Profiler Reserved Memory", "bytes"),
+            new ProfileCounterName("System Total Used Memory", "bytes"),
+        };
+    }
+
     [Serializable]
     public sealed class ProfileStatsArgs
     {
@@ -347,5 +429,344 @@ namespace UnityCli.Protocol
         public string captureFlags = string.Empty;
         public long elapsedMs;
         public string guidance = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class ProfileMemoryTopArgs
+    {
+        public string type = string.Empty;
+        public int limit;
+        public string scope = string.Empty;
+    }
+
+    /// <summary>One measured object passed into <see cref="ProfileMemoryTopRanking"/>. Not a wire type.</summary>
+    public sealed class ProfileMemoryTopMeasurement
+    {
+        public string type = string.Empty;
+        public string name = string.Empty;
+        public string? path;
+        public long bytes;
+        public int? width;
+        public int? height;
+        public string? format;
+        public int? mipCount;
+        public int? vertexCount;
+        public int? subMeshCount;
+    }
+
+    [Serializable]
+    public sealed class ProfileMemoryTopPayload
+    {
+        public string mode = string.Empty;
+        public string unityVersion = string.Empty;
+        public string scope = string.Empty;
+        public string? type;
+        public string note = string.Empty;
+        public ProfileMemoryTopTotal[] totals = Array.Empty<ProfileMemoryTopTotal>();
+        public ProfileMemoryTopEntry[] top = Array.Empty<ProfileMemoryTopEntry>();
+        public bool truncated;
+        public string[]? warnings;
+    }
+
+    [Serializable]
+    public sealed class ProfileMemoryTopTotal
+    {
+        public string type = string.Empty;
+        public int count;
+        public long bytes;
+    }
+
+    [Serializable]
+    public sealed class ProfileMemoryTopEntry
+    {
+        public string name = string.Empty;
+        public string type = string.Empty;
+        public string? path;
+        public long bytes;
+        public ProfileMemoryTopDetail? detail;
+    }
+
+    [Serializable]
+    public sealed class ProfileMemoryTopDetail
+    {
+        public int? width;
+        public int? height;
+        public string? format;
+        public int? mipCount;
+        public int? vertexCount;
+        public int? subMeshCount;
+    }
+
+    public static class ProfileMemoryTopCatalog
+    {
+        public const string EditorSizeNote =
+            "Editor-measured sizes include editor-only copies and differ from player builds. Compare results taken in the same mode.";
+
+        public static readonly string[] AcceptedTypeNames =
+        {
+            "Texture",
+            "Texture2D",
+            "RenderTexture",
+            "Cubemap",
+            "Mesh",
+            "AudioClip",
+            "Material",
+            "AnimationClip",
+            "Shader",
+            "Sprite",
+        };
+
+        public static readonly string[] DefaultTypeNames =
+        {
+            "Texture2D",
+            "RenderTexture",
+            "Cubemap",
+            "Mesh",
+            "AudioClip",
+            "Material",
+            "AnimationClip",
+            "Shader",
+        };
+
+        public static string AcceptedTypeList()
+        {
+            return string.Join(", ", AcceptedTypeNames);
+        }
+
+        public static bool TryNormalizeType(string? type, out string normalized)
+        {
+            normalized = string.Empty;
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return false;
+            }
+
+            string trimmed = type.Trim();
+            for (int index = 0; index < AcceptedTypeNames.Length; index++)
+            {
+                if (string.Equals(AcceptedTypeNames[index], trimmed, StringComparison.OrdinalIgnoreCase))
+                {
+                    normalized = AcceptedTypeNames[index];
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool TryNormalizeScope(string? scope, out string normalized)
+        {
+            if (string.IsNullOrWhiteSpace(scope))
+            {
+                normalized = "loaded";
+                return true;
+            }
+
+            string trimmed = scope.Trim();
+            if (trimmed.Equals("loaded", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("scene", StringComparison.OrdinalIgnoreCase)
+                || trimmed.Equals("assets", StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = trimmed.ToLowerInvariant();
+                return true;
+            }
+
+            normalized = string.Empty;
+            return false;
+        }
+    }
+
+    public static class ProfileMemoryTopFilter
+    {
+        public static bool IsInternalAssetPath(string? path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            return path.IndexOf("unity editor resources", StringComparison.OrdinalIgnoreCase) >= 0
+                || path.IndexOf("unity default resources", StringComparison.OrdinalIgnoreCase) >= 0
+                || path.IndexOf("unity_builtin_extra", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        public static bool IsProjectAssetPath(string? path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                return false;
+            }
+
+            return path.StartsWith("Assets/", StringComparison.Ordinal)
+                || path.StartsWith("Packages/", StringComparison.Ordinal)
+                || string.Equals(path, "Assets", StringComparison.Ordinal)
+                || string.Equals(path, "Packages", StringComparison.Ordinal);
+        }
+
+        public static bool Include(string scope, bool hideAndDontSave, string? path, bool persistent)
+        {
+            if (hideAndDontSave || IsInternalAssetPath(path))
+            {
+                return false;
+            }
+
+            if (string.Equals(scope, "scene", StringComparison.Ordinal))
+            {
+                return !persistent;
+            }
+
+            if (string.Equals(scope, "assets", StringComparison.Ordinal))
+            {
+                return persistent && IsProjectAssetPath(path);
+            }
+
+            return true;
+        }
+    }
+
+    public static class ProfileMemoryTopRanking
+    {
+        public static ProfileMemoryTopPayload Build(
+            System.Collections.Generic.IReadOnlyList<ProfileMemoryTopMeasurement>? measurements,
+            int limit,
+            string mode,
+            string unityVersion,
+            string scope,
+            string? type,
+            bool scanTruncated,
+            System.Collections.Generic.IReadOnlyList<string>? warnings)
+        {
+            if (limit < 1)
+            {
+                limit = ProtocolConstants.DefaultProfileMemoryTopLimit;
+            }
+            else if (limit > ProtocolConstants.MaxProfileMemoryTopLimit)
+            {
+                limit = ProtocolConstants.MaxProfileMemoryTopLimit;
+            }
+
+            int count = measurements?.Count ?? 0;
+            var totals = new System.Collections.Generic.List<ProfileMemoryTopTotal>();
+            for (int index = 0; index < count; index++)
+            {
+                ProfileMemoryTopMeasurement measurement = measurements![index];
+                ProfileMemoryTopTotal? total = null;
+                for (int totalIndex = 0; totalIndex < totals.Count; totalIndex++)
+                {
+                    if (string.Equals(totals[totalIndex].type, measurement.type, StringComparison.Ordinal))
+                    {
+                        total = totals[totalIndex];
+                        break;
+                    }
+                }
+
+                if (total == null)
+                {
+                    total = new ProfileMemoryTopTotal { type = measurement.type ?? string.Empty };
+                    totals.Add(total);
+                }
+
+                total.count++;
+                total.bytes += measurement.bytes;
+            }
+
+            totals.Sort(CompareTotals);
+
+            var ordered = new ProfileMemoryTopMeasurement[count];
+            for (int index = 0; index < count; index++)
+            {
+                ordered[index] = measurements![index];
+            }
+
+            Array.Sort(ordered, CompareMeasurements);
+            int topCount = Math.Min(limit, count);
+            var top = new ProfileMemoryTopEntry[topCount];
+            for (int index = 0; index < topCount; index++)
+            {
+                top[index] = ToEntry(ordered[index]);
+            }
+
+            string[]? warningArray = null;
+            if (warnings != null && warnings.Count > 0)
+            {
+                warningArray = new string[warnings.Count];
+                for (int index = 0; index < warnings.Count; index++)
+                {
+                    warningArray[index] = warnings[index];
+                }
+            }
+
+            return new ProfileMemoryTopPayload
+            {
+                mode = mode ?? string.Empty,
+                unityVersion = unityVersion ?? string.Empty,
+                scope = string.IsNullOrEmpty(scope) ? "loaded" : scope,
+                type = string.IsNullOrEmpty(type) ? null : type,
+                note = ProfileMemoryTopCatalog.EditorSizeNote,
+                totals = totals.ToArray(),
+                top = top,
+                truncated = scanTruncated || count > limit,
+                warnings = warningArray,
+            };
+        }
+
+        private static ProfileMemoryTopEntry ToEntry(ProfileMemoryTopMeasurement measurement)
+        {
+            ProfileMemoryTopDetail? detail = null;
+            if (measurement.width.HasValue
+                || measurement.height.HasValue
+                || !string.IsNullOrEmpty(measurement.format)
+                || measurement.mipCount.HasValue
+                || measurement.vertexCount.HasValue
+                || measurement.subMeshCount.HasValue)
+            {
+                detail = new ProfileMemoryTopDetail
+                {
+                    width = measurement.width,
+                    height = measurement.height,
+                    format = measurement.format,
+                    mipCount = measurement.mipCount,
+                    vertexCount = measurement.vertexCount,
+                    subMeshCount = measurement.subMeshCount,
+                };
+            }
+
+            return new ProfileMemoryTopEntry
+            {
+                name = measurement.name ?? string.Empty,
+                type = measurement.type ?? string.Empty,
+                path = string.IsNullOrEmpty(measurement.path) ? null : measurement.path,
+                bytes = measurement.bytes,
+                detail = detail,
+            };
+        }
+
+        private static int CompareTotals(ProfileMemoryTopTotal left, ProfileMemoryTopTotal right)
+        {
+            int byBytes = right.bytes.CompareTo(left.bytes);
+            if (byBytes != 0)
+            {
+                return byBytes;
+            }
+
+            return string.CompareOrdinal(left.type, right.type);
+        }
+
+        private static int CompareMeasurements(ProfileMemoryTopMeasurement left, ProfileMemoryTopMeasurement right)
+        {
+            int byBytes = right.bytes.CompareTo(left.bytes);
+            if (byBytes != 0)
+            {
+                return byBytes;
+            }
+
+            int byName = string.CompareOrdinal(left.name, right.name);
+            if (byName != 0)
+            {
+                return byName;
+            }
+
+            return string.CompareOrdinal(left.type, right.type);
+        }
     }
 }

@@ -34,7 +34,7 @@ namespace UnityCliBridge.Bridge.Editor
                 IEnumerable<ConsoleLogEntry> query = _entries;
                 if (!string.IsNullOrWhiteSpace(type))
                 {
-                    query = query.Where(entry => string.Equals(entry.type, type, StringComparison.OrdinalIgnoreCase));
+                    query = query.Where(entry => ConsoleLogProjectionUtility.MatchesType(entry.type, type));
                 }
 
                 return query.TakeLast(Math.Max(1, limit)).ToArray();

@@ -116,8 +116,8 @@ namespace UnityCli.Protocol
                 notes: new[] { "Waits by default: polls status every 2s for up to 120s (or --timeout-ms) after the refresh request succeeds. --wait is accepted for compatibility." }),
             new CliCommandDescriptor(
                 "read-console",
-                "read-console [--limit N] [--type log|warning|error] [--no-stacktrace]",
-                "Reads recent editor console entries from a running editor; add --no-stacktrace to omit stack traces from the response while keeping them in the editor buffer.",
+                "read-console [--limit N] [--type log|warning|error|exception|assert] [--no-stacktrace]",
+                "Reads recent editor console entries from a running editor. --type error matches Error, Exception, and Assert; exception and assert match only that type, and each entry keeps its original type name. Add --no-stacktrace to omit stack traces from the response while keeping them in the editor buffer.",
                 CliCommandGroup.EditorControl,
                 ProtocolConstants.CommandReadConsole,
                 canUseLocal: false,
@@ -262,6 +262,7 @@ namespace UnityCli.Protocol
                 {
                     "Live-only. Waits N editor frames before responding; the CLI raises its IPC timeout accordingly.",
                     "Counters missing on the current Unity version are listed under `unavailable` instead of failing.",
+                    "The render preset also samples Shadow Casters Count, Visible Skinned Meshes Count, Render Textures Count/Bytes, and Used Textures Count/Bytes. The memory preset also samples App Resident/Committed Memory, AudioClip Count/Memory, Physics Used Memory, Profiler Used/Reserved Memory, and System Total Used Memory.",
                 }),
             new CliCommandDescriptor(
                 "profile capture start",
@@ -335,7 +336,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "profile memory",
                 "profile memory [--frames <n> (default: 30)]",
-                "Samples memory profiler counters (total/GC/graphics plus per-asset-type count and memory) over N frames and writes the report to a local sidecar for later comparison. Works in Edit Mode and Play Mode.",
+                "Samples memory profiler counters (total/GC/graphics, per-asset-type count and memory, plus App Resident/Committed, AudioClip, Physics, Profiler, and System Total Used when the Unity version exposes them) over N frames and writes the report to a local sidecar for later comparison. Works in Edit Mode and Play Mode.",
                 CliCommandGroup.Diagnostics,
                 ProtocolConstants.CommandProfileMemory,
                 canUseLocal: false,
@@ -346,6 +347,24 @@ namespace UnityCli.Protocol
                     "Returns a reportId and persists the report to Library/com.yhc509.unity-cli-bridge/memory/<reportId>.json.",
                     "Counters not available on the current Unity version/platform are listed in `unavailable` instead of failing.",
                     "Memory and GC values are bytes; count counters are object counts.",
+                }),
+            new CliCommandDescriptor(
+                "profile memory top",
+                "profile memory top [--type <Texture|Texture2D|RenderTexture|Cubemap|Mesh|AudioClip|Material|AnimationClip|Shader|Sprite>] [--limit <n> (default: 20)] [--scope <loaded|scene|assets> (default: loaded)]",
+                "Lists the largest loaded objects by Profiler.GetRuntimeMemorySizeLong, with per-type totals and the top N objects. Editor-measured sizes include editor-only copies and differ from player builds.",
+                CliCommandGroup.Diagnostics,
+                ProtocolConstants.CommandProfileMemoryTop,
+                canUseLocal: false,
+                canUseLive: true,
+                isAllowedWhileBusy: true,
+                notes: new[]
+                {
+                    "Synchronous. Uses Resources.FindObjectsOfTypeAll and Profiler.GetRuntimeMemorySizeLong. A size of 0 means the profiler could not measure that object.",
+                    "Editor-measured sizes include editor-only copies and differ from player builds. Compare results taken in the same mode.",
+                    "HideFlags.HideAndDontSave objects and Unity built-in resources (unity editor resources, unity default resources, unity_builtin_extra) are skipped.",
+                    "Omit --type to scan Texture2D, RenderTexture, Cubemap, Mesh, AudioClip, Material, AnimationClip, and Shader. Pass Texture to include every Texture subclass in one pass.",
+                    "--scope loaded (default) keeps every remaining object. scene keeps non-persistent objects. assets keeps persistent objects under Assets/ or Packages/.",
+                    "--limit defaults to 20 and cannot exceed 100. The scan measures at most 2000 objects of each type and stops after visiting 20000; truncated is true when either cap or the limit cuts the result.",
                 }),
             new CliCommandDescriptor(
                 "profile memory compare",
@@ -398,6 +417,7 @@ namespace UnityCli.Protocol
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
                     "Snippets compile with Unity's CodeDOM compiler (mcs). It accepts /langversion from 1 through 7.2, plus ISO-1, ISO-2, Default, and latest. The C# 9.0 project default, and any higher -langversion in Assets/csc.rsp, Assets/mcs.rsp, or Player Settings, is passed as /langversion:latest so default literals compile. A pin of 7.2 or below is passed through. Compile failures include the compiler error text.",
+                    "Snippets compile with the Editor's active scripting define symbols, and UNITY_ASSERTIONS is always defined, so Debug.Assert and Debug.LogAssertion log Assert entries instead of being compiled out.",
                     "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),

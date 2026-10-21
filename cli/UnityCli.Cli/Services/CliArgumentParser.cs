@@ -528,6 +528,9 @@ public static partial class CliArgumentParser
                         case "snapshot":
                             return new ParsedCommand(CommandKind.ProfileMemorySnapshot);
 
+                        case "top":
+                            return new ParsedCommand(CommandKind.ProfileMemoryTop);
+
                         default:
                             throw new CliUsageException($"Unknown profile memory subcommand: {memorySub}");
                     }
@@ -637,7 +640,7 @@ public static partial class CliArgumentParser
                     parsed.ConsoleLimit = RequireInt(RequireValue(tokens, "--limit"), "--limit");
                     break;
                 case CommandKind.ReadConsole when token == "--type":
-                    parsed.ConsoleType = RequireValue(tokens, "--type");
+                    parsed.ConsoleType = RequireConsoleType(RequireValue(tokens, "--type"));
                     break;
                 case CommandKind.ReadConsole when token == "--no-stacktrace":
                     parsed.ConsoleNoStackTrace = true;
@@ -975,6 +978,41 @@ public static partial class CliArgumentParser
                 case CommandKind.ProfileCompare when token == "--limit":
                     parsed.ProfileLimit = RequireInt(RequireValue(tokens, "--limit"), "--limit");
                     break;
+                case CommandKind.ProfileMemoryTop when token == "--type":
+                {
+                    string rawType = RequireValue(tokens, "--type");
+                    if (!ProfileMemoryTopCatalog.TryNormalizeType(rawType, out string normalizedType))
+                    {
+                        throw new CliUsageException("`--type` must be one of " + ProfileMemoryTopCatalog.AcceptedTypeList() + ".");
+                    }
+
+                    parsed.ProfileMemoryTopType = normalizedType;
+                    break;
+                }
+                case CommandKind.ProfileMemoryTop when token == "--scope":
+                {
+                    string rawScope = RequireValue(tokens, "--scope");
+                    if (string.IsNullOrWhiteSpace(rawScope)
+                        || !ProfileMemoryTopCatalog.TryNormalizeScope(rawScope, out string normalizedScope))
+                    {
+                        throw new CliUsageException("`--scope` must be `loaded`, `scene`, or `assets`.");
+                    }
+
+                    parsed.ProfileMemoryTopScope = normalizedScope;
+                    break;
+                }
+                case CommandKind.ProfileMemoryTop when token == "--limit":
+                {
+                    int limit = RequireInt(RequireValue(tokens, "--limit"), "--limit");
+                    if (limit > ProtocolConstants.MaxProfileMemoryTopLimit)
+                    {
+                        throw new CliUsageException(
+                            "--limit must be an integer from 1 to " + ProtocolConstants.MaxProfileMemoryTopLimit + ".");
+                    }
+
+                    parsed.ProfileLimit = limit;
+                    break;
+                }
                 case CommandKind.AssetFind when token == "--name":
                     parsed.AssetName = RequireValue(tokens, "--name");
                     break;

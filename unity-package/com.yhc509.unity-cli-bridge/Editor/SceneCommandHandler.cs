@@ -212,7 +212,10 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static string HandleSetTransform(string argumentsJson)
         {
-            SceneSetTransformArgs args = ProtocolJson.Deserialize<SceneSetTransformArgs>(argumentsJson) ?? new SceneSetTransformArgs();
+            // JsonUtility materializes missing [Serializable] class fields, so an omitted
+            // position or scale arrives as (0,0,0). Newtonsoft leaves those fields null.
+            SceneSetTransformArgs args = InspectorMutationReaderUtility.DeserializeArguments<SceneSetTransformArgs>(
+                InspectorMutationReaderUtility.ParseArgumentsObject(argumentsJson));
             if (args.position == null && args.rotation == null && args.scale == null)
             {
                 throw new CommandFailureException("SCENE_TRANSFORM_INVALID", "scene set-transform requires at least one of position, rotation, or scale.");
@@ -230,7 +233,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             AssetDatabase.Refresh();
-            return ProtocolJson.Serialize(new SceneSetTransformPayload
+            return JsonConvert.SerializeObject(new SceneSetTransformPayload
             {
                 asset = AssetCommandSupport.BuildRecordFromPath(scene.path),
                 activeScenePath = scene.path,
@@ -238,7 +241,7 @@ namespace UnityCliBridge.Bridge.Editor
                 position = args.position,
                 rotation = args.rotation,
                 scale = args.scale,
-            });
+            }, BridgeJsonSettings.CamelCaseIgnoreNull);
         }
 
         private static T WithLoadedScene<T>(string path, string commandName, Func<Scene, T> action)

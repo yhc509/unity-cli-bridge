@@ -301,11 +301,16 @@ public static class PucExecuteWrapper
         {
             using var provider = new CSharpCodeProvider();
             // The cache key stays a hash of the wrapped source (see GetOrCompileWrapperType).
-            // Language version is fixed for the domain, so a cache hit still skips this compile.
+            // Language version and scripting defines are fixed for the domain, so a cache hit
+            // still skips this compile.
             // Unity's CodeDOM host is mcs, which rejects /langversion:9.0. ToCompilerOption
             // maps that project default (and anything above 7.2) to /langversion:latest.
+            // /define always includes UNITY_ASSERTIONS so Debug.Assert and Debug.LogAssertion
+            // are kept, plus the Editor's active scripting define symbols.
             string languageVersion = ResolveProjectLanguageVersion();
-            string compilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion);
+            string compilerOptions = CSharpLanguageVersion.ToCompilerOption(languageVersion)
+                + " "
+                + ExecuteCompilerDefines.BuildDefineOption(ReadActiveScriptingDefines());
             var parameters = new CompilerParameters
             {
                 GenerateInMemory = true,
@@ -437,6 +442,19 @@ public static class PucExecuteWrapper
             }
 
             return lines;
+        }
+
+        private static string[] ReadActiveScriptingDefines()
+        {
+            try
+            {
+                string[] defines = EditorUserBuildSettings.activeScriptCompilationDefines;
+                return defines ?? Array.Empty<string>();
+            }
+            catch (Exception)
+            {
+                return Array.Empty<string>();
+            }
         }
 
         private static string ResolveProjectLanguageVersion()

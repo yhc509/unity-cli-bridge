@@ -55,24 +55,24 @@ Add the package in either of these ways.
 
 **Option A: .unitypackage**
 
-Download `com.yhc509.unity-cli-bridge-0.5.6.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.5.6 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.5.6). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
+Download `com.yhc509.unity-cli-bridge-0.5.7.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.5.7 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.5.7). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
 
 **Option B: Git URL** (easier to update)
 
 In Package Manager, choose **Add package from git URL** and paste:
 
 ```
-https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.6
+https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.7
 ```
 
-Use `#main` instead of `#v0.5.6` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
+Use `#main` instead of `#v0.5.7` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
 
 The same URL can be written into `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.6"
+    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.7"
   }
 }
 ```
@@ -248,7 +248,7 @@ unity-cli record start --duration 5 --wait --path /tmp/play.mp4
 unity-cli record start                     # Manual recording; stop with record stop
 unity-cli record status
 unity-cli record stop
-unity-cli read-console --type error        # Check for errors after any operation
+unity-cli read-console --type error        # Error, Exception, and Assert
 unity-cli read-console --type error --no-stacktrace
 unity-cli execute-menu --list "GameObject" # Browse Unity menus
 unity-cli execute --code "Debug.Log(1);" --force  # Run arbitrary C# (escape hatch)
@@ -257,6 +257,8 @@ unity-cli execute --code "__pucResult = new Vector3(1.5f, 0f, 3.25f);" --force
 # Cooperative timeout — user code must check __pucToken
 unity-cli execute --file my-script.cs --force --timeout 60
 ```
+
+`read-console --type error` includes Exception and Assert entries as well as Error. The response keeps the original type name (`Exception`, `Assert`, or `Error`). `exception` and `assert` match only that type.
 
 `compile`, `refresh`, `play`, and `stop` wait until Unity has settled. `--wait` is still accepted. `--no-wait` returns as soon as the request is accepted. `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload. `status` reports `isChangingPlayMode` and `domainId` for that transition.
 
@@ -449,14 +451,15 @@ unity-cli profile memory                                    # → baseline repor
 # ... play the suspect flow, let time pass ...
 unity-cli profile memory                                    # → head reportId
 unity-cli profile memory compare <baseReportId> <headReportId> --threshold 5
+unity-cli profile memory top --type Texture2D --scope assets --limit 20
 
 # Precision follow-up once the trend looks bad
 unity-cli profile memory snapshot                           # → .snap path for the Memory Profiler GUI
 ```
 
-`profile stats` samples built-in `ProfilerRecorder` counters over N frames and returns min/median/p95/max per counter; it works in both Edit Mode and Play Mode. `profile capture start` records Play Mode frames and returns a `captureId` immediately; `profile capture stop --wait` polls until the summary — frame-time percentiles, spike frames, hotspots, per-marker GC bytes, and a CPU/GPU-bound verdict — is ready. `profile analyze <captureId>` drills into the finished capture's sidecar locally with `--marker <name>`, `--frame <n>`, `--gc`, or `--spikes`, with no Editor round-trip required. `profile compare <baseCaptureId> <headCaptureId>` diffs two finished captures the same way — locally, from both sidecars — and returns a `regression` / `improvement` / `unchanged` verdict plus the frame-time, over-budget, GC, and per-marker deltas behind it; `--threshold <percent>` (default 5) sets how much the median frame time may move before the result stops counting as unchanged, and mismatched budgets, Unity versions, or frame counts are called out in `notes`. A capture that never finished — for example one cut short by a script recompile — is rejected instead of being compared, so a dead capture can never read as a 100% improvement. Each percentage carries a `deltaPercentAvailable` flag; when the baseline value is zero there is no percentage to report, and only the absolute `delta` is meaningful. Add `--profile` to `qa run-sequence` to capture the sequence run and merge its summary into the response as `profileSummary`.
+`profile stats` samples built-in `ProfilerRecorder` counters over N frames and returns min/median/p95/max per counter; it works in both Edit Mode and Play Mode. The render preset also includes shadow casters, render textures, used textures, and visible skinned meshes. The memory preset also includes App Resident/Committed, AudioClip, Physics, Profiler, and System Total Used when that Unity version exposes them. A counter the editor does not have is listed under `unavailable` instead of failing the command. On 2021.3.45f2 the only new counters in that list are App Resident Memory, App Committed Memory, and System Total Used Memory. AudioClip, Physics Used Memory, and visible skinned meshes are available there. On 6000.3.10f1 these counters are all available. `profile capture start` records Play Mode frames and returns a `captureId` immediately; `profile capture stop --wait` polls until the summary — frame-time percentiles, spike frames, hotspots, per-marker GC bytes, and a CPU/GPU-bound verdict — is ready. `profile analyze <captureId>` drills into the finished capture's sidecar locally with `--marker <name>`, `--frame <n>`, `--gc`, or `--spikes`, with no Editor round-trip required. `profile compare <baseCaptureId> <headCaptureId>` diffs two finished captures the same way — locally, from both sidecars — and returns a `regression` / `improvement` / `unchanged` verdict plus the frame-time, over-budget, GC, and per-marker deltas behind it; `--threshold <percent>` (default 5) sets how much the median frame time may move before the result stops counting as unchanged, and mismatched budgets, Unity versions, or frame counts are called out in `notes`. A capture that never finished — for example one cut short by a script recompile — is rejected instead of being compared, so a dead capture can never read as a 100% improvement. Each percentage carries a `deltaPercentAvailable` flag; when the baseline value is zero there is no percentage to report, and only the absolute `delta` is meaningful. Add `--profile` to `qa run-sequence` to capture the sequence run and merge its summary into the response as `profileSummary`.
 
-`profile memory` covers the other half of profiling — memory rather than frame time. It samples memory counters (total, reserved, GC, graphics, audio/video, plus per-asset-type counts and bytes) over N frames, returns them as min/median/p95/max, and persists the report to a sidecar so it stays comparable later. Counters that the running Unity version does not expose are listed in `unavailable` instead of failing the command. `profile memory compare <baseReportId> <headReportId>` diffs two reports locally — no Editor needed — and judges `regression` / `improvement` / `unchanged` on the median `Total Used Memory` against `--threshold` (default 5%), listing the counters that grew or shrank the most so a leak points at its own cause: a climbing `Texture Count` and `Texture Memory` pair means textures are not being released, climbing `GC Used Memory` means managed churn. Reports taken in different modes, Unity versions, or frame counts are still compared, with the mismatch reported in `notes`. When the trend does look bad, `profile memory snapshot` captures a full `.snap` via the Memory Profiler package and returns only its path and size — the CLI never parses snapshots, so open the file in `Window > Analysis > Memory Profiler`. It needs `com.unity.memoryprofiler` installed, refuses to run while a profile capture is in flight (and blocks a capture from starting while it runs), and can produce files well over a gigabyte that are never cleaned up automatically.
+`profile memory` covers the other half of profiling — memory rather than frame time. It samples memory counters (total, reserved, GC, graphics, audio/video, plus per-asset-type counts and bytes) over N frames, returns them as min/median/p95/max, and persists the report to a sidecar so it stays comparable later. Counters that the running Unity version does not expose are listed in `unavailable` instead of failing the command. `profile memory compare <baseReportId> <headReportId>` diffs two reports locally — no Editor needed — and judges `regression` / `improvement` / `unchanged` on the median `Total Used Memory` against `--threshold` (default 5%), listing the counters that grew or shrank the most so a leak points at its own cause: a climbing `Texture Count` and `Texture Memory` pair means textures are not being released, climbing `GC Used Memory` means managed churn. Reports taken in different modes, Unity versions, or frame counts are still compared, with the mismatch reported in `notes`. `profile memory top` names the objects behind that trend. It measures loaded objects with `Profiler.GetRuntimeMemorySizeLong` and returns per-type totals plus the largest objects (default 20), including asset path and texture or mesh details. Editor-measured sizes include editor-only copies and differ from player builds, so compare results taken in the same mode. `--scope` is `loaded` (default), `scene`, or `assets`. Hidden objects and Unity built-in resources are skipped. When the trend does look bad, `profile memory snapshot` captures a full `.snap` via the Memory Profiler package and returns only its path and size — the CLI never parses snapshots, so open the file in `Window > Analysis > Memory Profiler`. It needs `com.unity.memoryprofiler` installed, refuses to run while a profile capture is in flight (and blocks a capture from starting while it runs), and can produce files well over a gigabyte that are never cleaned up automatically.
 
 `screenshot` responses include both image size (`width`/`height`) and live input metadata (`screenWidth`/`screenHeight`, `imageOrigin=top-left`, `coordinateOrigin=bottom-left`). `qa tap` takes screenshot image coordinates as-is, reuses the last successful `screenshot` dimensions when `--screenshot-width`/`--screenshot-height` are omitted, and lets the bridge handle Y-flip plus resolution scaling into Unity screen space. See [qa-testing.md](tools/skills/unity-cli-operator/references/qa-testing.md) for the coordinate workflow.
 

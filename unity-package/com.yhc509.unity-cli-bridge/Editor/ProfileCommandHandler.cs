@@ -18,11 +18,12 @@ namespace UnityCliBridge.Bridge.Editor
                 || string.Equals(command, ProtocolConstants.CommandProfileCaptureStop, StringComparison.Ordinal)
                 || string.Equals(command, ProtocolConstants.CommandProfileStatus, StringComparison.Ordinal)
                 || string.Equals(command, ProtocolConstants.CommandProfileMemory, StringComparison.Ordinal)
+                || string.Equals(command, ProtocolConstants.CommandProfileMemoryTop, StringComparison.Ordinal)
                 || string.Equals(command, ProtocolConstants.CommandProfileMemorySnapshot, StringComparison.Ordinal);
         }
 
         // stats/memory wait N editor frames and snapshot runs on a TakeSnapshot callback, so they
-        // must run deferred like qa wait-until.
+        // must run deferred like qa wait-until. profile memory top is a synchronous scan.
         public bool IsDeferred(string command, string? argumentsJson = null)
         {
             return string.Equals(command, ProtocolConstants.CommandProfileStats, StringComparison.Ordinal)
@@ -37,6 +38,11 @@ namespace UnityCliBridge.Bridge.Editor
                 || string.Equals(command, ProtocolConstants.CommandProfileMemorySnapshot, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("Deferred profile command must be started through StartDeferred: " + command);
+            }
+
+            if (string.Equals(command, ProtocolConstants.CommandProfileMemoryTop, StringComparison.Ordinal))
+            {
+                return HandleMemoryTop(argumentsJson);
             }
 
             if (string.Equals(command, ProtocolConstants.CommandProfileCaptureStart, StringComparison.Ordinal))
@@ -116,13 +122,7 @@ namespace UnityCliBridge.Bridge.Editor
         };
 
         private static readonly ProfileCounterSpec[] RenderCounters =
-        {
-            new ProfileCounterSpec(ProfilerCategory.Render, "Draw Calls Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "SetPass Calls Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Batches Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Triangles Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Render, "Vertices Count", "count"),
-        };
+            BuildCounterSpecs(ProfilerCategory.Render, ProfileCounterCatalog.RenderStats);
 
         private static readonly ProfileCounterSpec[] GcCounters =
         {
@@ -133,12 +133,18 @@ namespace UnityCliBridge.Bridge.Editor
         };
 
         private static readonly ProfileCounterSpec[] MemoryCounters =
+            BuildCounterSpecs(ProfilerCategory.Memory, ProfileCounterCatalog.MemoryStats);
+
+        private static ProfileCounterSpec[] BuildCounterSpecs(ProfilerCategory category, ProfileCounterName[] names)
         {
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "System Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Memory", "bytes"),
-        };
+            var specs = new ProfileCounterSpec[names.Length];
+            for (int index = 0; index < names.Length; index++)
+            {
+                specs[index] = new ProfileCounterSpec(category, names[index].Name, names[index].Unit);
+            }
+
+            return specs;
+        }
 
         private static ProfileCounterSpec[] ResolvePreset(string preset)
         {

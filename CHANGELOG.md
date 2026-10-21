@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-21
+
+### Added
+- `profile memory top` lists the largest loaded objects. `--type` accepts Texture, Texture2D, RenderTexture, Cubemap, Mesh, AudioClip, Material, AnimationClip, Shader, or Sprite; omit it to scan the default set. `--limit` defaults to 20. `--scope` is `loaded` (default), `scene`, or `assets`. The response has per-type totals and the top objects, with width, height, format, and mip count for textures and vertex and sub-mesh counts for meshes. Editor-measured sizes include editor-only copies and differ from player builds. Hidden objects and Unity built-in resources are skipped.
+
+### Changed
+- `profile memory` and `profile stats` also sample App Resident Memory, App Committed Memory, AudioClip Count, AudioClip Memory, Physics Used Memory, Profiler Used Memory, Profiler Reserved Memory, and System Total Used Memory. The render preset also samples Shadow Casters Count, Visible Skinned Meshes Count, Render Textures Count, Render Textures Bytes, Used Textures Count, and Used Textures Bytes. A counter the running Unity version does not expose is listed in `unavailable` and does not fail the command. On 2021.3.45f2 the only unavailable names are App Resident Memory, App Committed Memory, and System Total Used Memory. AudioClip Count, AudioClip Memory, Physics Used Memory, and Visible Skinned Meshes Count are available on that editor. On 6000.3.10f1 every one of these counters is available.
+
+### Fixed
+- `scene set-transform` changes only the vectors you pass. `--rotation` alone no longer resets position and scale to `0,0,0`. The response leaves out the vectors you did not pass.
+- `read-console --type error` includes Exception and Assert entries as well as Error. `exception` and `assert` still match only that type, and each entry keeps its original type name. Accepted values are `log`, `warning`, `error`, `exception`, and `assert`; anything else is rejected.
+- `execute` compiles snippets with the Editor's scripting define symbols and always defines `UNITY_ASSERTIONS`, so `Debug.Assert` and `Debug.LogAssertion` log Assert entries instead of being compiled out.
+
 ## [0.5.6] - 2026-10-21
 
 ### Added

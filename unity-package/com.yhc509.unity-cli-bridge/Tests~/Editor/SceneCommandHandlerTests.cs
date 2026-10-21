@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityCli.Protocol;
 using UnityEditor;
@@ -68,6 +69,41 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
             AssertDirtySceneFailure(failure);
             Assert.That(target.transform.localPosition, Is.EqualTo(beforePosition));
+        }
+
+        [Test]
+        public void SetTransform_RotationOnly_LeavesPositionAndScaleUntouched()
+        {
+            const string argumentsJson = "{\"node\":\"/Target[0]\",\"rotation\":{\"x\":0,\"y\":30,\"z\":0}}";
+            GameObject target = PrepareTransformTarget(new Vector3(1f, 2f, 3f), Quaternion.identity, Vector3.one);
+
+            string json = new SceneCommandHandler().Handle(ProtocolConstants.CommandSceneSetTransform, argumentsJson);
+
+            AssertVector3(target.transform.localPosition, 1f, 2f, 3f);
+            AssertVector3(target.transform.localScale, 1f, 1f, 1f);
+            AssertEuler(target.transform.localEulerAngles, 0f, 30f, 0f);
+            JObject payload = JObject.Parse(json);
+            Assert.That(payload["position"], Is.Null);
+            Assert.That(payload["scale"], Is.Null);
+            AssertVectorToken(payload["rotation"], 0f, 30f, 0f);
+        }
+
+        [Test]
+        public void SetTransform_ScaleOnly_LeavesPositionAndRotationUntouched()
+        {
+            const string argumentsJson = "{\"node\":\"/Target[0]\",\"scale\":{\"x\":2,\"y\":3,\"z\":4}}";
+            Quaternion rotation = Quaternion.Euler(0f, 30f, 0f);
+            GameObject target = PrepareTransformTarget(new Vector3(1f, 2f, 3f), rotation, Vector3.one);
+
+            string json = new SceneCommandHandler().Handle(ProtocolConstants.CommandSceneSetTransform, argumentsJson);
+
+            AssertVector3(target.transform.localPosition, 1f, 2f, 3f);
+            AssertEuler(target.transform.localEulerAngles, 0f, 30f, 0f);
+            AssertVector3(target.transform.localScale, 2f, 3f, 4f);
+            JObject payload = JObject.Parse(json);
+            Assert.That(payload["position"], Is.Null);
+            Assert.That(payload["rotation"], Is.Null);
+            AssertVectorToken(payload["scale"], 2f, 3f, 4f);
         }
 
         [Test]
@@ -176,6 +212,39 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             {
                 AssetDatabase.CreateFolder("Assets", "UnityCliBridgeSceneCommandHandlerTests");
             }
+        }
+
+        private GameObject PrepareTransformTarget(Vector3 position, Quaternion rotation, Vector3 scale)
+        {
+            Scene scene = CreateSavedSceneWithTarget("Target", out GameObject target);
+            target.transform.localPosition = position;
+            target.transform.localRotation = rotation;
+            target.transform.localScale = scale;
+            Assert.That(EditorSceneManager.SaveScene(scene), Is.True);
+            Assert.That(scene.isDirty, Is.False);
+            return target;
+        }
+
+        private static void AssertVector3(Vector3 actual, float x, float y, float z)
+        {
+            Assert.That(actual.x, Is.EqualTo(x).Within(0.001f));
+            Assert.That(actual.y, Is.EqualTo(y).Within(0.001f));
+            Assert.That(actual.z, Is.EqualTo(z).Within(0.001f));
+        }
+
+        private static void AssertEuler(Vector3 actual, float x, float y, float z)
+        {
+            Assert.That(Mathf.DeltaAngle(x, actual.x), Is.EqualTo(0f).Within(0.05f));
+            Assert.That(Mathf.DeltaAngle(y, actual.y), Is.EqualTo(0f).Within(0.05f));
+            Assert.That(Mathf.DeltaAngle(z, actual.z), Is.EqualTo(0f).Within(0.05f));
+        }
+
+        private static void AssertVectorToken(JToken? token, float x, float y, float z)
+        {
+            Assert.That(token, Is.Not.Null);
+            Assert.That(token!.Value<float>("x"), Is.EqualTo(x).Within(0.001f));
+            Assert.That(token.Value<float>("y"), Is.EqualTo(y).Within(0.001f));
+            Assert.That(token.Value<float>("z"), Is.EqualTo(z).Within(0.001f));
         }
 
         private Scene CreateSavedSceneWithTarget(string targetName, out GameObject target, params Type[] components)

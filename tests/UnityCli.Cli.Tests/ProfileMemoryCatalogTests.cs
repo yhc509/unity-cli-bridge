@@ -45,4 +45,19 @@ public class ProfileMemoryCatalogTests
     {
         Assert.Contains(ProtocolConstants.CommandProfileMemory, CliCommandCatalog.GetSupportedProtocolCommands());
     }
+
+    [Fact]
+    public void ProfileMemoryTop_IsLiveWireCommand_NoForce_NoGraphics()
+    {
+        var descriptor = CliCommandCatalog.FindByCommand("profile memory top");
+        Assert.NotNull(descriptor);
+        Assert.Equal(ProtocolConstants.CommandProfileMemoryTop, descriptor!.ProtocolCommand);
+        Assert.Equal(ForceRule.None, descriptor.ForceRule);
+        Assert.True(descriptor.CanUseLive);
+        Assert.False(descriptor.CanUseLocal);
+        Assert.True(descriptor.IsAllowedWhileBusy);
+        Assert.False(CliCommandCatalog.RequiresGraphics(ProtocolConstants.CommandProfileMemoryTop));
+        Assert.Contains(ProtocolConstants.CommandProfileMemoryTop, CliCommandCatalog.GetSupportedProtocolCommands());
+        Assert.Contains("Editor-measured", descriptor.Summary);
+    }
 }

@@ -1,7 +1,10 @@
 #nullable enable
 using System;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityCli.Protocol;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace UnityCliBridge.Bridge.Editor.Tests
 {
@@ -62,6 +65,23 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(second, Is.Not.Null);
             Assert.That(second!.cacheHit, Is.True);
             Assert.That(second.compileMs, Is.EqualTo(0));
+        }
+
+        [Test]
+        public void Handle_LogAssertion_EmitsAssert()
+        {
+            LogAssert.Expect(LogType.Assert, new Regex("ucb-216"));
+            var handler = new ExecuteCodeHandler();
+            string argsJson = ProtocolJson.Serialize(new ExecuteCodeArgs
+            {
+                code = "UnityEngine.Debug.LogAssertion(\"ucb-216\");",
+                force = true,
+            });
+
+            string result = handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson);
+            ExecuteCodePayload? payload = ProtocolJson.Deserialize<ExecuteCodePayload>(result);
+            Assert.That(payload, Is.Not.Null);
+            Assert.That(payload!.success, Is.True);
         }
 
         [Test]

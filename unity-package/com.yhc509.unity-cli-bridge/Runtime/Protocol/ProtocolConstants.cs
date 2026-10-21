@@ -137,6 +137,7 @@ namespace UnityCli.Protocol
         public const string CommandProfileCaptureStop = "profile-capture-stop";
         public const string CommandProfileStatus = "profile-status";
         public const string CommandProfileMemory = "profile-memory";
+        public const string CommandProfileMemoryTop = "profile-memory-top";
         public const string CommandProfileMemorySnapshot = "profile-memory-snapshot";
         public const string CommandEditorQuit = "editor-quit";
         public const int DefaultQaWaitUntilTimeoutMs = 10_000;
@@ -180,6 +181,10 @@ namespace UnityCli.Protocol
         public const int DefaultProfileMemoryFrames = 30;
         public const double DefaultProfileMemoryThresholdPercent = 5.0;
         public const int DefaultProfileMemoryCompareLimit = 10;
+        public const int DefaultProfileMemoryTopLimit = 20;
+        public const int MaxProfileMemoryTopLimit = 100;
+        public const int MaxProfileMemoryTopScanPerType = 2000;
+        public const int MaxProfileMemoryTopVisitedPerType = 20000;
         public const int DefaultProfileStatsFrames = 60;
         public const int MaxProfileStatsFrames = 1000;
         public const int ProfileStatsTimeoutSeconds = 120;

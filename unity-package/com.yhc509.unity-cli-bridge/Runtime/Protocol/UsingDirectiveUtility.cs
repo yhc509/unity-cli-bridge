@@ -372,4 +372,61 @@ namespace UnityCli.Protocol
             return true;
         }
     }
+
+    /// <summary>
+    /// Compiler defines for <c>execute</c> snippets. Always includes UNITY_ASSERTIONS so
+    /// Debug.Assert and Debug.LogAssertion are not compiled out, then the Editor's active
+    /// scripting define symbols. Invalid tokens are dropped so one bad symbol cannot
+    /// break the compiler option.
+    /// </summary>
+    public static class ExecuteCompilerDefines
+    {
+        public const string Assertions = "UNITY_ASSERTIONS";
+
+        public static string BuildDefineOption(IReadOnlyList<string>? activeDefines)
+        {
+            var symbols = new List<string> { Assertions };
+            var seen = new HashSet<string>(StringComparer.Ordinal) { Assertions };
+            if (activeDefines != null)
+            {
+                for (int index = 0; index < activeDefines.Count; index++)
+                {
+                    string? raw = activeDefines[index];
+                    if (string.IsNullOrWhiteSpace(raw))
+                    {
+                        continue;
+                    }
+
+                    string symbol = raw.Trim();
+                    if (!IsIdentifier(symbol) || !seen.Add(symbol))
+                    {
+                        continue;
+                    }
+
+                    symbols.Add(symbol);
+                }
+            }
+
+            return "/define:" + string.Join(";", symbols);
+        }
+
+        private static bool IsIdentifier(string value)
+        {
+            if (value.Length == 0 || !(char.IsLetter(value[0]) || value[0] == '_'))
+            {
+                return false;
+            }
+
+            for (int index = 1; index < value.Length; index++)
+            {
+                char character = value[index];
+                if (!(char.IsLetterOrDigit(character) || character == '_'))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 }

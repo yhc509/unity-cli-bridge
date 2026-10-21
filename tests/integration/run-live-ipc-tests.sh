@@ -413,6 +413,23 @@ assert_output_matches() {
   return 0
 }
 
+assert_collapsed_vector() {
+  local name="$1"
+  local x="$2"
+  local y="$3"
+  local z="$4"
+  local collapsed
+  local pattern
+  collapsed="$(printf '%s' "$LAST_OUTPUT" | tr -d '[:space:]')"
+  pattern="\"${name}\":\\{\"x\":${x}(\\.0+)?,\"y\":${y}(\\.0+)?,\"z\":${z}(\\.0+)?\\}"
+  if ! printf '%s\n' "$collapsed" | grep -Eq "$pattern"; then
+    TEST_FAILURE="Expected ${name} (${x},${y},${z}) from: $LAST_COMMAND | output=$(compact_output "$LAST_OUTPUT")"
+    return 1
+  fi
+
+  return 0
+}
+
 extract_first_match() {
   local expression="$1"
   printf '%s\n' "$LAST_OUTPUT" | sed -nE "s/$expression/\\1/p" | head -n 1
@@ -1133,7 +1150,19 @@ test_scene_set_transform() {
   assert_output_matches '"x": 1(\.0+)?' || return 1
   assert_output_matches '"y": 2(\.0+)?' || return 1
   assert_output_matches '"z": 3(\.0+)?' || return 1
-  TEST_MESSAGE="scene set-transform updated localPosition in SampleScene"
+
+  run_cli_main scene set-transform --node "$object_path" --rotation "0,30,0"
+  assert_success_response || return 1
+  assert_output_contains '"rotation"' || return 1
+  assert_output_not_contains '"position"' || return 1
+  assert_output_not_contains '"scale"' || return 1
+
+  run_cli_main scene inspect --path "$SCENE_TEST_PATH" --node "$object_path" --with-values
+  assert_success_response || return 1
+  assert_output_contains "\"path\": \"$object_path\"" || return 1
+  assert_collapsed_vector "localPosition" "1" "2" "3" || return 1
+  assert_collapsed_vector "localScale" "1" "1" "1" || return 1
+  TEST_MESSAGE="scene set-transform updated localPosition and left scale untouched for rotation-only"
 }
 
 test_scene_add_component() {
@@ -1379,6 +1408,44 @@ EOF
   TEST_MESSAGE="read-console returned the freshly written log entry"
 }
 
+test_execute_log_assertion() {
+  local code_file="$TEMP_DIR/code/execute-assert.cs"
+  local marker="ucb-216"
+
+  cat >"$code_file" <<EOF
+UnityEngine.Debug.LogAssertion("$marker");
+EOF
+
+  run_cli_main execute --file "$code_file" --force
+  assert_success_response || return 1
+  sleep 1
+
+  run_cli_main read-console --type assert --limit 50
+  assert_success_response || return 1
+  assert_output_contains "$marker" || return 1
+  assert_output_contains "\"type\": \"Assert\"" || return 1
+  TEST_MESSAGE="execute keeps Debug.LogAssertion and read-console --type assert returns it"
+}
+
+test_console_read_error_includes_exception() {
+  local code_file="$TEMP_DIR/code/console-exception.cs"
+  local marker="ucb-208"
+
+  cat >"$code_file" <<EOF
+UnityEngine.Debug.LogException(new System.Exception("$marker"));
+EOF
+
+  run_cli_main execute --file "$code_file" --force
+  assert_success_response || return 1
+  sleep 1
+
+  run_cli_main read-console --type error --limit 50
+  assert_success_response || return 1
+  assert_output_contains "$marker" || return 1
+  assert_output_contains "\"type\": \"Exception\"" || return 1
+  TEST_MESSAGE="read-console --type error includes a logged exception"
+}
+
 test_editor_screenshot_camera() {
   local camera_name=""
   ensure_scene_test_path || return 1
@@ -1523,6 +1590,20 @@ test_package_remove_local() {
   TEST_MESSAGE="package remove deleted the temporary local package"
 }
 
+test_profile_memory_top() {
+  run_cli_main profile memory top --limit 5 --scope loaded
+  assert_success_response || return 1
+  assert_output_contains "\"totals\"" || return 1
+  assert_output_contains "\"top\"" || return 1
+  assert_output_contains "Editor-measured sizes" || return 1
+  assert_output_contains "differ from player builds" || return 1
+
+  run_cli_main profile memory top --type Mesh --limit 5 --scope loaded
+  assert_success_response || return 1
+  assert_output_contains "\"type\": \"Mesh\"" || return 1
+  TEST_MESSAGE="profile memory top returns per-type totals and the largest objects"
+}
+
 test_editor_compile() {
   run_cli_main compile
   assert_success_response || return 1
@@ -1559,7 +1640,7 @@ register_all_tests() {
   register_test "scene_inspect_node_filter" "scene" "scene inspect --node handles root sentinels and subtrees" "no" "test_scene_inspect_node_filter"
   register_test "scene_patch" "scene" "scene patch applies an add-gameobject spec" "no" "test_scene_patch"
   register_test "scene_add_object" "scene" "scene add-object creates a node with components" "no" "test_scene_add_object"
-  register_test "scene_set_transform" "scene" "scene set-transform updates localPosition" "no" "test_scene_set_transform"
+  register_test "scene_set_transform" "scene" "scene set-transform updates only the vectors that were passed" "no" "test_scene_set_transform"
   register_test "scene_add_component" "scene" "scene add-component attaches a BoxCollider" "no" "test_scene_add_component"
   register_test "scene_remove_component" "scene" "scene remove-component removes a BoxCollider" "yes" "test_scene_remove_component"
 
@@ -1572,6 +1653,8 @@ register_all_tests() {
   register_test "editor_execute_menu" "editor" "execute-menu invokes Assets/Refresh" "no" "test_editor_execute_menu"
   register_test "editor_execute_code" "editor" "execute runs a temporary C# file" "no" "test_editor_execute_code"
   register_test "console_read_recent_log" "console" "read-console returns a freshly written log" "no" "test_console_read_recent_log"
+  register_test "console_read_error_includes_exception" "console" "read-console --type error includes Exception entries" "no" "test_console_read_error_includes_exception"
+  register_test "execute_log_assertion" "console" "execute Debug.LogAssertion is returned by read-console --type assert" "no" "test_execute_log_assertion"
   register_test "editor_screenshot_camera" "editor" "screenshot captures a PNG from a camera added to SampleScene" "no" "test_editor_screenshot_camera"
   register_test "editor_play" "editor" "play enters Play Mode from SampleScene" "no" "test_editor_play"
   register_test "editor_pause" "editor" "pause suspends Play Mode from SampleScene" "no" "test_editor_pause"
@@ -1584,6 +1667,8 @@ register_all_tests() {
   register_test "package_remove_local" "package" "package remove deletes a temporary local package" "yes" "test_package_remove_local"
 
   register_test "editor_compile" "editor" "compile triggers a script compilation request" "no" "test_editor_compile"
+
+  register_test "profile_memory_top" "editor" "profile memory top lists the largest loaded objects" "no" "test_profile_memory_top"
 }
 
 list_selected_tests() {

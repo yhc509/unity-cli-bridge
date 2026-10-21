@@ -8,6 +8,19 @@ namespace UnityCli.Cli.Services;
 
 public static partial class CliArgumentParser
 {
+    private static string RequireConsoleType(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "log" => "log",
+            "warning" => "warning",
+            "error" => "error",
+            "exception" => "exception",
+            "assert" => "assert",
+            _ => throw new CliUsageException("`--type` must be `log`, `warning`, `error`, `exception`, or `assert`."),
+        };
+    }
+
     private static string RequireScreenshotView(string value)
     {
         return value.ToLowerInvariant() switch
@@ -676,6 +689,7 @@ public static partial class CliArgumentParser
             CommandKind.ProfileCompare => "profile compare",
             CommandKind.ProfileMemory => "profile memory",
             CommandKind.ProfileMemoryCompare => "profile memory compare",
+            CommandKind.ProfileMemoryTop => "profile memory top",
             CommandKind.ProfileMemorySnapshot => "profile memory snapshot",
             CommandKind.EditorLaunch => "editor launch",
             CommandKind.EditorStop => "editor stop",

@@ -1,5 +1,6 @@
 using UnityCli.Cli.Models;
 using UnityCli.Cli.Services;
+using UnityCli.Protocol;
 using Xunit;
 
 namespace UnityCli.Cli.Tests;
@@ -196,6 +197,59 @@ public class ProfileParserTests
     public void Parse_ProfileMemory_UnknownSub_Throws()
     {
         Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(["profile", "memory", "bogus"]));
+    }
+
+    [Fact]
+    public void Parse_ProfileMemoryTop_Defaults()
+    {
+        var parsed = CliArgumentParser.Parse(["profile", "memory", "top"]);
+        Assert.Equal(CommandKind.ProfileMemoryTop, parsed.Kind);
+        Assert.Null(parsed.ProfileMemoryTopType);
+        Assert.Null(parsed.ProfileMemoryTopScope);
+        Assert.Null(parsed.ProfileLimit);
+
+        ProfileMemoryTopArgs args = ProtocolJson.Deserialize<ProfileMemoryTopArgs>(parsed.ToEnvelope().argumentsJson);
+        Assert.Equal(ProtocolConstants.CommandProfileMemoryTop, parsed.ToEnvelope().command);
+        Assert.Equal(string.Empty, args.type);
+        Assert.Equal(0, args.limit);
+        Assert.Equal(string.Empty, args.scope);
+    }
+
+    [Fact]
+    public void Parse_ProfileMemoryTop_NormalizesTypeScopeAndLimit()
+    {
+        var parsed = CliArgumentParser.Parse(
+            ["profile", "memory", "top", "--type", "texture2d", "--limit", "5", "--scope", "ASSETS"]);
+        Assert.Equal("Texture2D", parsed.ProfileMemoryTopType);
+        Assert.Equal(5, parsed.ProfileLimit);
+        Assert.Equal("assets", parsed.ProfileMemoryTopScope);
+
+        ProfileMemoryTopArgs args = ProtocolJson.Deserialize<ProfileMemoryTopArgs>(parsed.ToEnvelope().argumentsJson);
+        Assert.Equal("Texture2D", args.type);
+        Assert.Equal(5, args.limit);
+        Assert.Equal("assets", args.scope);
+    }
+
+    [Theory]
+    [InlineData("bogus")]
+    [InlineData("GameObject")]
+    [InlineData("")]
+    public void Parse_ProfileMemoryTop_RejectsUnknownType(string type)
+    {
+        var ex = Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(
+            ["profile", "memory", "top", "--type", type]));
+        Assert.Contains("Texture2D", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_ProfileMemoryTop_RejectsUnknownScopeAndLimit()
+    {
+        Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(
+            ["profile", "memory", "top", "--scope", "all"]));
+        Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(
+            ["profile", "memory", "top", "--limit", "0"]));
+        Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(
+            ["profile", "memory", "top", "--limit", "101"]));
     }
 
     [Fact]

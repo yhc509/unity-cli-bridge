@@ -3,10 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Newtonsoft.Json;
 using Unity.Profiling;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Profiling;
 // Unity.Profiling.Memory shipped in 2022.2. 2022.1 and 2021.3 only have the
 // experimental types. On 2022.2 and later those experimental types are obsolete,
 // and current Unity 6 makes them a compile error, so the alias cannot be shared.
@@ -21,30 +23,9 @@ namespace UnityCliBridge.Bridge.Editor
     internal sealed partial class ProfileCommandHandler
     {
         // Counter names missing on the current Unity version resolve to recorder.Valid == false and are
-        // reported through `unavailable` instead of failing the command. Prune dead names once measured live.
+        // reported through `unavailable` instead of failing the command. Names live in ProfileCounterCatalog.
         private static readonly ProfileCounterSpec[] MemoryReportCounters =
-        {
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Total Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "System Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "GC Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "GC Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Gfx Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Gfx Reserved Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Audio Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Video Used Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Texture Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Mesh Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Material Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Material Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "AnimationClip Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "AnimationClip Memory", "bytes"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Asset Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Scene Object Count", "count"),
-            new ProfileCounterSpec(ProfilerCategory.Memory, "Object Count", "count"),
-        };
+            BuildCounterSpecs(ProfilerCategory.Memory, ProfileCounterCatalog.MemoryReport);
 
         private void StartMemoryDeferred(
             ProfileMemoryArgs args,
@@ -341,6 +322,214 @@ namespace UnityCliBridge.Bridge.Editor
                 EditorTickPump.Remove(Watchdog);
                 Finish(() => CreateFailureResponse(requestId, projectHash, exception, stopwatch.ElapsedMilliseconds));
             }
+        }
+
+        // Tests inject the object list so ranking does not depend on the editor's asset database.
+        internal Func<string, UnityEngine.Object[]>? MemoryTopObjectSource;
+
+        // 0 uses the protocol cap. Tests set a smaller value.
+        internal int MemoryTopScanCap;
+        internal int MemoryTopVisitCap;
+
+        private string HandleMemoryTop(string argumentsJson)
+        {
+            ProfileMemoryTopArgs args = ProtocolJson.Deserialize<ProfileMemoryTopArgs>(argumentsJson)
+                ?? new ProfileMemoryTopArgs();
+            if (!ProfileMemoryTopCatalog.TryNormalizeScope(args.scope, out string scope))
+            {
+                throw new CommandFailureException(
+                    ProtocolConstants.ErrorProfileFailed,
+                    "`--scope` must be `loaded`, `scene`, or `assets`.");
+            }
+
+            string? requestedType = null;
+            if (!string.IsNullOrWhiteSpace(args.type))
+            {
+                if (!ProfileMemoryTopCatalog.TryNormalizeType(args.type, out string normalized))
+                {
+                    throw new CommandFailureException(
+                        ProtocolConstants.ErrorProfileFailed,
+                        "`--type` must be one of " + ProfileMemoryTopCatalog.AcceptedTypeList() + ".");
+                }
+
+                requestedType = normalized;
+            }
+
+            int limit = args.limit > 0
+                ? Math.Min(args.limit, ProtocolConstants.MaxProfileMemoryTopLimit)
+                : ProtocolConstants.DefaultProfileMemoryTopLimit;
+            string[] typeNames = requestedType == null
+                ? ProfileMemoryTopCatalog.DefaultTypeNames
+                : new[] { requestedType };
+            var measurements = new List<ProfileMemoryTopMeasurement>();
+            var warnings = new List<string>();
+            bool scanTruncated = false;
+            for (int index = 0; index < typeNames.Length; index++)
+            {
+                CollectMemoryTop(typeNames[index], scope, measurements, warnings, ref scanTruncated);
+            }
+
+            ProfileMemoryTopPayload payload = ProfileMemoryTopRanking.Build(
+                measurements,
+                limit,
+                EditorApplication.isPlaying ? "playmode" : "editmode",
+                Application.unityVersion,
+                scope,
+                requestedType,
+                scanTruncated,
+                warnings);
+            return JsonConvert.SerializeObject(payload, BridgeJsonSettings.CamelCaseIgnoreNull);
+        }
+
+        private void CollectMemoryTop(
+            string typeName,
+            string scope,
+            List<ProfileMemoryTopMeasurement> measurements,
+            List<string> warnings,
+            ref bool scanTruncated)
+        {
+            UnityEngine.Object[] objects = MemoryTopObjectSource != null
+                ? MemoryTopObjectSource(typeName) ?? Array.Empty<UnityEngine.Object>()
+                : FindMemoryTopObjects(typeName);
+            int scanCap = MemoryTopScanCap > 0
+                ? MemoryTopScanCap
+                : ProtocolConstants.MaxProfileMemoryTopScanPerType;
+            int visitCap = MemoryTopVisitCap > 0
+                ? MemoryTopVisitCap
+                : ProtocolConstants.MaxProfileMemoryTopVisitedPerType;
+            int measured = 0;
+            int visited = 0;
+            for (int index = 0; index < objects.Length; index++)
+            {
+                UnityEngine.Object obj = objects[index];
+                if (obj == null)
+                {
+                    continue;
+                }
+
+                visited++;
+                if (visited > visitCap)
+                {
+                    scanTruncated = true;
+                    warnings.Add(
+                        "Scan stopped after visiting "
+                        + visitCap
+                        + " "
+                        + typeName
+                        + " objects; totals and the top list may be incomplete.");
+                    return;
+                }
+
+                string path = AssetDatabase.GetAssetPath(obj);
+                bool hideAndDontSave = (obj.hideFlags & HideFlags.HideAndDontSave) == HideFlags.HideAndDontSave;
+                bool persistent = EditorUtility.IsPersistent(obj);
+                if (!ProfileMemoryTopFilter.Include(scope, hideAndDontSave, path, persistent))
+                {
+                    continue;
+                }
+
+                if (measured >= scanCap)
+                {
+                    scanTruncated = true;
+                    warnings.Add(
+                        "Scan stopped after "
+                        + scanCap
+                        + " "
+                        + typeName
+                        + " objects; totals and the top list may be incomplete.");
+                    return;
+                }
+
+                measured++;
+                var measurement = new ProfileMemoryTopMeasurement
+                {
+                    type = obj.GetType().Name,
+                    name = obj.name ?? string.Empty,
+                    path = string.IsNullOrEmpty(path) ? null : path,
+                    bytes = Profiler.GetRuntimeMemorySizeLong(obj),
+                };
+                FillMemoryTopDetail(obj, measurement);
+                measurements.Add(measurement);
+            }
+        }
+
+        private static UnityEngine.Object[] FindMemoryTopObjects(string typeName)
+        {
+            Type? type = ResolveMemoryTopType(typeName);
+            if (type == null)
+            {
+                throw new CommandFailureException(
+                    ProtocolConstants.ErrorProfileFailed,
+                    "Unsupported profile memory top type: " + typeName);
+            }
+
+            return Resources.FindObjectsOfTypeAll(type);
+        }
+
+        private static Type? ResolveMemoryTopType(string typeName)
+        {
+            switch (typeName)
+            {
+                case "Texture":
+                    return typeof(Texture);
+                case "Texture2D":
+                    return typeof(Texture2D);
+                case "RenderTexture":
+                    return typeof(RenderTexture);
+                case "Cubemap":
+                    return typeof(Cubemap);
+                case "Mesh":
+                    return typeof(Mesh);
+                case "AudioClip":
+                    return typeof(AudioClip);
+                case "Material":
+                    return typeof(Material);
+                case "AnimationClip":
+                    return typeof(AnimationClip);
+                case "Shader":
+                    return typeof(Shader);
+                case "Sprite":
+                    return typeof(Sprite);
+                default:
+                    return null;
+            }
+        }
+
+        private static void FillMemoryTopDetail(UnityEngine.Object obj, ProfileMemoryTopMeasurement measurement)
+        {
+            if (obj is Texture texture)
+            {
+                measurement.width = texture.width;
+                measurement.height = texture.height;
+                measurement.mipCount = texture.mipmapCount;
+                measurement.format = DescribeTextureFormat(texture);
+            }
+
+            if (obj is Mesh mesh)
+            {
+                measurement.vertexCount = mesh.vertexCount;
+                measurement.subMeshCount = mesh.subMeshCount;
+            }
+        }
+
+        private static string? DescribeTextureFormat(Texture texture)
+        {
+            if (texture is Texture2D texture2D)
+            {
+                return texture2D.format.ToString();
+            }
+
+            if (texture is Cubemap cubemap)
+            {
+                return cubemap.format.ToString();
+            }
+
+            if (texture is RenderTexture renderTexture)
+            {
+                return renderTexture.format.ToString();
+            }
+
+            return null;
         }
     }
 }
