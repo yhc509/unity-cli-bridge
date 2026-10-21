@@ -1571,6 +1571,20 @@ test_package_remove_local() {
   TEST_MESSAGE="package remove deleted the temporary local package"
 }
 
+test_profile_memory_top() {
+  run_cli_main profile memory top --limit 5 --scope loaded
+  assert_success_response || return 1
+  assert_output_contains "\"totals\"" || return 1
+  assert_output_contains "\"top\"" || return 1
+  assert_output_contains "Editor-measured sizes" || return 1
+  assert_output_contains "differ from player builds" || return 1
+
+  run_cli_main profile memory top --type Mesh --limit 5 --scope loaded
+  assert_success_response || return 1
+  assert_output_contains "\"type\": \"Mesh\"" || return 1
+  TEST_MESSAGE="profile memory top returns per-type totals and the largest objects"
+}
+
 test_editor_compile() {
   run_cli_main compile
   assert_success_response || return 1
@@ -1633,6 +1647,8 @@ register_all_tests() {
   register_test "package_remove_local" "package" "package remove deletes a temporary local package" "yes" "test_package_remove_local"
 
   register_test "editor_compile" "editor" "compile triggers a script compilation request" "no" "test_editor_compile"
+
+  register_test "profile_memory_top" "editor" "profile memory top lists the largest loaded objects" "no" "test_profile_memory_top"
 }
 
 list_selected_tests() {

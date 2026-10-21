@@ -689,6 +689,7 @@ public static partial class CliArgumentParser
             CommandKind.ProfileCompare => "profile compare",
             CommandKind.ProfileMemory => "profile memory",
             CommandKind.ProfileMemoryCompare => "profile memory compare",
+            CommandKind.ProfileMemoryTop => "profile memory top",
             CommandKind.ProfileMemorySnapshot => "profile memory snapshot",
             CommandKind.EditorLaunch => "editor launch",
             CommandKind.EditorStop => "editor stop",

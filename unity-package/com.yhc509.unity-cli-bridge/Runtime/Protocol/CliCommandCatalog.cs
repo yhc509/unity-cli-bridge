@@ -348,6 +348,24 @@ namespace UnityCli.Protocol
                     "Memory and GC values are bytes; count counters are object counts.",
                 }),
             new CliCommandDescriptor(
+                "profile memory top",
+                "profile memory top [--type <Texture|Texture2D|RenderTexture|Cubemap|Mesh|AudioClip|Material|AnimationClip|Shader|Sprite>] [--limit <n> (default: 20)] [--scope <loaded|scene|assets> (default: loaded)]",
+                "Lists the largest loaded objects by Profiler.GetRuntimeMemorySizeLong, with per-type totals and the top N objects. Editor-measured sizes include editor-only copies and differ from player builds.",
+                CliCommandGroup.Diagnostics,
+                ProtocolConstants.CommandProfileMemoryTop,
+                canUseLocal: false,
+                canUseLive: true,
+                isAllowedWhileBusy: true,
+                notes: new[]
+                {
+                    "Synchronous. Uses Resources.FindObjectsOfTypeAll and Profiler.GetRuntimeMemorySizeLong. A size of 0 means the profiler could not measure that object.",
+                    "Editor-measured sizes include editor-only copies and differ from player builds. Compare results taken in the same mode.",
+                    "HideFlags.HideAndDontSave objects and Unity built-in resources (unity editor resources, unity default resources, unity_builtin_extra) are skipped.",
+                    "Omit --type to scan Texture2D, RenderTexture, Cubemap, Mesh, AudioClip, Material, AnimationClip, and Shader. Pass Texture to include every Texture subclass in one pass.",
+                    "--scope loaded (default) keeps every remaining object. scene keeps non-persistent objects. assets keeps persistent objects under Assets/ or Packages/.",
+                    "--limit defaults to 20 and cannot exceed 100. The scan measures at most 2000 objects of each type and stops after visiting 20000; truncated is true when either cap or the limit cuts the result.",
+                }),
+            new CliCommandDescriptor(
                 "profile memory compare",
                 "profile memory compare <baseReportId> <headReportId> [--threshold <percent> (default: 5.0)] [--limit <n> (default: 10)]",
                 "Diffs two memory reports by reading both sidecar JSON files locally — no Editor round-trip. Returns a regression/improvement/unchanged verdict plus the per-counter byte/count deltas that explain it.",

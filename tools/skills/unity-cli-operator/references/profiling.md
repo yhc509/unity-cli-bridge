@@ -22,8 +22,9 @@ When a memory leak is the suspect, use the memory loop instead of the frame-time
 1. Create a baseline reportId with `unity-cli profile memory`. Reproduce the suspect flow, then run it again for a head reportId. Both must be the **same mode** (both playmode, or both editmode).
 2. Compare with `unity-cli profile memory compare <baseReportId> <headReportId>`. The verdict uses the `Total Used Memory` median (`--threshold`, default 5%), and `increases` says which counters grew. This works with the Editor closed.
 3. An asset type whose Count and Memory rise together (for example `Texture Count` plus `Texture Memory`) is the first leak candidate. A rise in `GC Used Memory` means managed objects are still alive. A rise in `GC Reserved Memory` alone is heap growth. Do not use `Total Reserved` or `System Used` to call a leak.
-4. Take a `.snap` with `unity-cli profile memory snapshot` only when the trend is bad. It needs `com.unity.memoryprofiler` (otherwise it is rejected with an install hint), it does not run at the same time as profile capture, and analysis happens in Unity's Memory Profiler window. The CLI does not parse `.snap`. The file can exceed 1 GB and is not deleted automatically, so delete it when you are done.
-5. If `notes` warns about a mode, Unity version, or frame-count mismatch, do not trust the result as-is. If `deltaPercentAvailable` is false, ignore the percent and read the absolute `delta`.
+4. Name the objects with `unity-cli profile memory top` (`--type Texture2D|Mesh|AudioClip|Material|AnimationClip|...`, `--limit`, default 20, `--scope loaded|scene|assets`). `totals` is count and bytes per type. `top` is the largest objects, with asset path when there is one, plus width/height/format/mipCount for textures and vertexCount/subMeshCount for meshes. These sizes are Editor measurements and differ from player builds. Compare the same mode with the same mode.
+5. Take a `.snap` with `unity-cli profile memory snapshot` only when the trend is bad. It needs `com.unity.memoryprofiler` (otherwise it is rejected with an install hint), it does not run at the same time as profile capture, and analysis happens in Unity's Memory Profiler window. The CLI does not parse `.snap`. The file can exceed 1 GB and is not deleted automatically, so delete it when you are done.
+6. If `notes` warns about a mode, Unity version, or frame-count mismatch, do not trust the result as-is. If `deltaPercentAvailable` is false, ignore the percent and read the absolute `delta`.
 
 For an unattended regression with the Editor launched by you, use `editor launch` (headless by default), then `play`, capture or memory, `stop`, `editor stop`, and a local `compare`. The full pipeline and the `LIVE_UNAVAILABLE` retry rule during a domain reload are in section 12 (`Headless regression pipeline`) below.
 
@@ -252,6 +253,8 @@ unity-cli profile memory                          # baseline reportId
 # Reproduce the suspect flow (play, repeat scene loads, let time pass)
 unity-cli profile memory                          # head reportId
 unity-cli profile memory compare <base> <head>
+unity-cli profile memory top --limit 20
+unity-cli profile memory top --type Texture2D --scope assets
 ```
 
 How to read it:
@@ -264,6 +267,7 @@ How to read it:
 - When `deltaPercentAvailable` is false, ignore the percent and read the absolute `delta`. The verdict is fixed at `unchanged` in that case.
 - The `unavailable` array is only counters that Unity version does not have. It is not a failure. If **`Total Used Memory` is in that array, the verdict is meaningless**, so judge from the individual counters.
 - The Editor-measurement limit in section 0 applies here too. The Editor forces textures read/write, so texture memory is inflated — read the change, not the absolute value.
+- `profile memory top` answers which objects hold those bytes. `totals` sums count and bytes per type after hidden and built-in objects are skipped. `top` is the largest remaining objects (default 20). Texture entries add width, height, format, and mipCount. Mesh entries add vertexCount and subMeshCount. The `note` field is the reminder that Editor sizes differ from player builds. `truncated` means the limit or the scan cap cut the list. `--scope scene` is non-persistent objects; `--scope assets` is persistent objects under `Assets/` or `Packages/`.
 
 Move to the precise step only when the trend is bad:
 
