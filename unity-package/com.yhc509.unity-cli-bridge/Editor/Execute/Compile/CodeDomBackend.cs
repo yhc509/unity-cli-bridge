@@ -17,6 +17,19 @@ namespace UnityCliBridge.Bridge.Editor
     {
         public const string BackendId = "codedom";
 
+        private readonly string? _responseFileDirectory;
+
+        public CodeDomBackend()
+            : this(null)
+        {
+        }
+
+        /// <param name="responseFileDirectory">Where the response file goes; the temp directory when null.</param>
+        public CodeDomBackend(string? responseFileDirectory)
+        {
+            _responseFileDirectory = responseFileDirectory;
+        }
+
         public string Id
         {
             get { return BackendId; }
@@ -24,29 +37,50 @@ namespace UnityCliBridge.Bridge.Editor
 
         public CompileResult TryCompile(CompileRequest request)
         {
-            using var provider = new CSharpCodeProvider();
             // Unity's CodeDOM host is mcs, which rejects /langversion:9.0. ToCompilerOption
             // maps that project default (and anything above 7.2) to /langversion:latest.
             // /define always includes UNITY_ASSERTIONS so Debug.Assert and Debug.LogAssertion
             // are kept, plus the Editor's active scripting define symbols.
-            string compilerOptions = CSharpLanguageVersion.ToCompilerOption(request.LanguageVersion)
-                + " "
-                + ExecuteCompilerDefines.BuildDefineOption(request.ScriptingDefines);
+            string languageOption = CSharpLanguageVersion.ToCompilerOption(request.LanguageVersion);
+            string defineOption = ExecuteCompilerDefines.BuildDefineOption(request.ScriptingDefines);
+            string compilerOptions = languageOption + " " + defineOption;
+
+            // References and options go through a response file (#220). CodeDOM would otherwise
+            // put every reference on the mcs command line as /r:"path", which passes Windows'
+            // 32,767-character limit at roughly 260 loaded assemblies. ReferencedAssemblies stays
+            // empty: CodeDOM adds no default references either way (it only appends /noconfig, and
+            // never /nostdlib), and mcs splices @file arguments in before "--", so mcs sees the
+            // same references in the same order with the same options.
+            string responseFilePath = ResponseFileWriter.CreateTempPath(
+                _responseFileDirectory ?? System.IO.Path.GetTempPath());
+            try
+            {
+                ResponseFileWriter.Write(
+                    responseFilePath,
+                    ResponseFileWriter.BuildCompilerArguments(request.ReferencePaths, languageOption, defineOption));
+                return Compile(request.Source, ResponseFileWriter.ToCommandLineArgument(responseFilePath), compilerOptions);
+            }
+            finally
+            {
+                ResponseFileWriter.TryDelete(responseFilePath);
+            }
+        }
+
+        /// <param name="commandLineOptions">What CodeDOM puts on the mcs command line (the <c>@rsp</c> argument).</param>
+        /// <param name="compilerOptions">The effective options, reported in results and failure messages.</param>
+        private static CompileResult Compile(string source, string commandLineOptions, string compilerOptions)
+        {
+            using var provider = new CSharpCodeProvider();
             var parameters = new CompilerParameters
             {
                 GenerateInMemory = true,
                 GenerateExecutable = false,
                 IncludeDebugInformation = false,
-                CompilerOptions = compilerOptions,
+                CompilerOptions = commandLineOptions,
                 TempFiles = new TempFileCollection(System.IO.Path.GetTempPath(), keepFiles: false),
             };
 
-            foreach (string referencePath in request.ReferencePaths)
-            {
-                parameters.ReferencedAssemblies.Add(referencePath);
-            }
-
-            CompilerResults result = provider.CompileAssemblyFromSource(parameters, request.Source);
+            CompilerResults result = provider.CompileAssemblyFromSource(parameters, source);
             if (result.Errors.HasErrors)
             {
                 return CompileResult.CompileError(
