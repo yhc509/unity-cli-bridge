@@ -19,15 +19,18 @@ namespace UnityCliBridge.Bridge.Editor
         {
             // The cache key stays a hash of the wrapped source (see ExecuteCodeHandler).
             // Language version and scripting defines are fixed for the domain, so a cache hit
-            // still skips this compile.
+            // still skips this compile. The rsp's -define/-unsafe/-nowarn are only used by the
+            // Roslyn host; CodeDOM keeps its options.
+            string responseFile = ReadProjectResponseFile();
             return new CompileRequest(
                 source,
-                ResolveProjectLanguageVersion(),
+                CSharpLanguageVersion.Resolve(responseFile, ReadAdditionalCompilerArguments()),
                 ReadActiveScriptingDefines(),
-                CollectLoadedAssemblyReferences());
+                CollectLoadedAssemblyReferences(),
+                ProjectCompilerOptions.Parse(responseFile));
         }
 
-        private static string[] CollectLoadedAssemblyReferences()
+        internal static string[] CollectLoadedAssemblyReferences()
         {
             var references = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -62,7 +65,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
-        private static string ResolveProjectLanguageVersion()
+        private static string ReadProjectResponseFile()
         {
             string responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "csc.rsp"));
             if (string.IsNullOrEmpty(responseFile))
@@ -70,7 +73,7 @@ namespace UnityCliBridge.Bridge.Editor
                 responseFile = ReadTextIfExists(Path.Combine(Application.dataPath, "mcs.rsp"));
             }
 
-            return CSharpLanguageVersion.Resolve(responseFile, ReadAdditionalCompilerArguments());
+            return responseFile;
         }
 
         private static string ReadTextIfExists(string path)

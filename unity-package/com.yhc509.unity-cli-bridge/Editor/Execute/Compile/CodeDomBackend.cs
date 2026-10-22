@@ -15,7 +15,7 @@ namespace UnityCliBridge.Bridge.Editor
     /// </summary>
     internal sealed class CodeDomBackend : ICompileBackend
     {
-        public const string BackendId = "codedom";
+        public const string BackendId = CompileBackendIds.CodeDom;
 
         public string Id
         {

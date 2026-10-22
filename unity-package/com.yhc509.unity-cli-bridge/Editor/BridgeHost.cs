@@ -151,7 +151,7 @@ namespace UnityCliBridge.Bridge.Editor
         // The bridge must run in the main editor process only — GUI or headless alike.
         // AssetImportWorker/MPE secondary processes share the same projectRoot and would
         // fight over the socket name and registry entry if the bridge started there.
-        private static bool IsSecondaryUnityProcess()
+        internal static bool IsSecondaryUnityProcess()
         {
             try
             {
