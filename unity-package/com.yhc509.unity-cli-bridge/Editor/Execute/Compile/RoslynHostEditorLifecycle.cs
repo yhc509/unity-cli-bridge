@@ -30,9 +30,12 @@ namespace UnityCliBridge.Bridge.Editor
     /// <list type="bullet">
     /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
     /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
-    /// <item>After a reload (first editor tick): orphan cleanup, then the prewarm policy's start, both
-    /// off the main thread. A one-shot <c>EditorApplication.update</c> callback rather than
-    /// <c>delayCall</c>, which rides the inspector-update cycle and starves in an unfocused GUI editor.</item>
+    /// <item>After a reload (<c>afterAssemblyReload</c>, or the first editor tick if that never
+    /// fires): orphan cleanup, then the prewarm policy's start, both off the main thread. The
+    /// event fires while the editor is still finishing the reload, so the host overlaps that work
+    /// instead of starting after it (6000.3: the first miss right after a reload went from ~476 ms
+    /// to ~332 ms). Not <c>delayCall</c>, which rides the inspector-update cycle and starves in an
+    /// unfocused GUI editor.</item>
     /// <item><c>quitting</c>: quit, then kill.</item>
     /// </list>
     /// Entering Play Mode without a domain reload fires none of these, so the host stays.
@@ -44,6 +47,7 @@ namespace UnityCliBridge.Bridge.Editor
         private static readonly RoslynHostSupervisor? _supervisor;
         private static readonly RoslynHostLauncherOptions? _launcherOptions;
         private static readonly string? _setupError;
+        private static bool _domainLoaded;
 
         static RoslynHostEditorLifecycle()
         {
@@ -89,7 +93,8 @@ namespace UnityCliBridge.Bridge.Editor
                     });
                 AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
                 EditorApplication.quitting += OnQuitting;
-                EditorApplication.update += OnFirstEditorTick;
+                AssemblyReloadEvents.afterAssemblyReload += OnDomainLoaded;
+                EditorApplication.update += OnDomainLoaded;
             }
             catch (Exception ex)
             {
@@ -131,18 +136,16 @@ namespace UnityCliBridge.Bridge.Editor
             return new CompileBackendSelector(codeDom, Array.Empty<ICompileBackend>(), reason);
         }
 
-        private static void OnFirstEditorTick()
-        {
-            EditorApplication.update -= OnFirstEditorTick;
-            OnDomainLoaded();
-        }
-
         private static void OnDomainLoaded()
         {
-            if (_supervisor == null)
+            AssemblyReloadEvents.afterAssemblyReload -= OnDomainLoaded;
+            EditorApplication.update -= OnDomainLoaded;
+            if (_supervisor == null || _domainLoaded)
             {
                 return;
             }
+
+            _domainLoaded = true;
 
             EnsureMainThreadInputs();
             _supervisor.OnDomainLoaded();

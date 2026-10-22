@@ -376,7 +376,7 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Domain-load entry (main thread, first editor tick): orphan cleanup always runs first on a
+        /// Domain-load entry (main thread, after the assembly reload): orphan cleanup always runs first on a
         /// background thread; the host starts right after it when the prewarm policy says so.
         /// </summary>
         public void OnDomainLoaded()
