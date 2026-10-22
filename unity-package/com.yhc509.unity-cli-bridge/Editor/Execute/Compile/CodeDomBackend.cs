@@ -70,17 +70,9 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             var loadWatch = System.Diagnostics.Stopwatch.StartNew();
-            bool producedAssembly;
-            Assembly? assembly;
-            string? failure;
-            try
-            {
-                producedAssembly = TryGetCompiledAssembly(result, out assembly, out failure) && assembly != null;
-            }
-            finally
-            {
-                loadWatch.Stop();
-            }
+            bool producedAssembly = TryGetCompiledAssembly(result, out Assembly? assembly, out string? failure)
+                && assembly != null;
+            loadWatch.Stop();
 
             if (!producedAssembly || assembly == null)
             {
