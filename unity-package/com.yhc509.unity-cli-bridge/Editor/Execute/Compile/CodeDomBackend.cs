@@ -1,11 +1,13 @@
 #nullable enable
 using System;
-using System.CodeDom.Compiler;
 using System.Collections.Generic;
+using UnityCli.Protocol;
+#if UNITY_5_3_OR_NEWER
+using System.CodeDom.Compiler;
 using System.Reflection;
 using System.Text;
 using Microsoft.CSharp;
-using UnityCli.Protocol;
+#endif
 
 namespace UnityCliBridge.Bridge.Editor
 {
@@ -17,6 +19,8 @@ namespace UnityCliBridge.Bridge.Editor
     {
         public const string BackendId = "codedom";
 
+        private const string MscorlibFileName = "mscorlib.dll";
+
         public string Id
         {
             get { return BackendId; }
@@ -24,7 +28,29 @@ namespace UnityCliBridge.Bridge.Editor
 
         public CompileResult TryCompile(CompileRequest request)
         {
-            using var provider = new CSharpCodeProvider();
+            string compilerOptions = BuildCompilerOptions(request);
+#if UNITY_5_3_OR_NEWER
+            return CompileWithMcs(request, compilerOptions);
+#else
+            // Linked into the dotnet tests for BuildCompilerOptions. mcs itself runs only in the Editor.
+            return CompileResult.InfrastructureFailure(
+                BackendId,
+                compilerOptions,
+                null,
+                null,
+                "mcs is hosted by the Unity Editor.");
+#endif
+        }
+
+        /// <summary>
+        /// mcs arguments assigned to <c>CompilerParameters.CompilerOptions</c>.
+        /// An <c>mscorlib.dll</c> already in the reference set means Unity's unityjit/unityaot
+        /// corlib is explicit, so <c>-nostdlib</c> stops mcs from also loading MonoBleedingEdge's
+        /// own mscorlib (CS0433 on Windows). That reference is not removed. With no mscorlib
+        /// reference, mcs keeps its default corlib.
+        /// </summary>
+        internal static string BuildCompilerOptions(CompileRequest request)
+        {
             // Unity's CodeDOM host is mcs, which rejects /langversion:9.0. ToCompilerOption
             // maps that project default (and anything above 7.2) to /langversion:latest.
             // /define always includes UNITY_ASSERTIONS so Debug.Assert and Debug.LogAssertion
@@ -32,6 +58,62 @@ namespace UnityCliBridge.Bridge.Editor
             string compilerOptions = CSharpLanguageVersion.ToCompilerOption(request.LanguageVersion)
                 + " "
                 + ExecuteCompilerDefines.BuildDefineOption(request.ScriptingDefines);
+            if (ReferencesIncludeMscorlib(request.ReferencePaths))
+            {
+                compilerOptions += " -nostdlib";
+            }
+
+            return compilerOptions;
+        }
+
+        private static bool ReferencesIncludeMscorlib(IReadOnlyList<string> referencePaths)
+        {
+            for (int index = 0; index < referencePaths.Count; index++)
+            {
+                if (IsMscorlibReference(referencePaths[index]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // Both separators: Assembly.Location on Windows uses '\', and the dotnet tests run on
+        // every OS. Path.GetFileName would not split a Windows path on Linux or macOS.
+        private static bool IsMscorlibReference(string? referencePath)
+        {
+            if (string.IsNullOrEmpty(referencePath))
+            {
+                return false;
+            }
+
+            int nameStart = 0;
+            for (int index = referencePath.Length - 1; index >= 0; index--)
+            {
+                char character = referencePath[index];
+                if (character == '/' || character == '\\')
+                {
+                    nameStart = index + 1;
+                    break;
+                }
+            }
+
+            int length = referencePath.Length - nameStart;
+            return length == MscorlibFileName.Length
+                && string.Compare(
+                    referencePath,
+                    nameStart,
+                    MscorlibFileName,
+                    0,
+                    length,
+                    StringComparison.OrdinalIgnoreCase) == 0;
+        }
+
+#if UNITY_5_3_OR_NEWER
+        private static CompileResult CompileWithMcs(CompileRequest request, string compilerOptions)
+        {
+            using var provider = new CSharpCodeProvider();
             var parameters = new CompilerParameters
             {
                 GenerateInMemory = true,
@@ -156,5 +238,6 @@ namespace UnityCliBridge.Bridge.Editor
 
             return lines;
         }
+#endif
     }
 }

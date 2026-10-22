@@ -7,7 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
-- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged.
+- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler. References, caching, error codes, and messages are unchanged.
+
+### Fixed
+- `execute` on Windows compiles snippets again. mcs was loading its own Mono mscorlib as well as Unity's `mscorlib.dll`, so every snippet failed with CS0433 (`System.Threading.CancellationToken` defined in both). When a reference is already `mscorlib.dll`, the compiler is passed `-nostdlib` and that Unity reference stays. Compiles with no mscorlib reference are unchanged. Seen on Unity 2021.3.45f2 and 6000.3.10f1.
 
 ## [0.5.7] - 2026-10-21
 
