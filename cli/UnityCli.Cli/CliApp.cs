@@ -359,6 +359,7 @@ public static class CliApp
             liveErrorMessage,
             unityPath,
             bundledToolchain,
+            roslynHost = BuildRoslynHostData(projectRoot),
             instanceCount = registry.instances.Length,
         };
 
@@ -382,6 +383,94 @@ public static class CliApp
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The editor's Roslyn compile host, from the status file the bridge writes under the project's
+    /// Library when the host is opted into. Local file read only; liveness is a process-table probe.
+    /// </summary>
+    internal static object? BuildRoslynHostData(string? projectRoot, Func<int, bool>? isAlive = null, DateTime? nowUtc = null)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+        {
+            return null;
+        }
+
+        string statusPath = RoslynHostStatus.GetStatusPath(projectRoot);
+        RoslynHostStatus? status = RoslynHostStatus.TryRead(statusPath);
+        if (status is null)
+        {
+            return new
+            {
+                statusPath,
+                present = false,
+                activeBackend = "codedom",
+                note = "No Roslyn host status for this project: execute uses the default CodeDOM compiler. "
+                    + "Start the editor with UCB_EXECUTE_COMPILER=roslyn-host to opt in.",
+            };
+        }
+
+        Func<int, bool> alive = isAlive ?? IsProcessAlive;
+        bool editorAlive = status.EditorPid > 0 && alive(status.EditorPid);
+        bool hostAlive = status.Pid > 0 && alive(status.Pid);
+        DateTime? started = RoslynHostStatus.ParseUtc(status.HostStartedUtc);
+        double? uptimeSeconds = hostAlive && started.HasValue
+            ? Math.Round(((nowUtc ?? DateTime.UtcNow) - started.Value).TotalSeconds, 1)
+            : null;
+        return new
+        {
+            statusPath,
+            present = true,
+            stale = !editorAlive,
+            updatedUtc = status.UpdatedUtc,
+            editorPid = status.EditorPid,
+            editorAlive,
+            configuredCompiler = status.ConfiguredCompiler,
+            activeBackend = status.ActiveBackend,
+            prewarmPolicy = status.PrewarmPolicy,
+            hostWaitMs = status.HostWaitMs,
+            compileTimeoutMs = status.CompileTimeoutMs,
+            idleExitMinutes = status.IdleExitMinutes,
+            state = status.State,
+            note = status.Note,
+            pid = status.Pid,
+            hostAlive,
+            hostStartedUtc = status.HostStartedUtc,
+            uptimeSeconds,
+            startMs = status.StartMs,
+            prewarmMs = status.PrewarmMs,
+            runtimeDirectory = status.RuntimeDirectory,
+            runtimeVersion = status.RuntimeVersion,
+            roslynVersion = status.RoslynVersion,
+            build = new
+            {
+                key = status.BuildKey,
+                cacheHit = status.BuildCacheHit,
+                buildMs = status.BuildMs,
+            },
+            lastError = status.LastError,
+            lastErrorUtc = status.LastErrorUtc,
+            sessionDisabledReason = status.SessionDisabledReason,
+            recentCrashes = status.RecentCrashes,
+            starts = status.Starts,
+            lastCompiler = status.LastCompiler,
+            lastFallbackReason = status.LastFallbackReason,
+            ignoredProjectOptions = status.IgnoredProjectOptions,
+            stderrTail = status.StderrTail,
+        };
+    }
+
+    private static bool IsProcessAlive(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static object BuildBundledToolchainData(BundledToolchainReport report)
