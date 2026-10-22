@@ -209,6 +209,40 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void PrewarmCompile_RunsOnceAfterTheFirstSetRefs_OnlyWhenPrewarming()
+    {
+        RoslynHostSupervisor Create(IRoslynHostLauncher launcher, ExecuteCompilerSettings settings) => new RoslynHostSupervisor(
+            settings,
+            new MemoryRoslynHostSessionStore(),
+            launcher,
+            HostTestSupport.FrameworkReferences,
+            new RoslynHostSupervisorOptions
+            {
+                ProjectHash = "abc123def456",
+                EditorPid = Environment.ProcessId,
+                HostDirectory = _hostDirectory,
+                PrewarmCompile = refs => RoslynHostBackend.BuildHostRequest(
+                    new CompileRequest(Wrap("return Enumerable.Range(0, 3).Sum();"), "9.0", Array.Empty<string>(), refs),
+                    new List<string>()),
+            });
+        InProcessHostInstance? warm = null;
+        InProcessHostInstance? cold = null;
+        using (RoslynHostSupervisor supervisor = Create(new FakeLauncher(_ => warm = new InProcessHostInstance()), Settings()))
+        {
+            Run(new RoslynHostBackend(supervisor).TryCompile(Request("return 1;")));
+            Assert.True(supervisor.Snapshot().PrewarmMs > 0);
+        }
+
+        using (RoslynHostSupervisor supervisor = Create(new FakeLauncher(_ => cold = new InProcessHostInstance()), Settings((ExecuteCompilerSettings.PrewarmVariable, "off"))))
+        {
+            Run(new RoslynHostBackend(supervisor).TryCompile(Request("return 1;")));
+        }
+
+        Assert.Equal(new[] { "setRefs", "compile", "compile" }, warm!.RequestTypes);
+        Assert.Equal(new[] { "setRefs", "compile" }, cold!.RequestTypes);
+    }
+
+    [Fact]
     public void ToolchainMissing_FallsBackWithTheReason_AndIsNotRetriedInTheDomain()
     {
         var launcher = new ThrowingLauncher(new RoslynHostException(RoslynHostFailureCodes.ToolchainMissing, "bundled .NET runtime not found: dotnet muxer not found"));

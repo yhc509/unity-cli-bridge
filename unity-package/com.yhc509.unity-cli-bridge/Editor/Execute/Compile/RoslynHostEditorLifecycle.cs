@@ -30,8 +30,9 @@ namespace UnityCliBridge.Bridge.Editor
     /// <list type="bullet">
     /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
     /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
-    /// <item>After a reload (<c>delayCall</c>): orphan cleanup, then the prewarm policy's start, both
-    /// off the main thread.</item>
+    /// <item>After a reload (first editor tick): orphan cleanup, then the prewarm policy's start, both
+    /// off the main thread. A one-shot <c>EditorApplication.update</c> callback rather than
+    /// <c>delayCall</c>, which rides the inspector-update cycle and starves in an unfocused GUI editor.</item>
     /// <item><c>quitting</c>: quit, then kill.</item>
     /// </list>
     /// Entering Play Mode without a domain reload fires none of these, so the host stays.
@@ -84,10 +85,11 @@ namespace UnityCliBridge.Bridge.Editor
                         ProjectHash = projectHash,
                         EditorPid = editorPid,
                         HostDirectory = hostDirectory,
+                        PrewarmCompile = BuildPrewarmRequest,
                     });
                 AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
                 EditorApplication.quitting += OnQuitting;
-                EditorApplication.delayCall += OnDomainLoaded;
+                EditorApplication.update += OnFirstEditorTick;
             }
             catch (Exception ex)
             {
@@ -129,6 +131,12 @@ namespace UnityCliBridge.Bridge.Editor
             return new CompileBackendSelector(codeDom, Array.Empty<ICompileBackend>(), reason);
         }
 
+        private static void OnFirstEditorTick()
+        {
+            EditorApplication.update -= OnFirstEditorTick;
+            OnDomainLoaded();
+        }
+
         private static void OnDomainLoaded()
         {
             if (_supervisor == null)
@@ -138,6 +146,21 @@ namespace UnityCliBridge.Bridge.Editor
 
             EnsureMainThreadInputs();
             _supervisor.OnDomainLoaded();
+        }
+
+        /// <summary>
+        /// A wrapped snippet touching what real snippets touch (UnityEngine, UnityEditor, Linq, a
+        /// lambda, the result field). Background thread: wrapping is plain string work, and defines
+        /// only steer the preprocessor, so the main-thread define list is not needed.
+        /// </summary>
+        private static RoslynHostCompileRequest BuildPrewarmRequest(System.Collections.Generic.IReadOnlyList<string> references)
+        {
+            const string Snippet =
+                "var ucbPrewarm = new System.Collections.Generic.List<int> { 1, 2, 3 };\n"
+                + "__pucResult = ucbPrewarm.Where(v => v > 1).Sum() + Mathf.Max(1, 2) + (EditorApplication.isPlaying ? 1 : 0);\n"
+                + "Debug.Log(Application.unityVersion + \" \" + __pucArgsJson.Length);";
+            var request = new CompileRequest(ExecuteCodeHandler.BuildWrappedCode(Snippet), "9.0", Array.Empty<string>(), references);
+            return RoslynHostBackend.BuildHostRequest(request, RoslynHostBackend.BuildDefines(request));
         }
 
         private static void OnBeforeAssemblyReload()

@@ -199,6 +199,13 @@ namespace UnityCliBridge.Bridge.Editor
         public TimeSpan IdleCheckInterval { get; set; } = TimeSpan.FromSeconds(30);
 
         public bool WriteStatusFile { get; set; } = true;
+
+        /// <summary>
+        /// Prewarm only: a representative compile request (a wrapped <c>execute</c> snippet) sent once
+        /// after the first <c>setRefs</c>, so the first real compile after a reload finds the binder,
+        /// the editor references' symbols, and both sides' compile path already warm. Null skips it.
+        /// </summary>
+        public Func<IReadOnlyList<string>, RoslynHostCompileRequest?>? PrewarmCompile { get; set; }
     }
 
     /// <summary>
@@ -369,7 +376,7 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Domain-load entry (main thread, from delayCall): orphan cleanup always runs first on a
+        /// Domain-load entry (main thread, first editor tick): orphan cleanup always runs first on a
         /// background thread; the host starts right after it when the prewarm policy says so.
         /// </summary>
         public void OnDomainLoaded()
@@ -750,6 +757,7 @@ namespace UnityCliBridge.Bridge.Editor
                     RoslynHostMessageTypes.RefsSet,
                     _options.SetRefsTimeout);
                 RoslynHostRefsSet ack = RoslynHostRefsSet.FromMessage(ackMessage);
+                double prewarmCompileMs = prewarm ? PrewarmCompile(instance, references, refsHash) : 0;
 
                 bool adopted = false;
                 lock (_gate)
@@ -764,7 +772,7 @@ namespace UnityCliBridge.Bridge.Editor
                         _hostRefsHash = refsHash;
                         _lastRefList = new List<string>(references);
                         _lastRefHash = refsHash;
-                        _prewarmMs = instance.Hello.PrewarmMs + ack.PrewarmMs;
+                        _prewarmMs = instance.Hello.PrewarmMs + ack.PrewarmMs + prewarmCompileMs;
                         _starts++;
                         _state = "ready";
                         _lastUseUtc = _clock();
@@ -797,6 +805,40 @@ namespace UnityCliBridge.Bridge.Editor
                 WriteStatus();
                 _startIdle.Set();
             }
+        }
+
+        /// <summary>The representative prewarm compile; its result is discarded (never loaded). A failure only costs the warm-up.</summary>
+        private double PrewarmCompile(IRoslynHostInstance instance, IReadOnlyList<string> references, string refsHash)
+        {
+            Func<IReadOnlyList<string>, RoslynHostCompileRequest?>? factory = _options.PrewarmCompile;
+            if (factory == null)
+            {
+                return 0;
+            }
+
+            Stopwatch watch = Stopwatch.StartNew();
+            try
+            {
+                RoslynHostCompileRequest? request = factory(references);
+                if (request == null)
+                {
+                    return 0;
+                }
+
+                request.Id = "prewarm";
+                request.RefsHash = refsHash;
+                RoslynHostCompileResult.FromMessage(instance.Request(request.ToMessage(), RoslynHostMessageTypes.Result, _options.SetRefsTimeout));
+            }
+            catch (RoslynHostException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // A broken prewarm request must not block the host.
+            }
+
+            return watch.Elapsed.TotalMilliseconds;
         }
 
         private void OnStartFailure(IRoslynHostInstance? instance, RoslynHostException ex)
