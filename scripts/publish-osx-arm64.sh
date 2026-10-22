@@ -13,6 +13,8 @@ dotnet publish \
   --self-contained true \
   -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
+  -p:PublishReadyToRun=true \
+  -p:TieredPGO=false \
   -o "$OUTPUT_DIR"
 
 codesign -f -s - "$OUTPUT_DIR/unity-cli"

@@ -131,6 +131,67 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 + "\"},\"retryable\":false,\"transport\":\"live\"}"));
         }
 
+        [Test]
+        public void Write_OmitsTimingsWhenNull()
+        {
+            var response = ResponseEnvelope.Success(
+                "req-1",
+                "target-1",
+                "{\"ok\":true}",
+                12,
+                ProtocolConstants.TransportLive);
+
+            string json = EnvelopeJsonWriter.Write(response);
+
+            Assert.That(json, Does.Not.Contain("timings"));
+            Assert.That(json, Does.Contain("\"durationMs\":12"));
+        }
+
+        [Test]
+        public void Write_EmitsQueueWaitOnly_WhenExecutePhasesAreUnset()
+        {
+            var response = ResponseEnvelope.Success(
+                "req-1",
+                "target-1",
+                "{\"ok\":true}",
+                12,
+                ProtocolConstants.TransportLive);
+            response.timings = new ResponseTimings { queueWaitMs = 40 };
+
+            string json = EnvelopeJsonWriter.Write(response);
+
+            Assert.That(json, Does.Contain("\"durationMs\":12,\"timings\":{\"queueWaitMs\":40},\"data\":{\"ok\":true}"));
+            Assert.That(json, Does.Not.Contain("wrapMs"));
+            Assert.That(json, Does.Not.Contain("cacheHit"));
+        }
+
+        [Test]
+        public void Write_EmitsExecutePhases_WhenSet()
+        {
+            var response = ResponseEnvelope.Failure(
+                "req-1",
+                "target-1",
+                "COMPILE_FAILED",
+                "boom",
+                false,
+                341,
+                ProtocolConstants.TransportLive);
+            response.timings = new ResponseTimings
+            {
+                queueWaitMs = 8,
+                wrapMs = 1,
+                compileMs = 340,
+                cacheHit = false,
+            };
+
+            string json = EnvelopeJsonWriter.Write(response);
+
+            Assert.That(json, Does.Contain("\"timings\":{\"queueWaitMs\":8,\"wrapMs\":1,\"compileMs\":340,\"cacheHit\":false}"));
+            Assert.That(json, Does.Not.Contain("loadMs"));
+            Assert.That(json, Does.Not.Contain("invokeMs"));
+            Assert.That(json, Does.Contain("\"durationMs\":341"));
+        }
+
         [TestCase("")]
         [TestCase(" ")]
         [TestCase("{not valid")]

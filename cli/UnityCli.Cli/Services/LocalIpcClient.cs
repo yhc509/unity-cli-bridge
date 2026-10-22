@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text;
@@ -34,7 +35,16 @@ public sealed class LocalIpcClient
         await using var stream = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCts.CancelAfter(timeoutMs);
-        await stream.ConnectAsync(linkedCts.Token);
+        Stopwatch? connect = CliTiming.Start();
+        try
+        {
+            await stream.ConnectAsync(linkedCts.Token);
+        }
+        finally
+        {
+            CliTiming.Report("connect", connect);
+        }
+
         return await ExchangeAsync(stream, command, linkedCts.Token);
     }
 
@@ -48,7 +58,16 @@ public sealed class LocalIpcClient
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCts.CancelAfter(timeoutMs);
         var endpoint = new UnixDomainSocketEndPoint(socketPath);
-        await socket.ConnectAsync(endpoint, linkedCts.Token);
+        Stopwatch? connect = CliTiming.Start();
+        try
+        {
+            await socket.ConnectAsync(endpoint, linkedCts.Token);
+        }
+        finally
+        {
+            CliTiming.Report("connect", connect);
+        }
+
         await using var stream = new NetworkStream(socket, ownsSocket: true);
         return await ExchangeAsync(stream, command, linkedCts.Token);
     }
@@ -56,18 +75,52 @@ public sealed class LocalIpcClient
     private static async Task<ResponseEnvelope> ExchangeAsync(Stream stream, CommandEnvelope command, CancellationToken cancellationToken)
     {
         using var writer = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true);
-        using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+        // The timing reader consumes the stream itself. A StreamReader created beside it would
+        // race for the same bytes, so it exists only on the idle path.
+        bool timing = CliTiming.IsEnabled;
+        using var reader = timing
+            ? null
+            : new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
 
-        await writer.WriteLineAsync(ProtocolJson.Serialize(command).AsMemory(), cancellationToken);
-        await writer.FlushAsync(cancellationToken);
+        Stopwatch? send = CliTiming.Start();
+        try
+        {
+            await writer.WriteLineAsync(ProtocolJson.Serialize(command).AsMemory(), cancellationToken);
+            await writer.FlushAsync(cancellationToken);
+        }
+        finally
+        {
+            CliTiming.Report("send", send);
+        }
 
-        var responseLine = await reader.ReadLineAsync(cancellationToken);
+        string? responseLine;
+        if (timing)
+        {
+            IpcResponseLineReader.Result read = await IpcResponseLineReader.ReadAsync(stream, cancellationToken);
+            CliTiming.ReportMilliseconds("wait", read.WaitMilliseconds);
+            CliTiming.ReportMilliseconds("receive", read.ReceiveMilliseconds);
+            responseLine = read.Line;
+        }
+        else
+        {
+            responseLine = await reader!.ReadLineAsync(cancellationToken);
+        }
+
         if (string.IsNullOrWhiteSpace(responseLine))
         {
             throw new IOException("The Unity IPC response is empty.");
         }
 
-        var response = ProtocolJson.Deserialize<ResponseEnvelope>(responseLine);
+        Stopwatch? deserialize = CliTiming.Start();
+        ResponseEnvelope response;
+        try
+        {
+            response = ProtocolJson.Deserialize<ResponseEnvelope>(responseLine);
+        }
+        finally
+        {
+            CliTiming.Report("deserialize", deserialize);
+        }
         if (response is null)
         {
             throw new IOException("Could not parse the Unity IPC response.");

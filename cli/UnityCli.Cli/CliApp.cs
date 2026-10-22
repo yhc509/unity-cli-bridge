@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using UnityCli.Cli.Models;
@@ -12,17 +13,27 @@ public static class CliApp
 
     internal static async Task<int> RunAsync(string[] args, ICliVersionDispatcher? dispatcher)
     {
+        CliTiming.ReportProcessStartToMain();
         var outputMode = CliCommandMetadata.DetectOutputMode(args);
         ParsedCommand? parsed = null;
 
         try
         {
-            parsed = CliArgumentParser.Parse(args);
+            Stopwatch? parse = CliTiming.Start();
+            try
+            {
+                parsed = CliArgumentParser.Parse(args);
+            }
+            finally
+            {
+                CliTiming.Report("argParse", parse);
+            }
+
             outputMode = parsed.OutputMode;
             if (parsed.Kind == CommandKind.Help)
             {
                 string? topicHelp = parsed.HelpTopic is null ? null : CliCommandMetadata.BuildTopicHelpText(parsed.HelpTopic);
-                Console.WriteLine(topicHelp ?? CliArgumentParser.BuildHelpText());
+                WriteUserOutput(topicHelp ?? CliArgumentParser.BuildHelpText());
                 return 0;
             }
 
@@ -75,7 +86,7 @@ public static class CliApp
                     break;
             }
 
-            Console.WriteLine(ResponseFormatter.Format(parsed.OutputMode, response));
+            WriteUserOutput(ResponseFormatter.Format(parsed.OutputMode, response));
             return response.status == "success" ? 0 : 1;
         }
         catch (CliUsageException ex)
@@ -1615,15 +1626,17 @@ public static class CliApp
         string errorCode,
         string message)
     {
-        return ResponseEnvelope.Failure(
-            source.requestId,
-            source.target,
-            errorCode,
-            message,
-            retryable: false,
-            source.durationMs,
-            source.transport,
-            GetDataDetailsJson(source, result));
+        return ResponseEnvelope.WithTimings(
+            ResponseEnvelope.Failure(
+                source.requestId,
+                source.target,
+                errorCode,
+                message,
+                retryable: false,
+                source.durationMs,
+                source.transport,
+                GetDataDetailsJson(source, result)),
+            source.timings);
     }
 
     private static string GetDataDetailsJson(ResponseEnvelope source, TestRunResultPayload fallback)
@@ -1651,15 +1664,17 @@ public static class CliApp
         string errorCode,
         string message)
     {
-        return ResponseEnvelope.Failure(
-            source.requestId,
-            source.target,
-            errorCode,
-            message,
-            retryable: false,
-            source.durationMs,
-            source.transport,
-            GetRecordDataDetailsJson(source, result));
+        return ResponseEnvelope.WithTimings(
+            ResponseEnvelope.Failure(
+                source.requestId,
+                source.target,
+                errorCode,
+                message,
+                retryable: false,
+                source.durationMs,
+                source.transport,
+                GetRecordDataDetailsJson(source, result)),
+            source.timings);
     }
 
     private static string GetRecordResultErrorCode(string? status)
@@ -1835,7 +1850,33 @@ public static class CliApp
             + string.Join("\n", lines));
     }
 
+    private static void WriteUserOutput(string text)
+    {
+        Stopwatch? output = CliTiming.Start();
+        try
+        {
+            Console.WriteLine(text);
+        }
+        finally
+        {
+            CliTiming.Report("output", output);
+        }
+    }
+
     private static void WriteErrorResponse(OutputMode outputMode, ResponseEnvelope response)
+    {
+        Stopwatch? output = CliTiming.Start();
+        try
+        {
+            WriteErrorResponseCore(outputMode, response);
+        }
+        finally
+        {
+            CliTiming.Report("output", output);
+        }
+    }
+
+    private static void WriteErrorResponseCore(OutputMode outputMode, ResponseEnvelope response)
     {
         if (outputMode != OutputMode.Default)
         {
@@ -1863,12 +1904,20 @@ public static class CliApp
 
     private static void WriteUsageError(OutputMode outputMode, ResponseEnvelope response, CliUsagePresentation presentation)
     {
-        if (outputMode != OutputMode.Default)
+        Stopwatch? output = CliTiming.Start();
+        try
         {
-            Console.Out.WriteLine(ResponseFormatter.Format(outputMode, response));
-            return;
-        }
+            if (outputMode != OutputMode.Default)
+            {
+                Console.Out.WriteLine(ResponseFormatter.Format(outputMode, response));
+                return;
+            }
 
-        CliUsageHelp.WriteTo(Console.Error, presentation);
+            CliUsageHelp.WriteTo(Console.Error, presentation);
+        }
+        finally
+        {
+            CliTiming.Report("output", output);
+        }
     }
 }

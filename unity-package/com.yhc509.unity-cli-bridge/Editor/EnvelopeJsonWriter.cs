@@ -25,6 +25,7 @@ namespace UnityCliBridge.Bridge.Editor
             WriteStringField(builder, ref wroteField, "target", envelope.target, false);
             WriteStringField(builder, ref wroteField, "status", envelope.status, true);
             WriteNumberField(builder, ref wroteField, "durationMs", envelope.durationMs);
+            WriteTimingsField(builder, ref wroteField, envelope.timings);
             WriteRawField(builder, ref wroteField, "data", envelope.data);
             WriteErrorField(builder, ref wroteField, envelope.error);
             WriteBooleanField(builder, ref wroteField, "retryable", envelope.retryable);
@@ -60,6 +61,41 @@ namespace UnityCliBridge.Bridge.Editor
         {
             WriteFieldPrefix(builder, ref wroteField, name);
             builder.Append(value ? "true" : "false");
+        }
+
+        private static void WriteTimingsField(StringBuilder builder, ref bool wroteField, ResponseTimings? timings)
+        {
+            if (timings == null)
+            {
+                return;
+            }
+
+            WriteFieldPrefix(builder, ref wroteField, "timings");
+            var wroteTimingField = false;
+            builder.Append('{');
+            WriteNumberField(builder, ref wroteTimingField, "queueWaitMs", timings.queueWaitMs);
+            WriteStringField(builder, ref wroteTimingField, "compiler", timings.compiler, false);
+            WriteOptionalNumberField(builder, ref wroteTimingField, "wrapMs", timings.wrapMs);
+            WriteOptionalNumberField(builder, ref wroteTimingField, "compileMs", timings.compileMs);
+            WriteOptionalNumberField(builder, ref wroteTimingField, "loadMs", timings.loadMs);
+            WriteOptionalNumberField(builder, ref wroteTimingField, "invokeMs", timings.invokeMs);
+            WriteOptionalNumberField(builder, ref wroteTimingField, "serializeMs", timings.serializeMs);
+            if (timings.cacheHit.HasValue)
+            {
+                WriteBooleanField(builder, ref wroteTimingField, "cacheHit", timings.cacheHit.Value);
+            }
+
+            builder.Append('}');
+        }
+
+        private static void WriteOptionalNumberField(StringBuilder builder, ref bool wroteField, string name, long? value)
+        {
+            if (!value.HasValue)
+            {
+                return;
+            }
+
+            WriteNumberField(builder, ref wroteField, name, value.Value);
         }
 
         private static void WriteRawField(StringBuilder builder, ref bool wroteField, string name, string? rawJson)

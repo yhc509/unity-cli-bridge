@@ -55,6 +55,19 @@ public static class CliReferenceDocumentRenderer
         builder.AppendLine("- One match is selected. If several matches remain, the explicit `instances use` pin selects its project when that Editor is reachable, and otherwise the single candidate with a reachable Editor is selected. A registry row counts only when its process is alive or its pipe or socket accepts a connection; a non-offline state alone does not. If neither a pin nor a single reachable Editor applies, the CLI returns `AMBIGUOUS_PROJECT`, lists the candidate paths, and requires `--project`.");
         builder.AppendLine("- If no project is found on disk, routing uses the pinned live Editor, then the single live Editor. Two or more live Editors with no pin return `CLI_USAGE` and list the candidates.");
         builder.AppendLine();
+        builder.AppendLine("## Response timing");
+        builder.AppendLine();
+        builder.AppendLine("- `durationMs` is how long the Editor spent inside the command handler. It does not include queue wait. The request is read on a background thread and runs on the next Editor update tick.");
+        builder.AppendLine("- A response that entered that queue includes an optional `timings` object. `queueWaitMs` is the whole number of milliseconds from socket-thread accept until main-thread dispatch start.");
+        builder.AppendLine("- For `execute`, the same object also includes `compiler` (the compile backend id, `codedom` for CodeDOM) and the phases that ran: `wrapMs`, `compileMs`, `loadMs`, `invokeMs`, `serializeMs`, and `cacheHit`. A phase under 1 ms is 0. Phases that did not run are omitted. `compiler` is omitted when execute did not select a backend. Other commands omit those fields.");
+        builder.AppendLine("- `timings.compileMs` is the compiler call. `timings.loadMs` is the time to materialize the compiled assembly after the compiler returns. On a cache hit both are 0, `cacheHit` is true, and `compiler` is still the backend that owns the cache.");
+        builder.AppendLine("- The `execute` data payload still has its own `cacheHit` and `compileMs`. That `compileMs` is the whole cache-miss compile path, including reference setup, and is 0 on a cache hit. It is the value previous releases reported.");
+        builder.AppendLine("- `timings` is omitted when the request never entered the queue, including a malformed request, a protocol mismatch, or an authentication failure. Older CLIs ignore the object. A newer CLI talking to an older package leaves it unset. The wire protocol stays 8.");
+        builder.AppendLine("- `--output compact` returns only the data payload, so it does not include `timings`. Default text output and `--json` include it.");
+        builder.AppendLine("- Set `UCB_TIMING=1` to print CLI phases to stderr. Standard output, including `--json`, is unchanged. Any other value leaves the log off. Each line looks like `ucb-timing phase=argParse ms=15.2 sinceProcessStartMs=45.5`.");
+        builder.AppendLine("- Phases are `processStartToMain`, `argParse`, `connect`, `send`, `wait`, `receive`, `deserialize`, and `output`. Phases that do not run, such as `connect` on `help`, are not printed. Extra Editor round-trips print the connect, send, wait, receive, and deserialize lines again.");
+        builder.AppendLine("- `wait` is the time until the first response byte. `receive` is the time to finish the response line after that byte.");
+        builder.AppendLine();
 
         foreach (CliCommandGroup group in CommandGroups)
         {

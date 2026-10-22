@@ -21,6 +21,11 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- ReadyToRun for the short-lived single-file process. Tiered PGO stays off. Tiered compilation
+         stays at the runtime default: turning it off made every CLI call 17–20 ms slower than 0.5.7
+         on macOS. InvariantGlobalization stays off; it would change non-ASCII path and DateTime parsing. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>false</TieredPGO>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <_EnableMacOSCodeSign>false</_EnableMacOSCodeSign>

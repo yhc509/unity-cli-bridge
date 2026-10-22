@@ -46,27 +46,52 @@ namespace UnityCliBridge.Bridge.Editor
                 parameters.ReferencedAssemblies.Add(referencePath);
             }
 
-            CompilerResults result = provider.CompileAssemblyFromSource(parameters, request.Source);
+            var compileWatch = System.Diagnostics.Stopwatch.StartNew();
+            CompilerResults result;
+            try
+            {
+                result = provider.CompileAssemblyFromSource(parameters, request.Source);
+            }
+            finally
+            {
+                compileWatch.Stop();
+            }
+
+            long compileMs = compileWatch.ElapsedMilliseconds;
             if (result.Errors.HasErrors)
             {
                 return CompileResult.CompileError(
                     BackendId,
                     compilerOptions,
                     ReadFailureErrors(result),
-                    ReadCompilerOutput(result));
+                    ReadCompilerOutput(result),
+                    compileMs,
+                    null);
             }
 
-            if (!TryGetCompiledAssembly(result, out Assembly? assembly, out string? failure) || assembly == null)
+            var loadWatch = System.Diagnostics.Stopwatch.StartNew();
+            bool producedAssembly = TryGetCompiledAssembly(result, out Assembly? assembly, out string? failure)
+                && assembly != null;
+            loadWatch.Stop();
+
+            if (!producedAssembly || assembly == null)
             {
                 return CompileResult.InfrastructureFailure(
                     BackendId,
                     compilerOptions,
                     ReadFailureErrors(result),
                     ReadCompilerOutput(result),
-                    failure);
+                    failure,
+                    compileMs,
+                    loadWatch.ElapsedMilliseconds);
             }
 
-            return CompileResult.Success(BackendId, assembly, compilerOptions);
+            return CompileResult.Success(
+                BackendId,
+                assembly,
+                compilerOptions,
+                compileMs,
+                loadWatch.ElapsedMilliseconds);
         }
 
         private static string[] ReadFailureErrors(CompilerResults result)

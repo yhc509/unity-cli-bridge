@@ -125,6 +125,30 @@ public sealed class CompileBackendSeamTests
     }
 
     [Fact]
+    public void Success_CarriesPhaseMillisecondsWhenProvided()
+    {
+        CompileResult result = CompileResult.Success(
+            "codedom",
+            typeof(CompileBackendSeamTests).Assembly,
+            Options,
+            12,
+            3);
+
+        Assert.Equal(12, result.CompileMilliseconds);
+        Assert.Equal(3, result.LoadMilliseconds);
+    }
+
+    [Fact]
+    public void CompileError_LeavesLoadMillisecondsUnset()
+    {
+        CompileResult result = CompileResult.CompileError("codedom", Options, null, null, 9, null);
+
+        Assert.Equal(9, result.CompileMilliseconds);
+        Assert.Null(result.LoadMilliseconds);
+        Assert.Equal("codedom", result.BackendId);
+    }
+
+    [Fact]
     public void ExecuteCodeHandler_CompilesOnlyThroughTheSelector()
     {
         string repoRoot = RepositoryPaths.FindRepoRoot(AppContext.BaseDirectory);

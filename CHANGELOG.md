@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Live responses that were queued for the Editor include an optional `timings` object. `queueWaitMs` is the wait from when the bridge accepted the request on its socket thread until the Editor main thread started the command. `durationMs` is unchanged and still measures only the command handler, so it does not include that wait. For `execute`, `timings` also includes `compiler` (the compile backend id, `codedom` for CodeDOM), `wrapMs`, `compileMs`, `loadMs`, `invokeMs`, `serializeMs`, and `cacheHit` for the phases that ran. A phase under 1 ms is reported as 0, and phases that did not run are left out. The `execute` data payload still has its own `cacheHit` and `compileMs`. That payload `compileMs` is the whole cache-miss compile path (0 on a cache hit), which is what previous releases reported. `timings.compileMs` is only the compiler call, and `timings.loadMs` is the time to materialize the compiled assembly after that. `--output compact` still returns only the data payload, so it does not include `timings`. Default text and `--json` do. Older CLIs ignore the object. A newer CLI talking to an older package leaves it unset. The wire protocol stays 8.
+- Set `UCB_TIMING=1` to print CLI phase timings to stderr. Standard output, including `--json`, is unchanged. Any other value leaves the log off. Each line looks like `ucb-timing phase=argParse ms=15.2 sinceProcessStartMs=45.5`. Phases are `processStartToMain`, `argParse`, `connect`, `send`, `wait`, `receive`, `deserialize`, and `output`. Phases that do not run are omitted. Extra Editor round-trips print the connect, send, wait, receive, and deserialize lines again. `wait` is the time until the first response byte. `receive` is the time to finish the response line after that byte.
+
 ### Changed
-- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged.
+- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged. `execute` timings report that backend as `compiler`.
+- Published macOS Apple Silicon and Windows x64 CLI binaries are now ReadyToRun, with tiered PGO turned off. Tiered compilation stays at the runtime default: turning it off made every CLI call 17–20 ms slower than 0.5.7 on macOS. `InvariantGlobalization` stays off, so non-ASCII paths and registry timestamps keep the current culture behavior. Single-file sizes with ReadyToRun: macOS arm64 77.5 MB → 90.9 MB (+13.4 MB), Windows x64 71.3 MB → 82.2 MB (+10.8 MB).
 
 ## [0.5.7] - 2026-10-21
 

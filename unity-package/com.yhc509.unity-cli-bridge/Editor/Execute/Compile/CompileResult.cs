@@ -10,7 +10,10 @@ namespace UnityCliBridge.Bridge.Editor
     /// Outcome of one <see cref="ICompileBackend.TryCompile"/> call. Exactly one of these holds:
     /// <see cref="Succeeded"/> (an assembly is loaded), a user code error, or an infrastructure
     /// failure (<see cref="IsInfrastructureFailure"/>: the compiler ran but produced no assembly
-    /// without reporting an error). The backend id stays internal and is not sent on the wire.
+    /// without reporting an error). The handler copies <see cref="BackendId"/> onto
+    /// <c>timings.compiler</c>. <see cref="CompileMilliseconds"/> is the compiler call;
+    /// <see cref="LoadMilliseconds"/> is assembly materialization and stays null when that step
+    /// did not run.
     /// </summary>
     internal sealed class CompileResult
     {
@@ -21,7 +24,9 @@ namespace UnityCliBridge.Bridge.Editor
             string compilerOptions,
             IReadOnlyList<string>? errors,
             IReadOnlyList<string>? output,
-            string? failureDetail)
+            string? failureDetail,
+            long? compileMilliseconds,
+            long? loadMilliseconds)
         {
             BackendId = backendId ?? string.Empty;
             Assembly = assembly;
@@ -30,6 +35,8 @@ namespace UnityCliBridge.Bridge.Editor
             Errors = errors ?? Array.Empty<string>();
             Output = output ?? Array.Empty<string>();
             FailureDetail = failureDetail;
+            CompileMilliseconds = compileMilliseconds;
+            LoadMilliseconds = loadMilliseconds;
         }
 
         public string BackendId { get; }
@@ -55,23 +62,54 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>Last-resort detail, used when both <see cref="Errors"/> and <see cref="Output"/> are empty.</summary>
         public string? FailureDetail { get; }
 
-        public static CompileResult Success(string backendId, Assembly assembly, string compilerOptions)
+        /// <summary>Compiler-call milliseconds. Null when this result was not timed.</summary>
+        public long? CompileMilliseconds { get; }
+
+        /// <summary>Assembly-materialization milliseconds. Null when that step did not run.</summary>
+        public long? LoadMilliseconds { get; }
+
+        public static CompileResult Success(
+            string backendId,
+            Assembly assembly,
+            string compilerOptions,
+            long? compileMilliseconds = null,
+            long? loadMilliseconds = null)
         {
             if (assembly == null)
             {
                 throw new ArgumentNullException(nameof(assembly));
             }
 
-            return new CompileResult(backendId, assembly, false, compilerOptions, null, null, null);
+            return new CompileResult(
+                backendId,
+                assembly,
+                false,
+                compilerOptions,
+                null,
+                null,
+                null,
+                compileMilliseconds,
+                loadMilliseconds);
         }
 
         public static CompileResult CompileError(
             string backendId,
             string compilerOptions,
             IReadOnlyList<string>? errors,
-            IReadOnlyList<string>? output)
+            IReadOnlyList<string>? output,
+            long? compileMilliseconds = null,
+            long? loadMilliseconds = null)
         {
-            return new CompileResult(backendId, null, false, compilerOptions, errors, output, null);
+            return new CompileResult(
+                backendId,
+                null,
+                false,
+                compilerOptions,
+                errors,
+                output,
+                null,
+                compileMilliseconds,
+                loadMilliseconds);
         }
 
         public static CompileResult InfrastructureFailure(
@@ -79,9 +117,20 @@ namespace UnityCliBridge.Bridge.Editor
             string compilerOptions,
             IReadOnlyList<string>? errors,
             IReadOnlyList<string>? output,
-            string? failureDetail)
+            string? failureDetail,
+            long? compileMilliseconds = null,
+            long? loadMilliseconds = null)
         {
-            return new CompileResult(backendId, null, true, compilerOptions, errors, output, failureDetail);
+            return new CompileResult(
+                backendId,
+                null,
+                true,
+                compilerOptions,
+                errors,
+                output,
+                failureDetail,
+                compileMilliseconds,
+                loadMilliseconds);
         }
 
         /// <summary>The <c>COMPILE_FAILED</c> message text. Never empty.</summary>

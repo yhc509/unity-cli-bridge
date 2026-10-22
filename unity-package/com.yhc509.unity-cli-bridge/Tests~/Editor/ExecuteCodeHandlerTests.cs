@@ -103,6 +103,72 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         }
 
         [Test]
+        public void Handle_ReportsPhaseTimings_OnMissAndHit()
+        {
+            var handler = new ExecuteCodeHandler();
+            string argsJson = ProtocolJson.Serialize(new ExecuteCodeArgs
+            {
+                code = "__pucResult = \"" + Guid.NewGuid().ToString("N") + "\";",
+                force = true,
+            });
+            var firstTimings = new ResponseTimings();
+            var secondTimings = new ResponseTimings();
+
+            ExecuteCodePayload? first = ProtocolJson.Deserialize<ExecuteCodePayload>(
+                handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson, firstTimings));
+            ExecuteCodePayload? second = ProtocolJson.Deserialize<ExecuteCodePayload>(
+                handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson, secondTimings));
+
+            Assert.That(first, Is.Not.Null);
+            Assert.That(first!.success, Is.True);
+            Assert.That(first.cacheHit, Is.False);
+            Assert.That(firstTimings.wrapMs, Is.Not.Null);
+            Assert.That(firstTimings.compileMs, Is.Not.Null);
+            Assert.That(firstTimings.loadMs, Is.Not.Null);
+            Assert.That(firstTimings.invokeMs, Is.Not.Null);
+            Assert.That(firstTimings.serializeMs, Is.Not.Null);
+            Assert.That(firstTimings.compiler, Is.EqualTo("codedom"));
+            Assert.That(firstTimings.cacheHit, Is.False);
+            Assert.That(firstTimings.wrapMs!.Value, Is.GreaterThanOrEqualTo(0));
+            Assert.That(firstTimings.compileMs!.Value, Is.GreaterThanOrEqualTo(0));
+            Assert.That(firstTimings.loadMs!.Value, Is.GreaterThanOrEqualTo(0));
+
+            Assert.That(second, Is.Not.Null);
+            Assert.That(second!.cacheHit, Is.True);
+            Assert.That(second.compileMs, Is.EqualTo(0));
+            Assert.That(secondTimings.compiler, Is.EqualTo("codedom"));
+            Assert.That(secondTimings.cacheHit, Is.True);
+            Assert.That(secondTimings.compileMs, Is.EqualTo(0));
+            Assert.That(secondTimings.loadMs, Is.EqualTo(0));
+            Assert.That(secondTimings.invokeMs, Is.Not.Null);
+            Assert.That(secondTimings.serializeMs, Is.Not.Null);
+        }
+
+        [Test]
+        public void Handle_WhenCompileFails_RecordsWrapAndCompileOnly()
+        {
+            var handler = new ExecuteCodeHandler();
+            var timings = new ResponseTimings();
+            string argsJson = ProtocolJson.Serialize(new ExecuteCodeArgs
+            {
+                code = "this is not valid $$$;",
+                force = true,
+            });
+
+            CommandFailureException? ex = Assert.Throws<CommandFailureException>(
+                () => handler.Handle(ProtocolConstants.CommandExecuteCode, argsJson, timings));
+
+            Assert.That(ex!.ErrorCode, Is.EqualTo("COMPILE_FAILED"));
+            Assert.That(timings.compiler, Is.EqualTo("codedom"));
+            Assert.That(timings.wrapMs, Is.Not.Null);
+            Assert.That(timings.compileMs, Is.Not.Null);
+            Assert.That(timings.cacheHit, Is.False);
+            Assert.That(timings.loadMs, Is.Null);
+            Assert.That(timings.invokeMs, Is.Null);
+            Assert.That(timings.serializeMs, Is.Null);
+        }
+
+        [Test]
         public void BuildWrappedCode_FileHeaderUsings_SitAboveTheWrapper()
         {
             const string source = "\uFEFFusing UnityEngine; // camera\r\nusing UnityEngine.Rendering;\r\n\r\nvar btn = GameObject.Find(\"Button\");\r\n";

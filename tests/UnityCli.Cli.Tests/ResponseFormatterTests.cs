@@ -149,6 +149,82 @@ public sealed class ResponseFormatterTests
         var payload = JsonSerializer.Deserialize<JsonElement>(text);
 
         Assert.False(payload.TryGetProperty("data", out _));
+        Assert.False(payload.TryGetProperty("timings", out _));
+    }
+
+    [Fact]
+    public void Format_JsonOutput_IncludesTimingsAndLeavesDurationMsUnchanged()
+    {
+        var response = ResponseEnvelope.Success(
+            requestId: "req-1",
+            target: "target-1",
+            data: ToDataElement(new { ok = true }),
+            durationMs: 12,
+            transport: ProtocolConstants.TransportLive);
+        response.timings = new ResponseTimings
+        {
+            queueWaitMs = 40,
+            compiler = "codedom",
+            wrapMs = 1,
+            compileMs = 341,
+            loadMs = 2,
+            invokeMs = 3,
+            serializeMs = 0,
+            cacheHit = false,
+        };
+
+        var text = ResponseFormatter.Format(OutputMode.Json, response);
+        var payload = JsonSerializer.Deserialize<JsonElement>(text);
+
+        Assert.Equal(12, payload.GetProperty("durationMs").GetInt64());
+        var timings = payload.GetProperty("timings");
+        Assert.Equal(40, timings.GetProperty("queueWaitMs").GetInt64());
+        Assert.Equal("codedom", timings.GetProperty("compiler").GetString());
+        Assert.Equal(341, timings.GetProperty("compileMs").GetInt64());
+        Assert.False(timings.GetProperty("cacheHit").GetBoolean());
+    }
+
+    [Fact]
+    public void Format_DefaultOutput_PrintsPresentTimingFieldsOnly()
+    {
+        var response = ResponseEnvelope.Success(
+            requestId: "req-1",
+            target: "target-1",
+            data: ParseData("{\"ok\":true}"),
+            durationMs: 12,
+            transport: ProtocolConstants.TransportLive);
+        response.timings = new ResponseTimings { queueWaitMs = 7 };
+
+        var text = ResponseFormatter.Format(OutputMode.Default, response);
+
+        Assert.Contains("durationMs: 12", text);
+        Assert.Contains("timings: queueWaitMs=7", text);
+        Assert.DoesNotContain("compiler=", text);
+        Assert.DoesNotContain("wrapMs", text);
+        Assert.DoesNotContain("cacheHit", text);
+    }
+
+    [Fact]
+    public void Format_CompactOutput_OmitsEnvelopeTimings()
+    {
+        var response = ResponseEnvelope.Success(
+            requestId: "req-1",
+            target: "target-1",
+            data: ParseData("{\"path\":\"Assets/Prefab.prefab\"}"),
+            durationMs: 12,
+            transport: ProtocolConstants.TransportLive);
+        response.timings = new ResponseTimings
+        {
+            queueWaitMs = 40,
+            cacheHit = true,
+            compileMs = 0,
+        };
+
+        var text = ResponseFormatter.Format(OutputMode.Compact, response);
+
+        Assert.Equal("{\"path\":\"Assets/Prefab.prefab\"}", text);
+        Assert.DoesNotContain("timings", text);
+        Assert.DoesNotContain("queueWaitMs", text);
     }
 
     [Fact]
