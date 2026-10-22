@@ -6,8 +6,9 @@ using UnityCliBridge.Bridge.Editor;
 namespace UnityCli.Cli.Tests;
 
 /// <summary>
-/// Covers the Unity-free half of the <c>execute</c> compiler-backend seam. The CodeDOM backend
-/// itself needs Unity's mcs host and is covered by the package's EditMode tests.
+/// Covers the Unity-free half of the <c>execute</c> compiler-backend seam, including the mcs
+/// argument string. The CodeDOM host call needs Unity's mcs and is covered by the package's
+/// EditMode tests.
 /// </summary>
 public sealed class CompileBackendSeamTests
 {
@@ -138,6 +139,66 @@ public sealed class CompileBackendSeamTests
         Assert.Contains("BackendSelector.Select().TryCompile(", source);
         Assert.DoesNotContain("CSharpCodeProvider", source);
         Assert.DoesNotContain("CompileAssemblyFromSource", source);
+    }
+
+    [Fact]
+    public void CompilerOptions_IncludeNoStdLibOnceWhenMscorlibIsReferenced()
+    {
+        var request = new CompileRequest(
+            "class A {}",
+            "9.0",
+            new[] { "UNITY_EDITOR" },
+            new[]
+            {
+                @"C:\Program Files\Unity\Hub\Editor\2021.3.45f2\Editor\Data\MonoBleedingEdge\lib\mono\unityjit-win32\mscorlib.dll",
+                @"C:\Program Files\Unity\Hub\Editor\2021.3.45f2\Editor\Data\Managed\UnityEngine\UnityEngine.CoreModule.dll",
+                "/Applications/Unity/Hub/Editor/6000.3.10f1/Unity.app/Contents/MonoBleedingEdge/lib/mono/unityaot-macos/mscorlib.dll",
+                "MSCORLIB.DLL",
+            });
+
+        string options = CodeDomBackend.BuildCompilerOptions(request);
+
+        Assert.Equal(1, CountOption(options, "-nostdlib"));
+        Assert.Equal(0, CountOption(options, "/nostdlib"));
+        Assert.Equal(
+            "/langversion:latest /define:UNITY_ASSERTIONS;UNITY_EDITOR -nostdlib",
+            options);
+    }
+
+    [Fact]
+    public void CompilerOptions_OmitNoStdLibWhenMscorlibIsNotReferenced()
+    {
+        var request = new CompileRequest(
+            "class A {}",
+            "7.2",
+            Array.Empty<string>(),
+            new[]
+            {
+                "/tmp/UnityEngine.CoreModule.dll",
+                @"C:\Unity\System.Core.dll",
+                "notmscorlib.dll",
+                "mscorlib.dll.bak",
+                "Foo.mscorlib.dll",
+                @"C:\Unity\lib\mscorlib.dll\Other.dll",
+                "/mono/unityjit/mscorlib.dll.facade",
+                "",
+            });
+
+        string options = CodeDomBackend.BuildCompilerOptions(request);
+
+        Assert.Equal(0, CountOption(options, "-nostdlib"));
+        Assert.DoesNotContain("nostdlib", options, StringComparison.Ordinal);
+        Assert.Equal("/langversion:7.2 /define:UNITY_ASSERTIONS", options);
+
+        string noReferences = CodeDomBackend.BuildCompilerOptions(
+            new CompileRequest("class A {}", "9.0", null!, null!));
+        Assert.DoesNotContain("nostdlib", noReferences, StringComparison.Ordinal);
+        Assert.Equal("/langversion:latest /define:UNITY_ASSERTIONS", noReferences);
+    }
+
+    private static int CountOption(string options, string option)
+    {
+        return options.Split(' ').Count(token => token == option);
     }
 
     private sealed class FakeBackend : ICompileBackend

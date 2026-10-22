@@ -38,6 +38,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(result.Assembly!.GetType("UcbCompileBackendProbe"), Is.Not.Null);
             Assert.That(result.CompilerOptions, Does.StartWith("/langversion:"));
             Assert.That(result.CompilerOptions, Does.Contain("/define:UNITY_ASSERTIONS"));
+            Assert.That(result.CompilerOptions, Does.Contain(" -nostdlib"));
         }
 
         [Test]
