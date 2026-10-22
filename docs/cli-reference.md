@@ -31,8 +31,8 @@ Project-specific extension providers can still add more `asset create` types at 
 
 - `durationMs` is how long the Editor spent inside the command handler. It does not include queue wait. The request is read on a background thread and runs on the next Editor update tick.
 - A response that entered that queue includes an optional `timings` object. `queueWaitMs` is the whole number of milliseconds from socket-thread accept until main-thread dispatch start.
-- For `execute`, the same object also includes the phases that ran: `wrapMs`, `compileMs`, `loadMs`, `invokeMs`, `serializeMs`, and `cacheHit`. A phase under 1 ms is 0. Phases that did not run are omitted. Other commands omit those fields.
-- `timings.compileMs` is the CodeDOM compiler call. `timings.loadMs` is the time to materialize the compiled assembly after the compiler returns. On a cache hit both are 0 and `cacheHit` is true.
+- For `execute`, the same object also includes `compiler` (the compile backend id, `codedom` for CodeDOM) and the phases that ran: `wrapMs`, `compileMs`, `loadMs`, `invokeMs`, `serializeMs`, and `cacheHit`. A phase under 1 ms is 0. Phases that did not run are omitted. `compiler` is omitted when execute did not select a backend. Other commands omit those fields.
+- `timings.compileMs` is the compiler call. `timings.loadMs` is the time to materialize the compiled assembly after the compiler returns. On a cache hit both are 0, `cacheHit` is true, and `compiler` is still the backend that owns the cache.
 - The `execute` data payload still has its own `cacheHit` and `compileMs`. That `compileMs` is the whole cache-miss compile path, including reference setup, and is 0 on a cache hit. It is the value previous releases reported.
 - `timings` is omitted when the request never entered the queue, including a malformed request, a protocol mismatch, or an authentication failure. Older CLIs ignore the object. A newer CLI talking to an older package leaves it unset. The wire protocol stays 8.
 - `--output compact` returns only the data payload, so it does not include `timings`. Default text output and `--json` include it.

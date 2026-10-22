@@ -14,7 +14,6 @@ dotnet publish \
   -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:PublishReadyToRun=true \
-  -p:TieredCompilation=false \
   -p:TieredPGO=false \
   -o "$OUTPUT_DIR"
 

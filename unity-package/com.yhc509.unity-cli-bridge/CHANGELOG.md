@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged. `execute` timings report that backend as `compiler`.
-- Published macOS Apple Silicon and Windows x64 CLI binaries are now ReadyToRun, with tiered compilation and tiered PGO turned off, so a short-lived process spends less time JIT-compiling. `InvariantGlobalization` stays off, so non-ASCII paths and registry timestamps keep the current culture behavior. Single-file sizes, measured by publishing these settings: macOS arm64 77.5 MB → 90.9 MB (+13.4 MB), Windows x64 71.3 MB → 82.2 MB (+10.8 MB).
+- Published macOS Apple Silicon and Windows x64 CLI binaries are now ReadyToRun, with tiered PGO turned off. Tiered compilation stays at the runtime default: turning it off made every CLI call 17–20 ms slower than 0.5.7 on macOS. `InvariantGlobalization` stays off, so non-ASCII paths and registry timestamps keep the current culture behavior. Single-file sizes with ReadyToRun: macOS arm64 77.5 MB → 90.9 MB (+13.4 MB), Windows x64 71.3 MB → 82.2 MB (+10.8 MB).
 
 ## [0.5.7] - 2026-10-21
 
