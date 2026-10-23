@@ -39,20 +39,23 @@ public sealed class RoslynHostBackendTests : IDisposable
         ExecuteCompilerSettings? settings = null,
         IRoslynHostSessionStore? session = null,
         Func<DateTime>? clock = null,
-        TimeSpan? idleCheck = null)
+        TimeSpan? idleCheck = null,
+        Action<RoslynHostSupervisorOptions>? configure = null)
     {
+        var options = new RoslynHostSupervisorOptions
+        {
+            ProjectHash = "abc123def456",
+            EditorPid = Environment.ProcessId,
+            HostDirectory = _hostDirectory,
+            IdleCheckInterval = idleCheck ?? TimeSpan.FromSeconds(30),
+        };
+        configure?.Invoke(options);
         return new RoslynHostSupervisor(
             settings ?? Settings(),
             session ?? new MemoryRoslynHostSessionStore(),
             launcher,
             HostTestSupport.FrameworkReferences,
-            new RoslynHostSupervisorOptions
-            {
-                ProjectHash = "abc123def456",
-                EditorPid = Environment.ProcessId,
-                HostDirectory = _hostDirectory,
-                IdleCheckInterval = idleCheck ?? TimeSpan.FromSeconds(30),
-            },
+            options,
             clock);
     }
 
@@ -382,6 +385,173 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void Building_FallsBackToCodeDomImmediately_AndTheBuildKeepsRunning()
+    {
+        var beforeSpawn = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance())
+        {
+            ImageDisposition = RoslynHostImageDisposition.NeedsBuild,
+            BeforeSpawn = beforeSpawn,
+        };
+        int waits = 0;
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = _ =>
+            {
+                waits++;
+                return false;
+            });
+        var codeDom = new CountingBackend("codedom", succeed: true);
+        var selector = new CompileBackendSelector(codeDom, new ICompileBackend[] { new RoslynHostBackend(supervisor) }, null);
+
+        try
+        {
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            CompileOutcome building = selector.Compile(Request("return 1;"));
+            watch.Stop();
+
+            Assert.Equal("codedom", building.Compiler);
+            Assert.Equal("host-building: the host is still being built", building.FallbackReason);
+            Assert.Equal("building", supervisor.State);
+            Assert.True(supervisor.IsStarting);
+            Assert.Equal(0, waits);
+            Assert.Equal(1, codeDom.Calls);
+            Assert.True(watch.ElapsedMilliseconds < 500, "elapsed " + watch.ElapsedMilliseconds + " ms");
+
+            beforeSpawn.Set();
+            Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(5)));
+            CompileOutcome ready = selector.Compile(Request("return 2;"));
+
+            Assert.Equal("roslyn-host", ready.Compiler);
+            Assert.Null(ready.FallbackReason);
+            Assert.Equal(1, launcher.Launches);
+            Assert.Equal(1, codeDom.Calls);
+            Assert.Equal(0, waits);
+        }
+        finally
+        {
+            beforeSpawn.Set();
+        }
+    }
+
+    [Fact]
+    public void ReadyHost_IsUsedWithoutWaiting()
+    {
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance());
+        int waits = 0;
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            configure: options => options.WaitForStart = _ =>
+            {
+                waits++;
+                return false;
+            });
+        supervisor.BeginStart("preload");
+        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(5)));
+        Assert.Equal(0, waits);
+        var codeDom = new CountingBackend("codedom", succeed: true);
+        var selector = new CompileBackendSelector(codeDom, new ICompileBackend[] { new RoslynHostBackend(supervisor) }, null);
+
+        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        CompileOutcome outcome = selector.Compile(Request("return 1;"));
+        watch.Stop();
+
+        Assert.Equal("roslyn-host", outcome.Compiler);
+        Assert.Null(outcome.FallbackReason);
+        Assert.Equal(0, codeDom.Calls);
+        Assert.Equal(0, waits);
+        Assert.True(watch.ElapsedMilliseconds < 500, "elapsed " + watch.ElapsedMilliseconds + " ms");
+    }
+
+    [Fact]
+    public void StartingProcess_WaitsOnlyUpToTheBound_ThenFallsBackWithoutSleepingIt()
+    {
+        var gate = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new ScriptedHostInstance(ScriptedHostInstance.Replies(
+            request => new RoslynHostCompileResult { Id = request.Id, Ok = false }.ToMessage())))
+        {
+            Gate = gate,
+        };
+        int waits = 0;
+        int requested = -1;
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = milliseconds =>
+            {
+                waits++;
+                requested = milliseconds;
+                return false;
+            });
+        try
+        {
+            supervisor.BeginStart("preload");
+            Assert.True(SpinWait.SpinUntil(
+                () => supervisor.State == "starting" && File.Exists(supervisor.PidFilePath),
+                TimeSpan.FromSeconds(5)));
+
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            CompileOutcome waiting = new CompileBackendSelector(
+                new CountingBackend("codedom", succeed: true),
+                new ICompileBackend[] { new RoslynHostBackend(supervisor) },
+                null).Compile(Request("return 1;"));
+            watch.Stop();
+
+            Assert.Equal("codedom", waiting.Compiler);
+            Assert.StartsWith("host-not-ready: the host is still starting after ", waiting.FallbackReason);
+            Assert.Equal(1, waits);
+            Assert.Equal(15000, requested);
+            Assert.Equal("starting", supervisor.State);
+            Assert.True(supervisor.IsStarting);
+            Assert.True(watch.ElapsedMilliseconds < 500, "elapsed " + watch.ElapsedMilliseconds + " ms");
+        }
+        finally
+        {
+            gate.Set();
+        }
+    }
+
+    [Fact]
+    public void StartingProcess_BoundedWait_UsesTheHostWhenItBecomesReady()
+    {
+        var gate = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance()) { Gate = gate };
+        int waits = 0;
+        int requested = -1;
+        RoslynHostSupervisor? supervisor = null;
+        supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = milliseconds =>
+            {
+                waits++;
+                requested = milliseconds;
+                gate.Set();
+                return SpinWait.SpinUntil(() => supervisor!.State == "ready", TimeSpan.FromSeconds(5));
+            });
+        using (supervisor)
+        {
+            supervisor.BeginStart("preload");
+            Assert.True(SpinWait.SpinUntil(() => File.Exists(supervisor.PidFilePath), TimeSpan.FromSeconds(5)));
+            Assert.Equal("starting", supervisor.State);
+
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            CompileOutcome outcome = new CompileBackendSelector(
+                new CountingBackend("codedom", succeed: true),
+                new ICompileBackend[] { new RoslynHostBackend(supervisor) },
+                null).Compile(Request("return 1;"));
+            watch.Stop();
+
+            Assert.Equal("roslyn-host", outcome.Compiler);
+            Assert.Null(outcome.FallbackReason);
+            Assert.Equal(1, waits);
+            Assert.Equal(15000, requested);
+            Assert.True(watch.ElapsedMilliseconds < 1500, "elapsed " + watch.ElapsedMilliseconds + " ms");
+        }
+    }
+
+    [Fact]
     public void HostThatDiedWhileIdle_IsCountedAndRestarted()
     {
         var instances = new List<ScriptedHostInstance>();
@@ -613,6 +783,11 @@ public sealed class RoslynHostBackendTests : IDisposable
         public ThrowingLauncher(RoslynHostException error) => _error = error;
 
         public int Launches { get; private set; }
+
+        public RoslynHostImageDisposition ImageDisposition
+        {
+            get { return RoslynHostImageDisposition.Ready; }
+        }
 
         public RoslynHostLaunch Launch(bool prewarm, Action<IRoslynHostInstance> onSpawned)
         {

@@ -56,7 +56,26 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 new CodeDomBackend(),
                 new ICompileBackend[] { new RoslynHostBackend(_supervisor) },
                 null));
-            Assert.That(_supervisor.AcquireReady(30000, out string reason), Is.Not.Null, reason);
+            // A cold image build does not block AcquireReady (execute falls back at once and the
+            // build continues). This harness waits for that background start, including connect.
+            string reason = string.Empty;
+            bool settled = SpinUntil(() =>
+            {
+                string state = _supervisor!.State;
+                if (state == "failed" || state == "disabled")
+                {
+                    return true;
+                }
+
+                return _supervisor.AcquireReady(2000, out reason) != null;
+            }, 60000);
+            if (_supervisor!.State == "failed" || _supervisor.State == "disabled")
+            {
+                _supervisor.AcquireReady(0, out reason);
+                Assert.Fail(reason);
+            }
+
+            Assert.That(settled, Is.True, reason + " state=" + _supervisor.State);
         }
 
         [OneTimeTearDown]

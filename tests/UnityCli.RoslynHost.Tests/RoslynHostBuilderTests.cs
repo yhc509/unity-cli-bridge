@@ -165,11 +165,16 @@ public sealed class RoslynHostBuilderTests : IDisposable
             return new BundledDotnetRunResult(0, "ok", string.Empty);
         };
 
+        Assert.False(RoslynHostBuilder.IsImageReady(Request(toolchain, cacheRoot), out bool keyedBefore));
+        Assert.True(keyedBefore);
+
         RoslynHostBuildResult first = RoslynHostBuilder.EnsureBuilt(Request(toolchain, cacheRoot), runner);
         RoslynHostBuildResult second = RoslynHostBuilder.EnsureBuilt(Request(toolchain, cacheRoot), runner);
 
         Assert.True(first.Success, first.Error);
         Assert.False(first.CacheHit);
+        Assert.True(RoslynHostBuilder.IsImageReady(Request(toolchain, cacheRoot), out bool keyedAfter));
+        Assert.True(keyedAfter);
         Assert.True(second.Success);
         Assert.True(second.CacheHit);
         Assert.Equal(0, second.BuildMs);
@@ -295,6 +300,10 @@ public sealed class RoslynHostBuilderTests : IDisposable
         RoslynHostBuildResult b = RoslynHostBuilder.EnsureBuilt(new RoslynHostBuildRequest(noRoslyn, new[] { toolchain.Source }, _root, "x"), mustNotRun);
         RoslynHostBuildResult c = RoslynHostBuilder.EnsureBuilt(new RoslynHostBuildRequest(toolchain.Report, new[] { toolchain.Source }, "relative/cache", "x"), mustNotRun);
         RoslynHostBuildResult d = RoslynHostBuilder.EnsureBuilt(new RoslynHostBuildRequest(toolchain.Report, new[] { Path.Combine(_root, "missing.cs") }, _root, "x"), mustNotRun);
+        Assert.False(RoslynHostBuilder.IsImageReady(new RoslynHostBuildRequest(noRuntime, new[] { toolchain.Source }, _root, "x"), out bool runtimeKeyed));
+        Assert.False(runtimeKeyed);
+        Assert.False(RoslynHostBuilder.IsImageReady(new RoslynHostBuildRequest(toolchain.Report, new[] { Path.Combine(_root, "missing.cs") }, _root, "x"), out bool sourceKeyed));
+        Assert.False(sourceKeyed);
 
         Assert.Contains("dotnet muxer not found", a.Error);
         Assert.Contains("Roslyn not found", b.Error);

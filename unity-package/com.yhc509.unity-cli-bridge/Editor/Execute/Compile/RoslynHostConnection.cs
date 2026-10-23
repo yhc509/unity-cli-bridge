@@ -15,6 +15,7 @@ namespace UnityCliBridge.Bridge.Editor
         public const string StartFailed = "start-failed";
         public const string ForeignRuntime = "foreign-runtime";
         public const string NotReady = "host-not-ready";
+        public const string Building = "host-building";
         public const string Crashed = "host-crashed";
         public const string Timeout = "timeout";
         public const string FrameError = "frame-error";

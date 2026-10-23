@@ -35,17 +35,34 @@ namespace UnityCliBridge.Bridge.Editor
     internal sealed class RoslynHostLauncher : IRoslynHostLauncher
     {
         private readonly RoslynHostLauncherOptions _options;
+        private readonly object _gate = new object();
         private BundledToolchainReport? _toolchain;
         private RoslynHostBuildResult? _build;
+        private RoslynHostImageDisposition? _disposition;
 
         public RoslynHostLauncher(RoslynHostLauncherOptions options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
         }
 
+        public RoslynHostImageDisposition ImageDisposition
+        {
+            get
+            {
+                try
+                {
+                    return ReadDisposition();
+                }
+                catch (Exception)
+                {
+                    return RoslynHostImageDisposition.Unavailable;
+                }
+            }
+        }
+
         public RoslynHostLaunch Launch(bool prewarm, Action<IRoslynHostInstance> onSpawned)
         {
-            BundledToolchainReport toolchain = _toolchain ?? (_toolchain = BundledToolchainLocator.Locate(_options.ContentsPath));
+            BundledToolchainReport toolchain = Toolchain();
             BundledToolComponent? runtime = toolchain.Runtime;
             BundledToolComponent? roslyn = toolchain.Roslyn;
             if (runtime == null || !runtime.Found || runtime.Path == null || runtime.Directory == null)
@@ -62,15 +79,23 @@ namespace UnityCliBridge.Bridge.Editor
                     "bundled Roslyn not found: " + (roslyn?.Error ?? toolchain.Error ?? "unknown"));
             }
 
-            RoslynHostBuildResult? build = _build;
+            RoslynHostBuildResult? build;
+            lock (_gate)
+            {
+                build = _build;
+            }
+
             if (build == null || !build.Success || build.OutputDirectory == null || !RoslynHostBuilder.IsComplete(build.OutputDirectory))
             {
-                build = RoslynHostBuilder.EnsureBuilt(new RoslynHostBuildRequest(
-                    toolchain,
-                    RoslynHostBuilder.GetHostSourcePaths(_options.PackageRoot),
-                    _options.CacheRoot,
-                    _options.UnityVersion));
-                _build = build;
+                build = RoslynHostBuilder.EnsureBuilt(BuildRequest(toolchain));
+                lock (_gate)
+                {
+                    _build = build;
+                    if (build.Success && build.OutputDirectory != null && RoslynHostBuilder.IsComplete(build.OutputDirectory))
+                    {
+                        _disposition = RoslynHostImageDisposition.Ready;
+                    }
+                }
             }
 
             if (!build.Success || build.HostAssemblyPath == null)
@@ -94,6 +119,70 @@ namespace UnityCliBridge.Bridge.Editor
                 _options.HelloTimeout);
             RoslynHostProcess instance = RoslynHostProcess.Start(spec, spawned => onSpawned(spawned));
             return new RoslynHostLaunch(instance, build.CacheKey ?? string.Empty, build.CacheHit, build.BuildMs);
+        }
+
+        private RoslynHostImageDisposition ReadDisposition()
+        {
+            lock (_gate)
+            {
+                if (_disposition == RoslynHostImageDisposition.Ready)
+                {
+                    return RoslynHostImageDisposition.Ready;
+                }
+
+                if (_build != null && _build.Success && _build.OutputDirectory != null && RoslynHostBuilder.IsComplete(_build.OutputDirectory))
+                {
+                    _disposition = RoslynHostImageDisposition.Ready;
+                    return RoslynHostImageDisposition.Ready;
+                }
+
+                if (_disposition == RoslynHostImageDisposition.NeedsBuild || _disposition == RoslynHostImageDisposition.Unavailable)
+                {
+                    return _disposition.Value;
+                }
+            }
+
+            BundledToolchainReport toolchain = Toolchain();
+            bool ready = RoslynHostBuilder.IsImageReady(BuildRequest(toolchain), out bool keyed);
+            RoslynHostImageDisposition probed = !keyed
+                ? RoslynHostImageDisposition.Unavailable
+                : (ready ? RoslynHostImageDisposition.Ready : RoslynHostImageDisposition.NeedsBuild);
+            lock (_gate)
+            {
+                if (_disposition == RoslynHostImageDisposition.Ready)
+                {
+                    return RoslynHostImageDisposition.Ready;
+                }
+
+                _disposition = probed;
+                return probed;
+            }
+        }
+
+        private BundledToolchainReport Toolchain()
+        {
+            lock (_gate)
+            {
+                if (_toolchain != null)
+                {
+                    return _toolchain;
+                }
+            }
+
+            BundledToolchainReport located = BundledToolchainLocator.Locate(_options.ContentsPath);
+            lock (_gate)
+            {
+                return _toolchain ?? (_toolchain = located);
+            }
+        }
+
+        private RoslynHostBuildRequest BuildRequest(BundledToolchainReport toolchain)
+        {
+            return new RoslynHostBuildRequest(
+                toolchain,
+                RoslynHostBuilder.GetHostSourcePaths(_options.PackageRoot),
+                _options.CacheRoot,
+                _options.UnityVersion);
         }
     }
 }
