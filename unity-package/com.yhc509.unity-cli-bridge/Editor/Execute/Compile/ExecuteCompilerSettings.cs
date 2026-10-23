@@ -47,10 +47,10 @@ namespace UnityCliBridge.Bridge.Editor
     /// UCB_ROSLYN_COMPILE_TIMEOUT_MS   10000 per compile; the host is killed when exceeded (1000–600000)
     /// UCB_ROSLYN_IDLE_EXIT_MINUTES    0 = keep the host for the whole domain (0–1440)
     /// </code>
-    /// Until the default changes, only <c>roslyn-host</c> uses the host (chain roslyn-host → csc-shared
-    /// → codedom) and <c>csc-shared</c> starts at csc /shared (csc-shared → codedom); <c>auto</c>,
-    /// unset, and <c>codedom</c> compile exactly as before. Invalid values fall back to the default and
-    /// are reported in <see cref="Warnings"/>.
+    /// <c>auto</c> (also unset or invalid) and <c>roslyn-host</c> use the Roslyn host (chain roslyn-host
+    /// → csc-shared → codedom), <c>csc-shared</c> starts at csc /shared (csc-shared → codedom), and
+    /// <c>codedom</c> is the kill switch: mcs only, with no host, compiler server, thread, or status
+    /// file. Invalid values fall back to the default and are reported in <see cref="Warnings"/>.
     /// Unity-free so the parsing is unit-tested.
     /// </summary>
     internal sealed class ExecuteCompilerSettings
@@ -100,23 +100,23 @@ namespace UnityCliBridge.Bridge.Editor
 
         public IReadOnlyList<string> Warnings { get; }
 
-        /// <summary>True only for the explicit opt-in. <c>auto</c> stays on CodeDOM until the default changes.</summary>
+        /// <summary>True for the default (<c>auto</c>) and <c>roslyn-host</c>, which are the same chain.</summary>
         public bool UsesRoslynHost
         {
-            get { return Mode == ExecuteCompilerMode.RoslynHost; }
+            get { return Mode == ExecuteCompilerMode.Auto || Mode == ExecuteCompilerMode.RoslynHost; }
         }
 
-        /// <summary>True when the chain has the csc /shared step: <c>roslyn-host</c> (as the host's fallback) or <c>csc-shared</c>.</summary>
+        /// <summary>True when the chain has the csc /shared step: the host's fallback (<c>auto</c>, <c>roslyn-host</c>) or <c>csc-shared</c>.</summary>
         public bool UsesCscShared
         {
-            get { return Mode == ExecuteCompilerMode.RoslynHost || Mode == ExecuteCompilerMode.CscShared; }
+            get { return Mode != ExecuteCompilerMode.CodeDom; }
         }
 
         /// <summary>
-        /// Why a setting that asked for something else compiles with CodeDOM (reported as
-        /// <c>timings.compilerFallbackReason</c>); null when CodeDOM is what was asked for.
+        /// The invalid <c>UCB_EXECUTE_COMPILER</c> value the default replaced (reported as
+        /// <c>timings.compilerFallbackReason</c> on every compile); null when the value was valid.
         /// </summary>
-        public string? CodeDomReason
+        public string? InvalidSettingReason
         {
             get
             {

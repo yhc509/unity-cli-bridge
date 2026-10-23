@@ -8,8 +8,7 @@ namespace UnityCliBridge.Bridge.Editor
     /// <summary>
     /// Compiles through <c>csc /shared</c> (the bundled csc talking to a compiler server on this
     /// project's pipe), C# 9. The step between the Roslyn host and CodeDOM: used when the host has an
-    /// infrastructure failure under <c>UCB_EXECUTE_COMPILER=roslyn-host</c>, and first under
-    /// <c>UCB_EXECUTE_COMPILER=csc-shared</c>. Inputs, polyfill, and diagnostic text are the host's
+    /// infrastructure failure (the default chain), and first under <c>UCB_EXECUTE_COMPILER=csc-shared</c>. Inputs, polyfill, and diagnostic text are the host's
     /// (<see cref="RoslynHostBackend"/>), so a snippet compiles and fails the same way on both. A
     /// missing toolchain, a csc that cannot run or times out, output without an assembly, or an image
     /// Mono cannot load is an infrastructure failure; csc errors located in the source are the user's.

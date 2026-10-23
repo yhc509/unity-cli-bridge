@@ -25,9 +25,10 @@ namespace UnityCliBridge.Bridge.Editor
     }
 
     /// <summary>
-    /// Editor hooks for the Roslyn host (plan §2.5). Does nothing at all unless
-    /// <c>UCB_EXECUTE_COMPILER=roslyn-host</c>, so the default editor keeps today's CodeDOM path
-    /// with no extra hook, thread, file, or process. With the opt-in:
+    /// Editor hooks for the Roslyn host (plan §2.5). The host is the default (<c>UCB_EXECUTE_COMPILER</c>
+    /// unset, <c>auto</c>, or <c>roslyn-host</c>); with <c>codedom</c> or <c>csc-shared</c> this does
+    /// nothing at all, so <c>codedom</c> keeps the CodeDOM path with no extra hook, thread, file, or
+    /// process. With the host:
     /// <list type="bullet">
     /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
     /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
@@ -111,16 +112,16 @@ namespace UnityCliBridge.Bridge.Editor
             get { return _settings; }
         }
 
-        /// <summary>Null unless the host is opted into and set up in this (main) editor process.</summary>
+        /// <summary>Null unless the settings use the host and it is set up in this (main) editor process.</summary>
         public static RoslynHostSupervisor? Supervisor
         {
             get { return _supervisor; }
         }
 
         /// <summary>
-        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> with
-        /// <c>roslyn-host</c>, <c>csc-shared → codedom</c> with <c>csc-shared</c>, otherwise
-        /// <c>codedom</c> alone.
+        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> by default
+        /// (<c>auto</c>, <c>roslyn-host</c>), <c>csc-shared → codedom</c> with <c>csc-shared</c>, and
+        /// <c>codedom</c> alone with <c>codedom</c>. An invalid setting is reported as the fallback reason.
         /// </summary>
         public static CompileBackendSelector CreateSelector()
         {
@@ -148,7 +149,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
             else
             {
-                reason = preferred.Count == 0 ? _settings.CodeDomReason : null;
+                reason = _settings.InvalidSettingReason;
             }
 
             return new CompileBackendSelector(codeDom, preferred, reason);

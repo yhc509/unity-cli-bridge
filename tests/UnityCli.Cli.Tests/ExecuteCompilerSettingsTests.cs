@@ -11,15 +11,15 @@ public sealed class ExecuteCompilerSettingsTests
     }
 
     [Fact]
-    public void Unset_IsAutoAndStaysOnCodeDom()
+    public void Unset_IsAutoAndUsesTheHostChain()
     {
         ExecuteCompilerSettings settings = Parse();
 
         Assert.Equal(ExecuteCompilerMode.Auto, settings.Mode);
         Assert.Equal("auto", settings.RawCompiler);
-        Assert.False(settings.UsesRoslynHost);
-        Assert.False(settings.UsesCscShared);
-        Assert.Null(settings.CodeDomReason);
+        Assert.True(settings.UsesRoslynHost);
+        Assert.True(settings.UsesCscShared);
+        Assert.Null(settings.InvalidSettingReason);
         Assert.Equal(RoslynHostPrewarmPolicy.Auto, settings.Prewarm);
         Assert.Equal(1500, settings.HostWaitMs);
         Assert.Equal(10000, settings.CompileTimeoutMs);
@@ -28,31 +28,34 @@ public sealed class ExecuteCompilerSettingsTests
     }
 
     [Theory]
-    [InlineData("auto", "Auto")]
-    [InlineData("AUTO", "Auto")]
-    [InlineData("codedom", "CodeDom")]
-    [InlineData(" CodeDom ", "CodeDom")]
-    public void AutoAndCodeDom_DoNotUseTheHost(string raw, string expectedName)
+    [InlineData("auto")]
+    [InlineData("AUTO")]
+    [InlineData(" Auto ")]
+    [InlineData("roslyn-host")]
+    [InlineData("Roslyn-Host")]
+    public void AutoAndRoslynHost_AreTheSameHostChain(string raw)
     {
-        var expected = Enum.Parse<ExecuteCompilerMode>(expectedName);
         ExecuteCompilerSettings settings = Parse((ExecuteCompilerSettings.CompilerVariable, raw));
 
-        Assert.Equal(expected, settings.Mode);
-        Assert.False(settings.UsesRoslynHost);
-        Assert.Null(settings.CodeDomReason);
+        Assert.True(settings.UsesRoslynHost);
+        Assert.True(settings.UsesCscShared);
+        Assert.Null(settings.InvalidSettingReason);
         Assert.Empty(settings.Warnings);
     }
 
     [Theory]
-    [InlineData("roslyn-host")]
-    [InlineData("Roslyn-Host")]
-    public void RoslynHost_IsTheOnlyOptIn(string raw)
+    [InlineData("codedom")]
+    [InlineData(" CodeDom ")]
+    [InlineData("CODEDOM")]
+    public void CodeDom_IsTheKillSwitch(string raw)
     {
         ExecuteCompilerSettings settings = Parse((ExecuteCompilerSettings.CompilerVariable, raw));
 
-        Assert.Equal(ExecuteCompilerMode.RoslynHost, settings.Mode);
-        Assert.True(settings.UsesRoslynHost);
-        Assert.Null(settings.CodeDomReason);
+        Assert.Equal(ExecuteCompilerMode.CodeDom, settings.Mode);
+        Assert.False(settings.UsesRoslynHost);
+        Assert.False(settings.UsesCscShared);
+        Assert.Null(settings.InvalidSettingReason);
+        Assert.Empty(settings.Warnings);
     }
 
     [Fact]
@@ -63,21 +66,23 @@ public sealed class ExecuteCompilerSettingsTests
         Assert.Equal(ExecuteCompilerMode.CscShared, settings.Mode);
         Assert.False(settings.UsesRoslynHost);
         Assert.True(settings.UsesCscShared);
-        Assert.Null(settings.CodeDomReason);
+        Assert.Null(settings.InvalidSettingReason);
     }
 
     [Theory]
-    [InlineData(null, false)]
-    [InlineData("auto", false)]
-    [InlineData("codedom", false)]
-    [InlineData("fastest", false)]
-    [InlineData("roslyn-host", true)]
-    [InlineData("csc-shared", true)]
-    public void CscShared_IsInTheChainOnlyForTheTwoRoslynSettings(string? raw, bool expected)
+    [InlineData(null, true, true)]
+    [InlineData("", true, true)]
+    [InlineData("auto", true, true)]
+    [InlineData("fastest", true, true)]
+    [InlineData("roslyn-host", true, true)]
+    [InlineData("csc-shared", false, true)]
+    [InlineData("codedom", false, false)]
+    public void Chain_ForEverySetting(string? raw, bool host, bool cscShared)
     {
         ExecuteCompilerSettings settings = raw == null ? Parse() : Parse((ExecuteCompilerSettings.CompilerVariable, raw));
 
-        Assert.Equal(expected, settings.UsesCscShared);
+        Assert.Equal(host, settings.UsesRoslynHost);
+        Assert.Equal(cscShared, settings.UsesCscShared);
     }
 
     [Fact]
@@ -86,10 +91,10 @@ public sealed class ExecuteCompilerSettingsTests
         ExecuteCompilerSettings settings = Parse((ExecuteCompilerSettings.CompilerVariable, "fastest"));
 
         Assert.Equal(ExecuteCompilerMode.Auto, settings.Mode);
-        Assert.False(settings.UsesRoslynHost);
+        Assert.True(settings.UsesRoslynHost);
         Assert.Single(settings.Warnings);
         Assert.Contains("UCB_EXECUTE_COMPILER='fastest'", settings.Warnings[0]);
-        Assert.StartsWith("invalid-setting: UCB_EXECUTE_COMPILER", settings.CodeDomReason);
+        Assert.StartsWith("invalid-setting: UCB_EXECUTE_COMPILER", settings.InvalidSettingReason);
     }
 
     [Theory]
@@ -115,7 +120,7 @@ public sealed class ExecuteCompilerSettingsTests
 
         Assert.Equal(RoslynHostPrewarmPolicy.Auto, settings.Prewarm);
         Assert.Single(settings.Warnings);
-        Assert.Null(settings.CodeDomReason);
+        Assert.Null(settings.InvalidSettingReason);
     }
 
     [Fact]
@@ -148,13 +153,14 @@ public sealed class ExecuteCompilerSettingsTests
         Assert.Equal(ExecuteCompilerSettings.DefaultIdleExitMinutes, settings.IdleExitMinutes);
         Assert.Single(settings.Warnings);
         Assert.StartsWith(name + "='" + raw + "'", settings.Warnings[0]);
-        Assert.Null(settings.CodeDomReason);
+        Assert.Null(settings.InvalidSettingReason);
     }
 
     [Fact]
     public void Default_MatchesAnEmptyEnvironment()
     {
         Assert.Equal(ExecuteCompilerMode.Auto, ExecuteCompilerSettings.Default.Mode);
-        Assert.False(ExecuteCompilerSettings.Default.UsesRoslynHost);
+        Assert.True(ExecuteCompilerSettings.Default.UsesRoslynHost);
+        Assert.True(ExecuteCompilerSettings.Default.UsesCscShared);
     }
 }
