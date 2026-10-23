@@ -71,7 +71,7 @@ namespace UnityCliBridge.Bridge.Editor
         /// The default compiler: what <c>auto</c> (and an unset or invalid variable) selects. True is the
         /// <c>roslyn-host</c> chain, false is CodeDOM alone. The only line that decides the default.
         /// </summary>
-        public static readonly bool AutoUsesRoslynHost = false;
+        public static readonly bool AutoUsesRoslynHost = true;
 
         private ExecuteCompilerSettings(
             ExecuteCompilerMode mode,

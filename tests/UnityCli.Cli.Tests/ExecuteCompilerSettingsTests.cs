@@ -12,9 +12,9 @@ public sealed class ExecuteCompilerSettingsTests
     }
 
     [Fact]
-    public void TheDefaultIsCodeDom()
+    public void TheDefaultIsTheRoslynHost()
     {
-        Assert.False(ExecuteCompilerSettings.AutoUsesRoslynHost);
+        Assert.True(ExecuteCompilerSettings.AutoUsesRoslynHost);
     }
 
     [Fact]
