@@ -10,7 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `doctor` reports the .NET runtime, Roslyn compiler, and mcs that ship inside the project's Unity editor install, in a new `bundledToolchain` object: the matched install layout, the `dotnet` path and Microsoft.NETCore.App version, the Roslyn directory, `csc.dll` path and version, the `mcs.exe` path and version, and a reason for any part that is missing. It reads only the editor install (never a system .NET or PATH) and starts no process. When the Unity path is unknown, `bundledToolchain.error` says so and `doctor` still succeeds. `execute` behavior is unchanged.
 
 ### Changed
-- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler, and compiler options, references, caching, error codes, and messages are unchanged.
+- Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler. References, caching, error codes, and messages are unchanged.
+
+### Fixed
+- `execute` on Windows compiles snippets again. mcs was loading its own Mono mscorlib as well as Unity's `mscorlib.dll`, so every snippet failed with CS0433 (`System.Threading.CancellationToken` defined in both). When a reference is already `mscorlib.dll`, the compiler is passed `-nostdlib` and that Unity reference stays. Compiles with no mscorlib reference are unchanged. Seen on Unity 2021.3.45f2 and 6000.3.10f1.
+- `execute` passes compiler references and options to mcs through a temporary response file instead of the command line, so projects with a few hundred loaded assemblies no longer exceed the Windows command-line length limit (#220). The file is deleted after each compile. References, language version, defines, caching, and error messages are unchanged.
 
 ## [0.5.7] - 2026-10-21
 
