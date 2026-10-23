@@ -903,13 +903,16 @@ namespace UnityCliBridge.Bridge.Editor
             }
             finally
             {
+                // Write the status file before clearing _starter. Callers treat IsStarting
+                // as "the start thread is done", then delete the host directory. Clearing
+                // the flag first lets that delete race the temp status file on Windows.
+                WriteStatus();
                 lock (_gate)
                 {
                     _starter = null;
                     _spawning = null;
                 }
 
-                WriteStatus();
                 _startIdle.Set();
             }
         }

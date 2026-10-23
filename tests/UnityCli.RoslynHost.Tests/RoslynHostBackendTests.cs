@@ -15,9 +15,27 @@ public sealed class RoslynHostBackendTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_hostDirectory))
+        // A status write uses a temp file in this directory. On Windows the handle can
+        // outlive the call that started it by a moment; retry rather than fail the test.
+        for (int attempt = 0; ; attempt++)
         {
-            Directory.Delete(_hostDirectory, true);
+            try
+            {
+                if (Directory.Exists(_hostDirectory))
+                {
+                    Directory.Delete(_hostDirectory, true);
+                }
+
+                return;
+            }
+            catch (IOException) when (attempt < 8)
+            {
+                Thread.Sleep(25);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 8)
+            {
+                Thread.Sleep(25);
+            }
         }
     }
 
