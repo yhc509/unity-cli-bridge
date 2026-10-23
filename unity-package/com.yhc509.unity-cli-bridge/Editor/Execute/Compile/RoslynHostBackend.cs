@@ -10,9 +10,11 @@ namespace UnityCliBridge.Bridge.Editor
     /// <summary>
     /// Compiles through the resident Roslyn host (bundled .NET runtime + bundled Roslyn), C# 9.
     /// Used only when <c>UCB_EXECUTE_COMPILER=roslyn-host</c>. Anything that is not the user's own
-    /// compile error (no toolchain, host not ready in time, crash, timeout, bad frame, foreign
-    /// runtime, an emitted image Mono cannot load) is an infrastructure failure, so the selector
-    /// falls back to CodeDOM. Diagnostics keep the CodeDOM text shape (<c>Line N: CSxxxx: text</c>,
+    /// compile error (no toolchain, host still building, host not ready in time, crash, timeout, bad
+    /// frame, foreign runtime, an emitted image Mono cannot load) is an infrastructure failure, so the
+    /// selector continues at csc-shared when that step is in the chain, then CodeDOM. <c>host-building</c>
+    /// and <c>host-not-ready</c> are infrastructure failures and keep their <c>code: detail</c> text as
+    /// the fallback reason. Diagnostics keep the CodeDOM text shape (<c>Line N: CSxxxx: text</c>,
     /// errors only, warnings only when a failed compile has no errors).
     /// </summary>
     internal sealed class RoslynHostBackend : ICompileBackend

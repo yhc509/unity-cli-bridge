@@ -339,6 +339,25 @@ namespace UnityCli.Protocol
             }
         }
 
+        /// <summary>
+        /// True when <paramref name="request"/> already has a complete host image in the cache.
+        /// Does not compile and does not start a process. <paramref name="keyed"/> is false when
+        /// the toolchain, sources, or cache root cannot name an output folder (a start would fail
+        /// before csc). Otherwise a false result means the next start has to compile the host.
+        /// </summary>
+        public static bool IsImageReady(RoslynHostBuildRequest request, out bool keyed)
+        {
+            if (request == null)
+            {
+                keyed = false;
+                return false;
+            }
+
+            PreparedHostBuild prepared = Prepare(request);
+            keyed = prepared.Error == null;
+            return keyed && prepared.OutputDirectory != null && IsComplete(prepared.OutputDirectory);
+        }
+
         public static RoslynHostBuildResult EnsureBuilt(RoslynHostBuildRequest request)
         {
             return EnsureBuilt(request, BundledDotnetProcess.Run);
@@ -360,58 +379,29 @@ namespace UnityCli.Protocol
             }
 
             Stopwatch total = Stopwatch.StartNew();
-            BundledToolchainReport toolchain = request.Toolchain;
-            BundledToolComponent? runtime = toolchain == null ? null : toolchain.Runtime;
-            BundledToolComponent? roslyn = toolchain == null ? null : toolchain.Roslyn;
-            if (runtime == null || !runtime.Found || runtime.Path == null || runtime.Directory == null || runtime.Version == null)
+            PreparedHostBuild prepared = Prepare(request);
+            if (prepared.Error != null)
             {
-                return Failed(total, null, "Bundled .NET runtime is not available: " + (runtime == null ? toolchain?.Error : runtime.Error));
+                return Failed(total, prepared.Key, prepared.Error);
             }
 
-            if (roslyn == null || !roslyn.Found || roslyn.Path == null || roslyn.Directory == null)
-            {
-                return Failed(total, null, "Bundled Roslyn is not available: " + (roslyn == null ? toolchain?.Error : roslyn.Error));
-            }
-
-            if (string.IsNullOrWhiteSpace(request.CacheRoot) || !Path.IsPathRooted(request.CacheRoot))
-            {
-                return Failed(total, null, "Cache root must be an absolute path: " + request.CacheRoot);
-            }
-
-            var sources = new List<KeyValuePair<string, byte[]>>();
-            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string sourcePath in request.HostSourcePaths)
-            {
-                string name = Path.GetFileName(sourcePath);
-                if (!seenNames.Add(name))
-                {
-                    return Failed(total, null, "Two host sources share the file name " + name + ".");
-                }
-
-                try
-                {
-                    sources.Add(new KeyValuePair<string, byte[]>(name, File.ReadAllBytes(sourcePath)));
-                }
-                catch (Exception ex)
-                {
-                    return Failed(total, null, "Cannot read host source " + sourcePath + ": " + ex.Message);
-                }
-            }
-
-            if (sources.Count == 0)
-            {
-                return Failed(total, null, "No host sources were given.");
-            }
-
+            BundledToolComponent runtime = prepared.Runtime!;
+            BundledToolComponent roslyn = prepared.Roslyn!;
+            List<KeyValuePair<string, byte[]>> sources = prepared.Sources!;
+            string key = prepared.Key!;
+            string outputDirectory = prepared.OutputDirectory!;
+            string runtimeDirectory = runtime.Directory ?? string.Empty;
+            string runtimePath = runtime.Path ?? string.Empty;
+            string runtimeVersion = runtime.Version ?? string.Empty;
+            string roslynDirectory = roslyn.Directory ?? string.Empty;
+            string roslynPath = roslyn.Path ?? string.Empty;
             string roslynVersion = roslyn.Version ?? "unknown";
-            string key = ComputeCacheKey(request.UnityVersion, sources, runtime.Version, roslynVersion);
-            string outputDirectory = Path.Combine(request.CacheRoot, key);
             if (IsComplete(outputDirectory))
             {
                 return Hit(total, key, outputDirectory);
             }
 
-            string sharedFramework = Path.Combine(Path.Combine(Path.Combine(runtime.Directory, "shared"), "Microsoft.NETCore.App"), runtime.Version);
+            string sharedFramework = Path.Combine(Path.Combine(Path.Combine(runtimeDirectory, "shared"), "Microsoft.NETCore.App"), runtimeVersion);
             List<string> frameworkAssemblies;
             try
             {
@@ -448,12 +438,12 @@ namespace UnityCli.Protocol
 
                 string assemblyPath = Path.Combine(tempDirectory, HostAssemblyFileName);
                 string responseFile = Path.Combine(tempDirectory, ResponseFileName);
-                List<string> lines = BuildResponseFileLines(frameworkAssemblies, roslyn.Directory, assemblyPath, tempSources);
+                List<string> lines = BuildResponseFileLines(frameworkAssemblies, roslynDirectory, assemblyPath, tempSources);
                 File.WriteAllText(responseFile, string.Join("\n", lines) + "\n", new UTF8Encoding(false));
 
                 ProcessStartInfo startInfo = BundledDotnetProcess.CreateStartInfo(
-                    runtime.Path,
-                    new[] { "exec", roslyn.Path, "@" + responseFile },
+                    runtimePath,
+                    new[] { "exec", roslynPath, "@" + responseFile },
                     tempDirectory);
                 Stopwatch build = Stopwatch.StartNew();
                 BundledDotnetRunResult run = runCompiler(startInfo, request.CompilerTimeout);
@@ -469,10 +459,10 @@ namespace UnityCli.Protocol
                     return Cleanup(tempDirectory, Failed(total, key, "csc failed with exit code " + run.ExitCode + ".", build.Elapsed.TotalMilliseconds, run.ExitCode, output));
                 }
 
-                File.WriteAllText(Path.Combine(tempDirectory, RuntimeConfigFileName), BuildRuntimeConfigJson(runtime.Version), new UTF8Encoding(false));
+                File.WriteAllText(Path.Combine(tempDirectory, RuntimeConfigFileName), BuildRuntimeConfigJson(runtimeVersion), new UTF8Encoding(false));
                 File.WriteAllText(
                     Path.Combine(tempDirectory, BuildMarkerFileName),
-                    BuildMarkerJson(key, request.UnityVersion, runtime.Version, roslynVersion, build.Elapsed.TotalMilliseconds),
+                    BuildMarkerJson(key, request.UnityVersion, runtimeVersion, roslynVersion, build.Elapsed.TotalMilliseconds),
                     new UTF8Encoding(false));
 
                 try
@@ -511,6 +501,83 @@ namespace UnityCli.Protocol
             {
                 return Cleanup(tempDirectory, Failed(total, key, "Host build failed: " + ex.GetType().Name + ": " + ex.Message));
             }
+        }
+
+        private sealed class PreparedHostBuild
+        {
+            public BundledToolComponent? Runtime { get; set; }
+
+            public BundledToolComponent? Roslyn { get; set; }
+
+            public List<KeyValuePair<string, byte[]>>? Sources { get; set; }
+
+            public string? Key { get; set; }
+
+            public string? OutputDirectory { get; set; }
+
+            public string? Error { get; set; }
+        }
+
+        /// <summary>Names the cache folder, or sets <see cref="PreparedHostBuild.Error"/> with the same text <see cref="EnsureBuilt"/> used to return.</summary>
+        private static PreparedHostBuild Prepare(RoslynHostBuildRequest request)
+        {
+            var prepared = new PreparedHostBuild();
+            BundledToolchainReport toolchain = request.Toolchain;
+            BundledToolComponent? runtime = toolchain == null ? null : toolchain.Runtime;
+            BundledToolComponent? roslyn = toolchain == null ? null : toolchain.Roslyn;
+            if (runtime == null || !runtime.Found || runtime.Path == null || runtime.Directory == null || runtime.Version == null)
+            {
+                prepared.Error = "Bundled .NET runtime is not available: " + (runtime == null ? toolchain?.Error : runtime.Error);
+                return prepared;
+            }
+
+            if (roslyn == null || !roslyn.Found || roslyn.Path == null || roslyn.Directory == null)
+            {
+                prepared.Error = "Bundled Roslyn is not available: " + (roslyn == null ? toolchain?.Error : roslyn.Error);
+                return prepared;
+            }
+
+            if (string.IsNullOrWhiteSpace(request.CacheRoot) || !Path.IsPathRooted(request.CacheRoot))
+            {
+                prepared.Error = "Cache root must be an absolute path: " + request.CacheRoot;
+                return prepared;
+            }
+
+            var sources = new List<KeyValuePair<string, byte[]>>();
+            var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string sourcePath in request.HostSourcePaths)
+            {
+                string name = Path.GetFileName(sourcePath);
+                if (!seenNames.Add(name))
+                {
+                    prepared.Error = "Two host sources share the file name " + name + ".";
+                    return prepared;
+                }
+
+                try
+                {
+                    sources.Add(new KeyValuePair<string, byte[]>(name, File.ReadAllBytes(sourcePath)));
+                }
+                catch (Exception ex)
+                {
+                    prepared.Error = "Cannot read host source " + sourcePath + ": " + ex.Message;
+                    return prepared;
+                }
+            }
+
+            if (sources.Count == 0)
+            {
+                prepared.Error = "No host sources were given.";
+                return prepared;
+            }
+
+            string roslynVersion = roslyn.Version ?? "unknown";
+            prepared.Runtime = runtime;
+            prepared.Roslyn = roslyn;
+            prepared.Sources = sources;
+            prepared.Key = ComputeCacheKey(request.UnityVersion, sources, runtime.Version, roslynVersion);
+            prepared.OutputDirectory = Path.Combine(request.CacheRoot, prepared.Key);
+            return prepared;
         }
 
         public static bool IsComplete(string outputDirectory)

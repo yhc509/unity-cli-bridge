@@ -18,6 +18,7 @@ public sealed class ExecuteCompilerSettingsTests
         Assert.Equal(ExecuteCompilerMode.Auto, settings.Mode);
         Assert.Equal("auto", settings.RawCompiler);
         Assert.False(settings.UsesRoslynHost);
+        Assert.False(settings.UsesCscShared);
         Assert.Null(settings.CodeDomReason);
         Assert.Equal(RoslynHostPrewarmPolicy.Auto, settings.Prewarm);
         Assert.Equal(1500, settings.HostWaitMs);

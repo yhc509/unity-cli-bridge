@@ -303,8 +303,14 @@ internal sealed class FakeLauncher : IRoslynHostLauncher
 
     public ManualResetEventSlim? Gate { get; set; }
 
+    /// <summary>Held before the process is spawned, so the supervisor stays in <c>building</c>.</summary>
+    public ManualResetEventSlim? BeforeSpawn { get; set; }
+
+    public RoslynHostImageDisposition ImageDisposition { get; set; } = RoslynHostImageDisposition.Ready;
+
     public RoslynHostLaunch Launch(bool prewarm, Action<IRoslynHostInstance> onSpawned)
     {
+        BeforeSpawn?.Wait(TimeSpan.FromSeconds(30));
         int attempt = ++Launches;
         PrewarmFlags.Add(prewarm);
         IRoslynHostInstance instance = _create(attempt);

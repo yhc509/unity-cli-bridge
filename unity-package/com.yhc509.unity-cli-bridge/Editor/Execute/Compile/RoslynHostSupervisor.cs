@@ -60,9 +60,28 @@ namespace UnityCliBridge.Bridge.Editor
         public double BuildMs { get; }
     }
 
+    /// <summary>
+    /// Whether the next start has to compile the host image. Read on the main thread before
+    /// <see cref="RoslynHostSupervisor.AcquireReady"/> decides to wait; must not start a process.
+    /// </summary>
+    internal enum RoslynHostImageDisposition
+    {
+        /// <summary>The image is already in the cache. A start is spawn, hello, setRefs, and prewarm.</summary>
+        Ready,
+
+        /// <summary>The toolchain can compile the image, and the cache does not have it yet. That compile outlasts the readiness wait.</summary>
+        NeedsBuild,
+
+        /// <summary>The image cannot be produced (toolchain or sources). A start fails without compiling.</summary>
+        Unavailable,
+    }
+
     /// <summary>Locates, builds, and starts a host. Throws <see cref="RoslynHostException"/> on failure.</summary>
     internal interface IRoslynHostLauncher
     {
+        /// <summary>Cheap cache/toolchain check. May be called on the main thread, including while <see cref="Launch"/> runs.</summary>
+        RoslynHostImageDisposition ImageDisposition { get; }
+
         RoslynHostLaunch Launch(bool prewarm, Action<IRoslynHostInstance> onSpawned);
     }
 
@@ -209,13 +228,24 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <summary>The backend after the host in the chain, reported as the active one while the host is disabled.</summary>
         public string NextBackendId { get; set; } = CompileBackendIds.CodeDom;
+
+        /// <summary>
+        /// Replaces the <c>starting</c>-state readiness wait. The argument is the bound in milliseconds.
+        /// The return value is ignored; <see cref="RoslynHostSupervisor.AcquireReady"/> re-reads the host.
+        /// Null waits on the start worker. Tests install this so a <c>building</c> decision can assert
+        /// the wait was not called, and a <c>starting</c> decision can record the bound without sleeping.
+        /// </summary>
+        public Func<int, bool>? WaitForStart { get; set; }
     }
 
     /// <summary>
     /// Owns the Roslyn host for one domain (plan §2.5–§2.6): background start (orphan cleanup →
-    /// build → spawn → hello → first setRefs, off the main thread), a bounded wait for a starting
-    /// host, per-compile timeout with kill, crash accounting (3 in 60 s disables the host for the
-    /// editor session), quit-then-kill on reload/quit, optional idle exit, and the status file.
+    /// build → spawn → hello → first setRefs, off the main thread), a bounded wait only while the
+    /// host is <c>starting</c> (image already built, process spawning or connecting), an immediate
+    /// <c>host-building</c> result while it is <c>building</c> (the selector continues at csc-shared,
+    /// then CodeDOM), per-compile timeout with kill, crash accounting
+    /// (3 in 60 s disables the host for the editor session), quit-then-kill on reload/quit, optional
+    /// idle exit, and the status file.
     /// Unity-free; the editor glue (<c>RoslynHostEditorLifecycle</c>) supplies the session store,
     /// launcher, and reference provider.
     /// </summary>
@@ -238,6 +268,9 @@ namespace UnityCliBridge.Bridge.Editor
         private readonly object _orphanGate = new object();
         private readonly object _statusGate = new object();
         private readonly RoslynHostCrashTracker _crashes = new RoslynHostCrashTracker();
+
+        /// <summary>0 open, 1 shutdown in progress (non-final writes stop), 2 final status written.</summary>
+        private volatile int _statusPhase;
         private readonly ManualResetEvent _startIdle = new ManualResetEvent(true);
 
         private IRoslynHostInstance? _host;
@@ -396,9 +429,12 @@ namespace UnityCliBridge.Bridge.Editor
             cleanup.Start();
         }
 
-        /// <summary>Starts the host on a background thread unless it is ready, starting, disabled, or failed for good.</summary>
+        /// <summary>Starts the host on a background thread unless it is ready, starting, building, disabled, or failed for good.</summary>
         public void BeginStart(string trigger)
         {
+            // File probe stays outside the lock. NeedsBuild is the one-time csc of the host image;
+            // Ready and Unavailable are spawn-and-connect or a fast start failure.
+            RoslynHostImageDisposition disposition = ReadImageDisposition();
             lock (_gate)
             {
                 if (_shutdown || _disabledReason != null || _permanentFailure != null || _starter != null)
@@ -411,7 +447,7 @@ namespace UnityCliBridge.Bridge.Editor
                     return;
                 }
 
-                _state = "starting";
+                _state = disposition == RoslynHostImageDisposition.NeedsBuild ? "building" : "starting";
                 _startIdle.Reset();
                 bool prewarm = _settings.Prewarm != RoslynHostPrewarmPolicy.Off;
                 _starter = new Thread(() => StartWorker(prewarm, trigger)) { IsBackground = true, Name = "ucb-roslyn-host-start" };
@@ -422,8 +458,13 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Main thread: a ready host, waiting up to <paramref name="waitMs"/> for one that is starting
-        /// (and starting one if none is). Null with a <c>code: detail</c> reason when there is none.
+        /// Main thread: a ready host, or null with a <c>code: detail</c> reason.
+        /// <list type="bullet">
+        /// <item><c>ready</c> — the live host, no wait.</item>
+        /// <item><c>building</c> — the host image is not in the cache (including a first call that has just started that build). Returns <c>host-building</c> immediately and leaves the build running; the selector continues at csc-shared, then CodeDOM. The one-time csc outlasts <paramref name="waitMs"/>, so waiting only made the opt-in slower than the next compiler.</item>
+        /// <item><c>starting</c> — the image is already built and the process is spawning or connecting (hello, setRefs, prewarm), or a start failure that does not compile. Wait up to <paramref name="waitMs"/>. This is the post-reload first miss: <c>afterAssemblyReload</c> starts the host while the editor finishes the reload, the cache hit reaches spawn well before the next <c>execute</c>, and the remainder fits in the bound and beats mcs. <c>onSpawned</c> moves <c>building</c> to <c>starting</c> once the process is alive, so a call that arrives after the compile still waits. If the host is still not ready when the wait ends, the reason is <c>host-not-ready</c> and the selector continues at csc-shared, then CodeDOM.</item>
+        /// <item>A host that died while idle — <c>host-crashed</c> immediately, restart in the background. The image is already built, so that restart is <c>starting</c>.</item>
+        /// </list>
         /// </summary>
         public IRoslynHostInstance? AcquireReady(int waitMs, out string reason)
         {
@@ -482,8 +523,40 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             BeginStart("execute");
+            lock (_gate)
+            {
+                if (_host != null && _host.IsAlive)
+                {
+                    reason = string.Empty;
+                    _lastUseUtc = _clock();
+                    return _host;
+                }
+
+                if (_disabledReason != null)
+                {
+                    reason = RoslynHostFailureCodes.SessionDisabled + ": " + _disabledReason;
+                    return null;
+                }
+
+                if (_permanentFailure != null)
+                {
+                    reason = _permanentFailure;
+                    return null;
+                }
+
+                // Process already spawned, or the image was already built when the start began
+                // (state "starting", including the window before onSpawned). Connect.
+                if (_spawning == null && _state != "starting")
+                {
+                    reason = _state == "building"
+                        ? RoslynHostFailureCodes.Building + ": the host is still being built"
+                        : (_lastError.Length > 0 ? _lastError : RoslynHostFailureCodes.NotReady + ": the host did not start");
+                    return null;
+                }
+            }
+
             Stopwatch waited = Stopwatch.StartNew();
-            _startIdle.WaitOne(Math.Max(0, waitMs));
+            WaitForConnect(Math.Max(0, waitMs));
             SyncSession();
             lock (_gate)
             {
@@ -514,6 +587,38 @@ namespace UnityCliBridge.Bridge.Editor
 
                 return null;
             }
+        }
+
+        private static RoslynHostImageDisposition ReadImageDisposition(IRoslynHostLauncher launcher)
+        {
+            try
+            {
+                return launcher.ImageDisposition;
+            }
+            catch (Exception)
+            {
+                // Same as a missing toolchain: the start fails without a long compile, and the wait
+                // ends when that failure is recorded instead of pretending a build is in progress.
+                return RoslynHostImageDisposition.Unavailable;
+            }
+        }
+
+        private RoslynHostImageDisposition ReadImageDisposition()
+        {
+            return ReadImageDisposition(_launcher);
+        }
+
+        /// <summary>The <c>starting</c> wait. <see cref="RoslynHostSupervisorOptions.WaitForStart"/> replaces it in tests.</summary>
+        private void WaitForConnect(int waitMs)
+        {
+            Func<int, bool>? wait = _options.WaitForStart;
+            if (wait != null)
+            {
+                wait(waitMs);
+                return;
+            }
+
+            _startIdle.WaitOne(waitMs);
         }
 
         /// <summary>
@@ -603,6 +708,11 @@ namespace UnityCliBridge.Bridge.Editor
             lock (_gate)
             {
                 _shutdown = true;
+                if (_statusPhase == 0)
+                {
+                    _statusPhase = 1;
+                }
+
                 host = _host;
                 _host = null;
                 spawning = _spawning;
@@ -644,7 +754,9 @@ namespace UnityCliBridge.Bridge.Editor
 
             RoslynHostPidRecord.TryDelete(PidFilePath);
             Interlocked.Exchange(ref _idleTimer, null)?.Dispose();
-            WriteStatus(reason);
+            // Waits out a write already inside the status lock, then writes the final
+            // snapshot and closes the file. Later WriteStatus calls do not open a temp file.
+            WriteStatus(reason, closing: true);
         }
 
         public void Dispose()
@@ -747,6 +859,12 @@ namespace UnityCliBridge.Bridge.Editor
                     lock (_gate)
                     {
                         _spawning = spawned;
+                        // The image compiled (or was already there) and the process is alive.
+                        // A call that arrives now waits out hello / setRefs / prewarm.
+                        if (!_shutdown && _state == "building")
+                        {
+                            _state = "starting";
+                        }
                     }
 
                     WritePidFile(spawned);
@@ -799,13 +917,16 @@ namespace UnityCliBridge.Bridge.Editor
             }
             finally
             {
+                // A start torn down by Shutdown no-ops here (_statusPhase is already 1 or 2).
+                // A start that finishes on its own still writes before IsStarting clears, so a
+                // waiter cannot delete the host directory while status.json*.tmp is open.
+                WriteStatus();
                 lock (_gate)
                 {
                     _starter = null;
                     _spawning = null;
                 }
 
-                WriteStatus();
                 _startIdle.Set();
             }
         }
@@ -1016,9 +1137,31 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
-        private void WriteStatus(string? stoppedReason = null)
+        /// <summary>
+        /// Writes <c>status.json</c> under <see cref="_statusGate"/>, so the temp file and the
+        /// rename both finish before the lock is released. Once <see cref="Shutdown"/> has set
+        /// <see cref="_statusPhase"/>, a non-final call returns without opening a file. The
+        /// closing call waits for any write already in the lock, writes the final snapshot,
+        /// and only then lets <see cref="Shutdown"/> return.
+        /// </summary>
+        private void WriteStatus(string? stoppedReason = null, bool closing = false)
         {
             if (!_options.WriteStatusFile || string.IsNullOrEmpty(_options.HostDirectory))
+            {
+                if (closing)
+                {
+                    _statusPhase = 2;
+                }
+
+                return;
+            }
+
+            if (!closing && _statusPhase != 0)
+            {
+                return;
+            }
+
+            if (closing && _statusPhase == 2)
             {
                 return;
             }
@@ -1028,12 +1171,25 @@ namespace UnityCliBridge.Bridge.Editor
                 RoslynHostStatus status = Snapshot(stoppedReason);
                 lock (_statusGate)
                 {
+                    int phase = _statusPhase;
+                    if (phase == 2 || (!closing && phase != 0))
+                    {
+                        return;
+                    }
+
+                    if (closing)
+                    {
+                        _statusPhase = 2;
+                    }
+
                     status.Write(StatusFilePath);
                 }
             }
             catch (Exception)
             {
-                // Diagnostics only.
+                // Diagnostics only. A closing failure still leaves the phase closed when that
+                // assignment happened before Write; a failure before it can be retried by a
+                // second Shutdown.
             }
         }
     }
