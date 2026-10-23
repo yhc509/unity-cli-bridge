@@ -301,6 +301,7 @@ namespace UnityCliBridge.Bridge.Editor
         private double _firstCompileMs;
         private string _lastError = string.Empty;
         private DateTime? _lastErrorUtc;
+        private double _lastShutdownMs;
 
         public CscSharedServer(CscSharedServerOptions options, ICscSharedProcessTable? processes = null)
         {
@@ -487,6 +488,7 @@ namespace UnityCliBridge.Bridge.Editor
                 return;
             }
 
+            var watch = Stopwatch.StartNew();
             CscSharedToolchain? toolchain = ResolveToolchain(out string _);
             if (toolchain != null)
             {
@@ -524,6 +526,7 @@ namespace UnityCliBridge.Bridge.Editor
                 _serverPid = 0;
                 _state = "stopped";
                 _note = reason ?? string.Empty;
+                _lastShutdownMs = watch.Elapsed.TotalMilliseconds;
             }
 
             WriteStatus();
@@ -548,6 +551,7 @@ namespace UnityCliBridge.Bridge.Editor
                     CompileTimeoutMs = _options.CompileTimeoutMs,
                     Compiles = _compiles,
                     FirstCompileMs = _firstCompileMs,
+                    LastShutdownMs = _lastShutdownMs,
                     LastError = _lastError.Length > 0 ? _lastError : (_toolchainError ?? string.Empty),
                     LastErrorUtc = _lastErrorUtc.HasValue ? RoslynHostStatus.FormatUtc(_lastErrorUtc.Value) : string.Empty,
                 };
@@ -698,6 +702,11 @@ namespace UnityCliBridge.Bridge.Editor
             if (writeStatus)
             {
                 WriteStatus();
+            }
+            else
+            {
+                // Keeps the compile count current for doctor without a file write on the request path.
+                ThreadPool.QueueUserWorkItem(_ => WriteStatus());
             }
 
             if (discover)

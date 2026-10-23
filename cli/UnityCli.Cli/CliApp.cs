@@ -517,6 +517,7 @@ public static class CliApp
             compileTimeoutMs = status.CompileTimeoutMs,
             compiles = status.Compiles,
             firstCompileMs = status.FirstCompileMs,
+            lastShutdownMs = status.LastShutdownMs,
             lastError = status.LastError,
             lastErrorUtc = status.LastErrorUtc,
         };

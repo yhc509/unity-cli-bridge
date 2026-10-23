@@ -88,6 +88,7 @@ public sealed class CscSharedStatusTests
             CompileTimeoutMs = 10000,
             Compiles = 3,
             FirstCompileMs = 412.34,
+            LastShutdownMs = 151.25,
             LastError = "csc-shared-timeout: x",
             LastErrorUtc = "2026-10-23T01:00:01.0000000Z",
         };
@@ -98,7 +99,8 @@ public sealed class CscSharedStatusTests
 
         Assert.Equal(Path.Combine(temp.Path, "Library", "com.yhc509.unity-cli-bridge", "csc-shared", "status.json"), path);
         Assert.NotNull(read);
-        Assert.Equal(status.ToJson().Replace("412.34", "412.3"), read!.ToJson());
+        Assert.Equal(status.ToJson().Replace("412.34", "412.3").Replace("151.25", "151.2"), read!.ToJson());
+        Assert.Equal(151.2, read.LastShutdownMs);
         Assert.Equal("ucb-d6887d89-abc123", read.PipeName);
         Assert.Equal(600, read.ServerPid);
         Assert.Equal(412.3, read.FirstCompileMs);

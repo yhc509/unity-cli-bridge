@@ -170,6 +170,9 @@ namespace UnityCli.Protocol
         /// <summary>The first compile of the domain, which also starts the server when none is running.</summary>
         public double FirstCompileMs { get; set; }
 
+        /// <summary>Main-thread time of the last stop (<c>-shutdown</c> client plus the leftover check), 0 before the first.</summary>
+        public double LastShutdownMs { get; set; }
+
         public string LastError { get; set; } = string.Empty;
 
         public string LastErrorUtc { get; set; } = string.Empty;
@@ -192,6 +195,7 @@ namespace UnityCli.Protocol
                 ["compileTimeoutMs"] = CompileTimeoutMs,
                 ["compiles"] = Compiles,
                 ["firstCompileMs"] = Math.Round(FirstCompileMs, 1),
+                ["lastShutdownMs"] = Math.Round(LastShutdownMs, 1),
                 ["lastError"] = LastError,
                 ["lastErrorUtc"] = LastErrorUtc,
             };
@@ -232,6 +236,7 @@ namespace UnityCli.Protocol
                 CompileTimeoutMs = (int)RoslynHostJson.GetInt64(h, "compileTimeoutMs", 0, 0, int.MaxValue),
                 Compiles = (int)RoslynHostJson.GetInt64(h, "compiles", 0, 0, int.MaxValue),
                 FirstCompileMs = RoslynHostJson.GetDouble(h, "firstCompileMs"),
+                LastShutdownMs = RoslynHostJson.GetDouble(h, "lastShutdownMs"),
                 LastError = RoslynHostJson.GetString(h, "lastError") ?? string.Empty,
                 LastErrorUtc = RoslynHostJson.GetString(h, "lastErrorUtc") ?? string.Empty,
             };
