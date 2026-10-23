@@ -25,10 +25,10 @@ namespace UnityCliBridge.Bridge.Editor
     }
 
     /// <summary>
-    /// Editor hooks for the Roslyn host (plan §2.5). The host is the default (<c>UCB_EXECUTE_COMPILER</c>
-    /// unset, <c>auto</c>, or <c>roslyn-host</c>); with <c>codedom</c> or <c>csc-shared</c> this does
-    /// nothing at all, so <c>codedom</c> keeps the CodeDOM path with no extra hook, thread, file, or
-    /// process. With the host:
+    /// Editor hooks for the Roslyn host (plan §2.5), for the settings that use it
+    /// (<see cref="ExecuteCompilerSettings.UsesRoslynHost"/>: <c>roslyn-host</c>, and <c>auto</c> when it
+    /// is the default). Otherwise (always with <c>codedom</c> or <c>csc-shared</c>) this does nothing at
+    /// all: no extra hook, thread, file, or process. With the host:
     /// <list type="bullet">
     /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
     /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
@@ -119,9 +119,9 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> by default
-        /// (<c>auto</c>, <c>roslyn-host</c>), <c>csc-shared → codedom</c> with <c>csc-shared</c>, and
-        /// <c>codedom</c> alone with <c>codedom</c>, or when this editor has no bundled runtime or
+        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> with the host
+        /// (<c>roslyn-host</c>, and <c>auto</c> when it is the default), <c>csc-shared → codedom</c> with
+        /// <c>csc-shared</c>, and <c>codedom</c> alone otherwise, or when this editor has no bundled runtime or
         /// Roslyn (<see cref="CompileChainPlan"/>). An invalid setting is reported as the fallback reason.
         /// Main thread, first compile of the domain: the toolchain probe is a few file checks.
         /// </summary>

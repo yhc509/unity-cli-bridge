@@ -48,10 +48,11 @@ namespace UnityCliBridge.Bridge.Editor
     /// UCB_ROSLYN_COMPILE_TIMEOUT_MS   10000 per compile; the host is killed when exceeded (1000–600000)
     /// UCB_ROSLYN_IDLE_EXIT_MINUTES    0 = keep the host for the whole domain (0–1440)
     /// </code>
-    /// <c>auto</c> (also unset or invalid) and <c>roslyn-host</c> use the Roslyn host (chain roslyn-host
-    /// → csc-shared → codedom), <c>csc-shared</c> starts at csc /shared (csc-shared → codedom), and
-    /// <c>codedom</c> is the kill switch: mcs only, with no host, compiler server, thread, or status
-    /// file. Invalid values fall back to the default and are reported in <see cref="Warnings"/>.
+    /// <c>roslyn-host</c> uses the Roslyn host (chain roslyn-host → csc-shared → codedom),
+    /// <c>csc-shared</c> starts at csc /shared (csc-shared → codedom), and <c>codedom</c> is the kill
+    /// switch: mcs only, with no host, compiler server, thread, or status file. <c>auto</c> (also unset
+    /// or invalid) is whatever <see cref="AutoUsesRoslynHost"/> says. Invalid values fall back to
+    /// <c>auto</c> and are reported in <see cref="Warnings"/>.
     /// Unity-free so the parsing is unit-tested.
     /// </summary>
     internal sealed class ExecuteCompilerSettings
@@ -65,6 +66,12 @@ namespace UnityCliBridge.Bridge.Editor
         public const int DefaultHostWaitMs = 1500;
         public const int DefaultCompileTimeoutMs = 10000;
         public const int DefaultIdleExitMinutes = 0;
+
+        /// <summary>
+        /// The default compiler: what <c>auto</c> (and an unset or invalid variable) selects. True is the
+        /// <c>roslyn-host</c> chain, false is CodeDOM alone. The only line that decides the default.
+        /// </summary>
+        public static readonly bool AutoUsesRoslynHost = false;
 
         private ExecuteCompilerSettings(
             ExecuteCompilerMode mode,
@@ -101,20 +108,20 @@ namespace UnityCliBridge.Bridge.Editor
 
         public IReadOnlyList<string> Warnings { get; }
 
-        /// <summary>True for the default (<c>auto</c>) and <c>roslyn-host</c>, which are the same chain.</summary>
+        /// <summary>True for <c>roslyn-host</c>, and for <c>auto</c> when <see cref="AutoUsesRoslynHost"/>.</summary>
         public bool UsesRoslynHost
         {
-            get { return Mode == ExecuteCompilerMode.Auto || Mode == ExecuteCompilerMode.RoslynHost; }
+            get { return Mode == ExecuteCompilerMode.RoslynHost || (Mode == ExecuteCompilerMode.Auto && AutoUsesRoslynHost); }
         }
 
-        /// <summary>True when the chain has the csc /shared step: the host's fallback (<c>auto</c>, <c>roslyn-host</c>) or <c>csc-shared</c>.</summary>
+        /// <summary>True when the chain has the csc /shared step: the host's fallback (<see cref="UsesRoslynHost"/>) or <c>csc-shared</c>.</summary>
         public bool UsesCscShared
         {
-            get { return Mode != ExecuteCompilerMode.CodeDom; }
+            get { return UsesRoslynHost || Mode == ExecuteCompilerMode.CscShared; }
         }
 
         /// <summary>
-        /// The invalid <c>UCB_EXECUTE_COMPILER</c> value the default replaced (reported as
+        /// The invalid <c>UCB_EXECUTE_COMPILER</c> value <c>auto</c> replaced (reported as
         /// <c>timings.compilerFallbackReason</c> on every compile); null when the value was valid.
         /// </summary>
         public string? InvalidSettingReason

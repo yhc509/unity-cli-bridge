@@ -9,9 +9,10 @@ using UnityEngine;
 namespace UnityCliBridge.Bridge.Editor
 {
     /// <summary>
-    /// Editor hooks for the <c>csc /shared</c> fallback. Active by default (<c>UCB_EXECUTE_COMPILER</c>
-    /// unset, <c>auto</c>, or <c>roslyn-host</c>, as the host's fallback) and with <c>csc-shared</c>;
-    /// with <c>codedom</c> it does nothing at all (no extra hook, thread, file, or process). When active:
+    /// Editor hooks for the <c>csc /shared</c> fallback. Active whenever the chain has that step
+    /// (<see cref="ExecuteCompilerSettings.UsesCscShared"/>: the host's fallback, or <c>csc-shared</c>);
+    /// otherwise, and always with <c>codedom</c>, it does nothing at all (no extra hook, thread, file, or
+    /// process). When active:
     /// <list type="bullet">
     /// <item>Domain load: the status file, and a background cleanup of a server this project left
     /// behind (only when its record survived a failed stop or a killed editor).</item>
