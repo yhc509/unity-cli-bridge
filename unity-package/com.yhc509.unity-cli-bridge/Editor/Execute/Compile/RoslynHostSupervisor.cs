@@ -721,6 +721,15 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>Quit → wait → kill, delete the pidfile, and cancel a start in flight. Safe to call repeatedly.</summary>
         public void Shutdown(string reason)
         {
+            Shutdown(reason, _options.QuitWait);
+        }
+
+        /// <summary>
+        /// <see cref="Shutdown(string)"/> with its own quit wait. <see cref="TimeSpan.Zero"/> kills the host
+        /// without waiting for it to exit, which keeps the wait out of a domain reload.
+        /// </summary>
+        public void Shutdown(string reason, TimeSpan quitWait)
+        {
             IRoslynHostInstance? host;
             IRoslynHostInstance? spawning;
             Thread? starter;
@@ -753,7 +762,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 lock (_hostUse)
                 {
-                    host.Stop(_options.QuitWait);
+                    host.Stop(quitWait);
                 }
             }
 

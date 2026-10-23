@@ -807,6 +807,29 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void Shutdown_PassesItsQuitWaitToTheHost_AndDefaultsToTheOptions()
+    {
+        var reload = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
+        using (RoslynHostSupervisor supervisor = Supervisor(new FakeLauncher(_ => reload)))
+        {
+            Assert.NotNull(supervisor.AcquireReady(10000, out _));
+            supervisor.Shutdown("domain-reload", TimeSpan.Zero);
+            Assert.False(File.Exists(supervisor.PidFilePath));
+            Assert.Equal("stopped", RoslynHostStatus.TryRead(supervisor.StatusFilePath)!.State);
+        }
+
+        var quit = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
+        using (RoslynHostSupervisor supervisor = Supervisor(new FakeLauncher(_ => quit)))
+        {
+            Assert.NotNull(supervisor.AcquireReady(10000, out _));
+            supervisor.Shutdown("editor-quit");
+        }
+
+        Assert.Equal(new[] { TimeSpan.Zero }, reload.QuitWaits);
+        Assert.Equal(new[] { new RoslynHostSupervisorOptions().QuitWait }, quit.QuitWaits);
+    }
+
+    [Fact]
     public void Shutdown_DuringAStart_KillsTheSpawnedHost()
     {
         var instance = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));

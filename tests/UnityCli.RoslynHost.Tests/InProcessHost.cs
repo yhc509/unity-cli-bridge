@@ -257,9 +257,12 @@ internal sealed class ScriptedHostInstance : IRoslynHostInstance
         return _reply(request);
     }
 
+    public List<TimeSpan> QuitWaits { get; } = new();
+
     public void Stop(TimeSpan quitWait)
     {
         Stops++;
+        QuitWaits.Add(quitWait);
         Alive = false;
     }
 

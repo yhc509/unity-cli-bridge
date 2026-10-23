@@ -30,15 +30,16 @@ namespace UnityCliBridge.Bridge.Editor
     /// is the default). Otherwise (always with <c>codedom</c> or <c>csc-shared</c>) this does nothing at
     /// all: no extra hook, thread, file, or process. With the host:
     /// <list type="bullet">
-    /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
-    /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
+    /// <item><c>beforeAssemblyReload</c>: kill without waiting for the exit, delete the pidfile — a
+    /// reload loses the managed <c>Process</c> but not necessarily its pipe, so the host would never
+    /// see EOF. The host has nothing to flush, and waiting for its exit lengthened every reload.</item>
     /// <item>After a reload (<c>afterAssemblyReload</c>, or the first editor tick if that never
     /// fires): orphan cleanup, then the prewarm policy's start, both off the main thread. The
     /// event fires while the editor is still finishing the reload, so the host overlaps that work
     /// instead of starting after it (6000.3: the first miss right after a reload went from ~476 ms
     /// to ~332 ms). Not <c>delayCall</c>, which rides the inspector-update cycle and starves in an
     /// unfocused GUI editor.</item>
-    /// <item><c>quitting</c>: quit, then kill.</item>
+    /// <item><c>quitting</c>: quit, wait ≤ 300 ms, then kill.</item>
     /// </list>
     /// Entering Play Mode without a domain reload fires none of these, so the host stays.
     /// </summary>
@@ -182,7 +183,7 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static void OnBeforeAssemblyReload()
         {
-            _supervisor?.Shutdown("domain-reload");
+            _supervisor?.Shutdown("domain-reload", TimeSpan.Zero);
         }
 
         private static void OnQuitting()
