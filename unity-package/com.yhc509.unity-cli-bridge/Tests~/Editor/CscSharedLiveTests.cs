@@ -205,6 +205,84 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             }
         }
 
+        [Test]
+        public void HostServingAgain_RetiresOurServer_AndTheNextFallbackStartsANewOne()
+        {
+            var host = new SwitchableHostBackend();
+            var selector = new CompileBackendSelector(
+                new CodeDomBackend(),
+                new ICompileBackend[] { new RetiresCscSharedBackend(host, _server!), new CscSharedBackend(_server!) },
+                null);
+
+            CompileOutcome building = selector.Compile(CompileRequestBuilder.Build(Wrapped("__pucResult = 1; // building " + Guid.NewGuid().ToString("N"))));
+            Assert.That(building.Compiler, Is.EqualTo("csc-shared"), building.FallbackReason);
+            Assert.That(SpinUntil(() => _server!.Snapshot().ServerPid > 0 && Servers(_server.PipeName).Count == 1, 10000), Is.True, "no server on " + _server!.PipeName);
+            int first = _server.Snapshot().ServerPid;
+
+            host.Ready = true;
+            var watch = Stopwatch.StartNew();
+            CompileOutcome served = selector.Compile(CompileRequestBuilder.Build(Wrapped("__pucResult = 2; // ready " + Guid.NewGuid().ToString("N"))));
+            long compileMs = watch.ElapsedMilliseconds;
+
+            Assert.That(served.Compiler, Is.EqualTo("roslyn-host"));
+            Assert.That(compileMs, Is.LessThan(200), "the host-served compile waited for the retire");
+            Assert.That(SpinUntil(() => !_server.IsRetiring && Servers(_server.PipeName).Count == 0, 5000), Is.True, "the idle server was not retired");
+            Assert.That(_server.UsedThisDomain, Is.False);
+            Assert.That(File.Exists(_server.RecordPath), Is.False);
+            Assert.That(CscSharedStatus.TryRead(_server.StatusPath)!.Note, Is.EqualTo("retired: host-ready"));
+
+            host.Ready = false;
+            CompileOutcome again = selector.Compile(CompileRequestBuilder.Build(Wrapped("__pucResult = 3; // again " + Guid.NewGuid().ToString("N"))));
+            Assert.That(again.Compiler, Is.EqualTo("csc-shared"), again.FallbackReason);
+            Assert.That(SpinUntil(() => _server.Snapshot().ServerPid > 0 && Servers(_server.PipeName).Count == 1, 10000), Is.True, "no new server after the host failed again");
+            Assert.That(_server.Snapshot().ServerPid, Is.Not.EqualTo(first));
+            Assert.That(File.Exists(_server.RecordPath), Is.True);
+        }
+
+        [Test]
+        public void Shutdown_KillsOurServerWithoutWaitingForAClient()
+        {
+            Execute("__pucResult = 1; // stop " + Guid.NewGuid().ToString("N"));
+            Assert.That(SpinUntil(() => _server!.Snapshot().ServerPid > 0 && Servers(_server.PipeName).Count == 1, 10000), Is.True, "no server on " + _server!.PipeName);
+
+            var watch = Stopwatch.StartNew();
+            _server.Shutdown("test-stop");
+            watch.Stop();
+
+            Assert.That(Servers(_server.PipeName), Is.Empty);
+            Assert.That(File.Exists(_server.RecordPath), Is.False);
+            Assert.That(watch.ElapsedMilliseconds, Is.LessThan(300));
+            Assert.That(_server.Snapshot().LastShutdownMs, Is.LessThan(300));
+
+            // The next compile starts a new server on the same pipe.
+            ExecuteCodePayload next = Execute("__pucResult = 6 * 7; // after stop " + Guid.NewGuid().ToString("N"));
+            Assert.That(next.timings!.compiler, Is.EqualTo("csc-shared"), next.timings.compilerFallbackReason);
+            Assert.That(next.result, Is.EqualTo("42"));
+        }
+
+        private static string Wrapped(string code)
+        {
+            return ExecuteCodeHandler.BuildWrappedCode(code);
+        }
+
+        /// <summary>Stands in for the host: an infrastructure failure until <see cref="Ready"/>, then a served compile.</summary>
+        private sealed class SwitchableHostBackend : ICompileBackend
+        {
+            public bool Ready { get; set; }
+
+            public string Id
+            {
+                get { return CompileBackendIds.RoslynHost; }
+            }
+
+            public CompileResult TryCompile(CompileRequest request)
+            {
+                return Ready
+                    ? CompileResult.Success(Id, typeof(CscSharedLiveTests).Assembly, "/langversion:9")
+                    : CompileResult.InfrastructureFailure(Id, string.Empty, null, null, "host-building: the host is still being built");
+            }
+        }
+
         private sealed class FailingBackend : ICompileBackend
         {
             public string Id
