@@ -16,10 +16,10 @@ namespace UnityCliBridge.Bridge.Editor
     /// <item>Domain load: the status file, and a background cleanup of a server this project left
     /// behind (only when its record survived a failed stop or a killed editor).</item>
     /// <item><c>beforeAssemblyReload</c> and <c>quitting</c>: stop our server without blocking the
-    /// main thread on a client process (a direct kill of the server this domain found and proved
-    /// ours; a listing by pipe name where that is cheap; otherwise the <c>-shutdown</c> client is
-    /// left running and the next domain load removes what is left). Nothing runs when this domain
-    /// never used csc-shared.</item>
+    /// main thread on a client process (macOS/Linux: a kill of the servers on our pipe found by a
+    /// process listing; Windows: a direct kill of the server this domain found and proved ours, or,
+    /// without one, the <c>-shutdown</c> client left running and the next domain load removing what
+    /// is left). Nothing runs when this domain never used csc-shared.</item>
     /// </list>
     /// </summary>
     [InitializeOnLoad]

@@ -622,11 +622,12 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Stops this project's server (main thread; <c>beforeAssemblyReload</c>, <c>quitting</c>) and
-        /// keeps that cheap (<see cref="StopServerProcesses"/>): the server this domain found is killed
-        /// directly once it is proven to still be ours, with no client process and no process listing.
-        /// Does nothing at all (no process) when this domain never ran csc and no record is left.
-        /// <c>lastShutdownMs</c> is the main-thread time of this call.
+        /// Stops this project's server (main thread; <c>beforeAssemblyReload</c>, <c>quitting</c>)
+        /// without waiting for a client process (<see cref="StopServerProcesses"/>): a kill of the
+        /// servers on our pipe found by a process listing on macOS/Linux, and on Windows a direct kill
+        /// of the server this domain found once it is proven to still be ours. Does nothing at all (no
+        /// process) when this domain never ran csc and no record is left. <c>lastShutdownMs</c> is the
+        /// main-thread time of this call.
         /// </summary>
         public void Shutdown(string reason)
         {
@@ -812,21 +813,46 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <summary>
         /// Stops whatever serves our pipe. Returns true when nothing of ours is left on it (the
-        /// record can go). In order:
-        /// <list type="number">
-        /// <item>The server this domain found: if it already exited, nothing is left (csc runs reset
-        /// a pid that died, and only one server can hold a pipe); if it is still a compiler server on
-        /// our pipe (<see cref="ICscSharedProcessTable.IsServerOnPipe"/>), it is killed and waited for.</item>
-        /// <item>Otherwise the process table is listed and every server on our pipe is killed per
-        /// <see cref="CscSharedOrphanPolicy"/>, unless listing is too slow for the caller
-        /// (<paramref name="allowSlowListing"/> false on Windows).</item>
-        /// <item>Then the bundled <c>-shutdown</c> client is started without waiting and false is
-        /// returned, so the record stays and the next domain load kills a server still on the pipe.</item>
+        /// record can go).
+        /// <list type="bullet">
+        /// <item>Where listing the processes is cheap (macOS/Linux, or a background caller): every
+        /// server on our pipe is killed per <see cref="CscSharedOrphanPolicy"/>, as before. Servers
+        /// from different login sessions can share a pipe name, so this sweep is kept.</item>
+        /// <item>Otherwise (Windows main thread, where a listing takes seconds): the server this domain
+        /// found is killed directly once <see cref="ICscSharedProcessTable.IsServerOnPipe"/> proves it is
+        /// still that process, and waited for. If it already exited, nothing is left (every csc run
+        /// forgets a known server that died). Without a known server the bundled <c>-shutdown</c>
+        /// client is started without waiting and false is returned, so the record stays and the next
+        /// domain load kills a server still on the pipe.</item>
         /// </list>
         /// <paramref name="proceed"/> is checked before every kill.
         /// </summary>
         private bool StopServerProcesses(bool allowSlowListing, Func<bool> proceed)
         {
+            if (allowSlowListing || !_processes.ListingIsSlow)
+            {
+                CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
+                    ?? new CscSharedServerRecord { Pipe = PipeName, EditorPid = _options.EditorPid };
+                List<int> targets = CscSharedOrphanPolicy.SelectTargets(
+                    record,
+                    _options.ProjectHash,
+                    _options.EditorPid,
+                    _processes.IsAlive,
+                    _processes.ListServers(),
+                    out string _);
+                foreach (int target in targets)
+                {
+                    if (!proceed())
+                    {
+                        return false;
+                    }
+
+                    _processes.Kill(target);
+                }
+
+                return true;
+            }
+
             int pid;
             long? startTicks;
             lock (_gate)
@@ -855,30 +881,6 @@ namespace UnityCliBridge.Bridge.Editor
                         return true;
                     }
                 }
-            }
-
-            if (allowSlowListing || !_processes.ListingIsSlow)
-            {
-                CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
-                    ?? new CscSharedServerRecord { Pipe = PipeName, EditorPid = _options.EditorPid };
-                List<int> targets = CscSharedOrphanPolicy.SelectTargets(
-                    record,
-                    _options.ProjectHash,
-                    _options.EditorPid,
-                    _processes.IsAlive,
-                    _processes.ListServers(),
-                    out string _);
-                foreach (int target in targets)
-                {
-                    if (!proceed())
-                    {
-                        return false;
-                    }
-
-                    _processes.Kill(target);
-                }
-
-                return true;
             }
 
             StartShutdownClient();

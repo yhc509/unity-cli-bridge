@@ -18,10 +18,10 @@ public sealed class CscSharedStopTests
     private static readonly string ServerLine = "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe;
 
     [Fact]
-    public void Shutdown_KillsTheKnownServerDirectly_WithoutListingOrAClient()
+    public void Shutdown_WhereListingIsSlow_KillsTheKnownServerDirectly_WithoutListingOrAClient()
     {
         using var temp = new TempDir();
-        var table = new FakeProcessTable { Alive = { 432 }, OnPipe = { 432 }, Processes = { Proc(432, ServerLine) } };
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, OnPipe = { 432 }, Processes = { Proc(432, ServerLine) } };
         CscSharedServer server = UsedServer(temp, table, 432);
         int listed = table.ListCalls;
 
@@ -62,10 +62,10 @@ public sealed class CscSharedStopTests
     }
 
     [Fact]
-    public void Shutdown_KnownServerAlreadyGone_LeavesNothingToKill()
+    public void Shutdown_WhereListingIsSlow_KnownServerAlreadyGone_LeavesNothingToKill()
     {
         using var temp = new TempDir();
-        var table = new FakeProcessTable { Alive = { 432 }, OnPipe = { 432 } };
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, OnPipe = { 432 } };
         CscSharedServer server = UsedServer(temp, table, 432);
         lock (table.Alive)
         {
@@ -80,6 +80,35 @@ public sealed class CscSharedStopTests
         Assert.Equal(listed, table.ListCalls);
         Assert.Empty(table.Detached);
         Assert.False(File.Exists(server.RecordPath));
+    }
+
+    [Fact]
+    public void Shutdown_WhereListingIsCheap_SweepsEveryServerOnOurPipe()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable
+        {
+            Alive = { 432, 433 },
+            OnPipe = { 432 },
+            Processes =
+            {
+                Proc(432, ServerLine),
+                // A server another login session left on the same pipe name (named mutexes are per session).
+                Proc(433, ServerLine),
+                Proc(434, ServerLine + "0"),
+                Proc(435, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:Aq3bTL0ZJ9ExP4jQn2N1wSGx+Ko"),
+            },
+        };
+        CscSharedServer server = UsedServer(temp, table, 432);
+        int listed = table.ListCalls;
+
+        server.Shutdown("domain-reload");
+
+        Assert.Equal(new[] { 432, 433 }, table.Killed);
+        Assert.Equal(listed + 1, table.ListCalls);
+        Assert.Empty(table.Detached);
+        Assert.False(File.Exists(server.RecordPath));
+        Assert.Equal("domain-reload", server.Snapshot().Note);
     }
 
     [Fact]
@@ -136,38 +165,42 @@ public sealed class CscSharedStopTests
     }
 
     [Fact]
-    public void Shutdown_PidReusedByAnotherProcess_IsNotKilledDirectly()
+    public void Shutdown_WhereListingIsSlow_PidReusedByAnotherProcess_IsNotKilled()
     {
         using var temp = new TempDir();
-        var table = new FakeProcessTable { Alive = { 432 }, OnPipe = { 432 } };
-        CscSharedServer server = UsedServer(temp, table, 432);
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, OnPipe = { 432 } };
+        CscSharedServer server = UsedServer(temp, table, 432, WithToolchain(CscSharedServerTests.Options(temp.Path), temp.Path));
         lock (table.Alive)
         {
             table.OnPipe.Remove(432);
         }
 
-        table.Processes.Add(Proc(432, "/usr/bin/some-other-process"));
-        table.Processes.Add(Proc(901, ServerLine));
-        table.Alive.Add(901);
+        int listed = table.ListCalls;
 
-        server.Shutdown("domain-reload");
+        server.Shutdown("editor-quit");
 
-        Assert.Equal(new[] { 901 }, table.Killed);
+        Assert.Empty(table.Killed);
+        Assert.Equal(listed, table.ListCalls);
+        Assert.Single(table.Detached);
+        Assert.True(File.Exists(server.RecordPath));
     }
 
     [Fact]
-    public void Shutdown_KillThatDoesNotTake_FallsBackToTheListing()
+    public void Shutdown_WhereListingIsSlow_KillThatDoesNotTake_HandsOffToTheClient()
     {
         using var temp = new TempDir();
-        var table = new FakeProcessTable { Alive = { 432 }, OnPipe = { 432 }, KillRemovesAlive = false, Processes = { Proc(432, ServerLine) } };
-        CscSharedServerOptions options = CscSharedServerTests.Options(temp.Path);
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, OnPipe = { 432 }, KillRemovesAlive = false };
+        CscSharedServerOptions options = WithToolchain(CscSharedServerTests.Options(temp.Path), temp.Path);
         options.KillWait = TimeSpan.FromMilliseconds(30);
         CscSharedServer server = UsedServer(temp, table, 432, options);
+        int listed = table.ListCalls;
 
-        server.Shutdown("domain-reload");
+        server.Shutdown("editor-quit");
 
-        Assert.Equal(new[] { 432, 432 }, table.Killed);
-        Assert.True(table.ListCalls >= 1);
+        Assert.Equal(new[] { 432 }, table.Killed);
+        Assert.Equal(listed, table.ListCalls);
+        Assert.Single(table.Detached);
+        Assert.True(File.Exists(server.RecordPath));
     }
 
     [Fact]
@@ -342,23 +375,24 @@ public sealed class CscSharedStopTests
     }
 
     [Fact]
-    public void FailedRun_ForgetsADeadServer_SoAStopListsAgain()
+    public void FailedRun_ForgetsADeadServer_SoAStopDoesNotTrustIt()
     {
         using var temp = new TempDir();
-        var table = new FakeProcessTable { Alive = { 432 }, OnPipe = { 432 } };
-        CscSharedServer server = UsedServer(temp, table, 432);
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, OnPipe = { 432 } };
+        CscSharedServer server = UsedServer(temp, table, 432, WithToolchain(CscSharedServerTests.Options(temp.Path), temp.Path));
         lock (table.Alive)
         {
             table.Alive.Remove(432);
         }
 
+        // That failed run may have started a replacement nobody has looked up yet.
         Invoke(server, "Fail", "csc-shared-timeout: csc did not finish", Stopwatch.StartNew());
 
         Assert.Equal(0, server.Snapshot().ServerPid);
-        table.Processes.Add(Proc(901, ServerLine));
-        table.Alive.Add(901);
-        server.Shutdown("domain-reload");
-        Assert.Equal(new[] { 901 }, table.Killed);
+        server.Shutdown("editor-quit");
+        Assert.Empty(table.Killed);
+        Assert.Single(table.Detached);
+        Assert.True(File.Exists(server.RecordPath));
     }
 
     [Fact]
