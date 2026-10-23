@@ -21,6 +21,23 @@ namespace UnityCliBridge.Bridge.Editor
 
         private const string MscorlibFileName = "mscorlib.dll";
 
+        public CodeDomBackend()
+#if UNITY_5_3_OR_NEWER
+            : this(null)
+#endif
+        {
+        }
+
+#if UNITY_5_3_OR_NEWER
+        private readonly string? _responseFileDirectory;
+
+        /// <param name="responseFileDirectory">Where the response file goes; the temp directory when null.</param>
+        public CodeDomBackend(string? responseFileDirectory)
+        {
+            _responseFileDirectory = responseFileDirectory;
+        }
+#endif
+
         public string Id
         {
             get { return BackendId; }
@@ -30,7 +47,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             string compilerOptions = BuildCompilerOptions(request);
 #if UNITY_5_3_OR_NEWER
-            return CompileWithMcs(request, compilerOptions);
+            return CompileWithResponseFile(request, compilerOptions);
 #else
             // Linked into the dotnet tests for BuildCompilerOptions. mcs itself runs only in the Editor.
             return CompileResult.InfrastructureFailure(
@@ -43,7 +60,10 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// mcs arguments assigned to <c>CompilerParameters.CompilerOptions</c>.
+        /// Effective mcs options: <c>/langversion</c>, <c>/define</c>, and <c>-nostdlib</c> when a
+        /// reference is already <c>mscorlib.dll</c>. Written into the response file (see
+        /// <see cref="BuildMcsInvocation"/>) and reported on the compile result. The command line
+        /// itself is only the <c>@rsp</c> argument.
         /// An <c>mscorlib.dll</c> already in the reference set means Unity's unityjit/unityaot
         /// corlib is explicit, so <c>-nostdlib</c> stops mcs from also loading MonoBleedingEdge's
         /// own mscorlib (CS0433 on Windows). That reference is not removed. With no mscorlib
@@ -64,6 +84,27 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             return compilerOptions;
+        }
+
+        /// <summary>
+        /// Command line plus response-file arguments actually handed to mcs. References and
+        /// <see cref="BuildCompilerOptions"/> (including a single <c>-nostdlib</c> when an
+        /// mscorlib is referenced) stay in the response file so the command line stays the
+        /// <c>@rsp</c> argument (#220).
+        /// </summary>
+        internal static void BuildMcsInvocation(
+            CompileRequest request,
+            string responseFilePath,
+            out string commandLine,
+            out IReadOnlyList<string> responseFileArguments)
+        {
+            commandLine = ResponseFileWriter.ToCommandLineArgument(responseFilePath);
+            string[] optionArguments = BuildCompilerOptions(request).Split(
+                new[] { ' ' },
+                StringSplitOptions.RemoveEmptyEntries);
+            responseFileArguments = ResponseFileWriter.BuildCompilerArguments(
+                request.ReferencePaths,
+                optionArguments);
         }
 
         private static bool ReferencesIncludeMscorlib(IReadOnlyList<string> referencePaths)
@@ -111,7 +152,35 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
 #if UNITY_5_3_OR_NEWER
-        private static CompileResult CompileWithMcs(CompileRequest request, string compilerOptions)
+        private CompileResult CompileWithResponseFile(CompileRequest request, string compilerOptions)
+        {
+            // References and options go through a response file (#220). CodeDOM would otherwise
+            // put every reference on the mcs command line as /r:"path", which passes Windows'
+            // 32,767-character limit at roughly 260 loaded assemblies. ReferencedAssemblies stays
+            // empty: CodeDOM adds no default references either way (it only appends /noconfig).
+            // -nostdlib, when BuildCompilerOptions added it, is one response-file argument and is
+            // not repeated on the command line. mcs splices @file arguments in before "--".
+            string responseFilePath = ResponseFileWriter.CreateTempPath(
+                _responseFileDirectory ?? System.IO.Path.GetTempPath());
+            try
+            {
+                BuildMcsInvocation(
+                    request,
+                    responseFilePath,
+                    out string commandLine,
+                    out IReadOnlyList<string> responseFileArguments);
+                ResponseFileWriter.Write(responseFilePath, responseFileArguments);
+                return Compile(request.Source, commandLine, compilerOptions);
+            }
+            finally
+            {
+                ResponseFileWriter.TryDelete(responseFilePath);
+            }
+        }
+
+        /// <param name="commandLineOptions">What CodeDOM puts on the mcs command line (the <c>@rsp</c> argument).</param>
+        /// <param name="compilerOptions">The effective options, reported in results and failure messages.</param>
+        private static CompileResult Compile(string source, string commandLineOptions, string compilerOptions)
         {
             using var provider = new CSharpCodeProvider();
             var parameters = new CompilerParameters
@@ -119,16 +188,11 @@ namespace UnityCliBridge.Bridge.Editor
                 GenerateInMemory = true,
                 GenerateExecutable = false,
                 IncludeDebugInformation = false,
-                CompilerOptions = compilerOptions,
+                CompilerOptions = commandLineOptions,
                 TempFiles = new TempFileCollection(System.IO.Path.GetTempPath(), keepFiles: false),
             };
 
-            foreach (string referencePath in request.ReferencePaths)
-            {
-                parameters.ReferencedAssemblies.Add(referencePath);
-            }
-
-            CompilerResults result = provider.CompileAssemblyFromSource(parameters, request.Source);
+            CompilerResults result = provider.CompileAssemblyFromSource(parameters, source);
             if (result.Errors.HasErrors)
             {
                 return CompileResult.CompileError(

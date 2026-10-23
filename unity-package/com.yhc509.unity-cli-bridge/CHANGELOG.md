@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `execute` on Windows compiles snippets again. mcs was loading its own Mono mscorlib as well as Unity's `mscorlib.dll`, so every snippet failed with CS0433 (`System.Threading.CancellationToken` defined in both). When a reference is already `mscorlib.dll`, the compiler is passed `-nostdlib` and that Unity reference stays. Compiles with no mscorlib reference are unchanged. Seen on Unity 2021.3.45f2 and 6000.3.10f1.
+- `execute` passes compiler references and options to mcs through a temporary response file instead of the command line, so projects with a few hundred loaded assemblies no longer exceed the Windows command-line length limit (#220). The file is deleted after each compile. References, language version, defines, caching, and error messages are unchanged.
 
 ## [0.5.7] - 2026-10-21
 
