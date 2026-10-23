@@ -68,4 +68,42 @@ namespace UnityCliBridge.Bridge.Editor
             return CompileResult.Success(BackendId, assembly, compilerOptions);
         }
     }
+
+    /// <summary>
+    /// The host's step in the default chain when csc-shared follows it. Once the host serves a compile
+    /// (an assembly or the user's own compile error), a csc /shared server this domain started while
+    /// the host was building, starting, or down is no longer needed: it is stopped on a background
+    /// thread (<see cref="CscSharedServer.RetireInBackground"/>) so it does not sit idle next to the
+    /// host until the editor quits. If the host fails again later, the next csc-shared compile starts
+    /// a new server. An infrastructure failure of the host leaves the server alone.
+    /// </summary>
+    internal sealed class RetiresCscSharedBackend : ICompileBackend
+    {
+        public const string RetireReason = "host-ready";
+
+        private readonly ICompileBackend _host;
+        private readonly CscSharedServer _server;
+
+        public RetiresCscSharedBackend(ICompileBackend host, CscSharedServer server)
+        {
+            _host = host ?? throw new ArgumentNullException(nameof(host));
+            _server = server ?? throw new ArgumentNullException(nameof(server));
+        }
+
+        public string Id
+        {
+            get { return _host.Id; }
+        }
+
+        public CompileResult TryCompile(CompileRequest request)
+        {
+            CompileResult result = _host.TryCompile(request);
+            if (!result.IsInfrastructureFailure)
+            {
+                _server.RetireInBackground(RetireReason);
+            }
+
+            return result;
+        }
+    }
 }

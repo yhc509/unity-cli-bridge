@@ -370,6 +370,12 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>How long the first compile of a domain waits for the leftover-server cleanup.</summary>
         public TimeSpan OrphanWait { get; set; } = TimeSpan.FromSeconds(3);
 
+        /// <summary>How long a compile waits for a background retire of the server (normally tens of ms).</summary>
+        public TimeSpan RetireWait { get; set; } = TimeSpan.FromSeconds(3);
+
+        /// <summary>How long a retire waits for a server pid lookup still in flight before it lists the processes itself.</summary>
+        public TimeSpan RetireDiscoveryWait { get; set; } = TimeSpan.FromSeconds(10);
+
         public bool WriteStatusFile { get; set; } = true;
 
         /// <summary>Tests: a fixed pipe instead of <see cref="CscSharedPipe.BuildName"/>.</summary>
@@ -399,6 +405,8 @@ namespace UnityCliBridge.Bridge.Editor
     /// <c>DOTNET_HOST_PATH</c> set to the same muxer, because csc starts the server with whatever
     /// that variable (or else PATH) names. The run happens on a worker thread; the caller waits at
     /// most the compile timeout, then the client is killed and the compile is an infrastructure failure.
+    /// When the Roslyn host takes over again, <see cref="RetireInBackground"/> stops the idle server
+    /// off the main thread; the next csc run starts a new one.
     /// Unity-free; the editor hooks are in <c>CscSharedEditorLifecycle</c>.
     /// </summary>
     internal sealed class CscSharedServer
@@ -408,6 +416,8 @@ namespace UnityCliBridge.Bridge.Editor
         private readonly object _gate = new object();
         private readonly object _statusGate = new object();
         private readonly ManualResetEvent _orphansDone = new ManualResetEvent(true);
+        private readonly ManualResetEvent _retireDone = new ManualResetEvent(true);
+        private readonly object _recordGate = new object();
 
         private CscSharedToolchain? _toolchain;
         private string? _toolchainError;
@@ -420,6 +430,14 @@ namespace UnityCliBridge.Bridge.Editor
         private long? _serverStartTicks;
         private int _discoveryAttempts;
         private bool _discovering;
+
+        /// <summary>Bumped by every csc run; a retire that sees it change leaves the new server alone.</summary>
+        private int _runGeneration;
+
+        /// <summary>Bumped by <see cref="Shutdown"/>; a retire in flight stops acting once it changes.</summary>
+        private int _stopGeneration;
+        private bool _retiring;
+        private int _retires;
 
         /// <summary>True once <c>server.json</c> reads back with <see cref="_serverPid"/>.</summary>
         private bool _recordSynced;
@@ -545,6 +563,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             var watch = Stopwatch.StartNew();
             _orphansDone.WaitOne(_options.OrphanWait);
+            _retireDone.WaitOne(_options.RetireWait);
             CscSharedToolchain? toolchain = ResolveToolchain(out string toolchainError);
             if (toolchain == null)
             {
@@ -617,6 +636,7 @@ namespace UnityCliBridge.Bridge.Editor
                 used = _usedThisDomain;
                 _usedThisDomain = false;
                 _recordWritten = false;
+                _stopGeneration++;
             }
 
             if (!used && !File.Exists(RecordPath))
@@ -643,6 +663,151 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             WriteStatus();
+        }
+
+        /// <summary>
+        /// Main thread, after the Roslyn host served a compile: stops a server this domain started
+        /// (the host was building, starting, or down) on a background thread, so it does not sit idle
+        /// next to the host until the editor quits. The compile does not wait. A csc run that starts
+        /// before the retire finishes waits for it (bounded), and a run the retire could not wait out
+        /// keeps its server. The next csc run after a retire starts a new server. False when there is
+        /// nothing to stop or a retire is already running.
+        /// </summary>
+        public bool RetireInBackground(string reason)
+        {
+            int runGeneration;
+            int stopGeneration;
+            lock (_gate)
+            {
+                if (!_usedThisDomain || _retiring)
+                {
+                    return false;
+                }
+
+                _retiring = true;
+                _retireDone.Reset();
+                runGeneration = _runGeneration;
+                stopGeneration = _stopGeneration;
+            }
+
+            try
+            {
+                new Thread(() => RetireWorker(reason, runGeneration, stopGeneration)) { IsBackground = true, Name = "ucb-csc-shared-retire" }.Start();
+            }
+            catch (Exception)
+            {
+                lock (_gate)
+                {
+                    _retiring = false;
+                }
+
+                _retireDone.Set();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>How many times this domain retired the server because the host took over.</summary>
+        public int Retires
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _retires;
+                }
+            }
+        }
+
+        /// <summary>True while a retire runs (tests).</summary>
+        public bool IsRetiring
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _retiring;
+                }
+            }
+        }
+
+        private void RetireWorker(string reason, int runGeneration, int stopGeneration)
+        {
+            try
+            {
+                // A pid lookup in flight (seconds on Windows) is about to say which process is ours.
+                var waited = Stopwatch.StartNew();
+                while (waited.Elapsed < _options.RetireDiscoveryWait)
+                {
+                    lock (_gate)
+                    {
+                        if (!_discovering)
+                        {
+                            break;
+                        }
+                    }
+
+                    Thread.Sleep(20);
+                }
+
+                Func<bool> proceed = () =>
+                {
+                    lock (_gate)
+                    {
+                        return _runGeneration == runGeneration && _stopGeneration == stopGeneration;
+                    }
+                };
+                if (!proceed())
+                {
+                    return;
+                }
+
+                bool stopped = StopServerProcesses(allowSlowListing: true, proceed: proceed);
+                bool reset;
+                lock (_recordGate)
+                {
+                    lock (_gate)
+                    {
+                        reset = stopped && _runGeneration == runGeneration && _stopGeneration == stopGeneration;
+                        if (reset)
+                        {
+                            _usedThisDomain = false;
+                            _recordWritten = false;
+                            _serverPid = 0;
+                            _serverStartTicks = null;
+                            _recordSynced = false;
+                            _discoveryAttempts = 0;
+                            _state = "stopped";
+                            _note = "retired: " + (reason ?? string.Empty);
+                            _retires++;
+                        }
+                    }
+
+                    if (reset)
+                    {
+                        TryDelete(RecordPath);
+                    }
+                }
+
+                if (reset)
+                {
+                    WriteStatus();
+                }
+            }
+            catch (Exception)
+            {
+                // Best effort; Shutdown and the next domain load still clean up.
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    _retiring = false;
+                }
+
+                _retireDone.Set();
+            }
         }
 
         /// <summary>
@@ -878,29 +1043,33 @@ namespace UnityCliBridge.Bridge.Editor
 
         private void EnsureRecord()
         {
-            lock (_gate)
+            lock (_recordGate)
             {
-                _usedThisDomain = true;
-                if (_recordWritten)
+                lock (_gate)
                 {
-                    return;
+                    _usedThisDomain = true;
+                    _runGeneration++;
+                    if (_recordWritten)
+                    {
+                        return;
+                    }
+
+                    _recordWritten = true;
                 }
 
-                _recordWritten = true;
-            }
-
-            try
-            {
-                new CscSharedServerRecord
+                try
                 {
-                    Pipe = PipeName,
-                    EditorPid = _options.EditorPid,
-                    StartedUtc = RoslynHostStatus.FormatUtc(DateTime.UtcNow),
-                }.Write(RecordPath);
-            }
-            catch (Exception)
-            {
-                // Without a record a killed editor's server is left to its own idle timeout.
+                    new CscSharedServerRecord
+                    {
+                        Pipe = PipeName,
+                        EditorPid = _options.EditorPid,
+                        StartedUtc = RoslynHostStatus.FormatUtc(DateTime.UtcNow),
+                    }.Write(RecordPath);
+                }
+                catch (Exception)
+                {
+                    // Without a record a killed editor's server is left to its own idle timeout.
+                }
             }
         }
 

@@ -134,14 +134,17 @@ namespace UnityCliBridge.Bridge.Editor
                 cscShared != null ? null : CscSharedEditorLifecycle.SetupError,
                 () => CompileChainPlan.DescribeMissingToolchain(BundledToolchainLocator.Locate(EditorApplication.applicationContentsPath)));
             var preferred = new List<ICompileBackend>();
+            bool useCscShared = plan.UseCscShared && cscShared != null;
             if (plan.UseRoslynHost && _supervisor != null)
             {
-                preferred.Add(new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs));
+                ICompileBackend host = new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs);
+                // A server started while the host could not serve is stopped once the host serves again.
+                preferred.Add(useCscShared ? new RetiresCscSharedBackend(host, cscShared!.Server) : host);
             }
 
-            if (plan.UseCscShared && cscShared != null)
+            if (useCscShared)
             {
-                preferred.Add(cscShared);
+                preferred.Add(cscShared!);
             }
 
             return new CompileBackendSelector(new CodeDomBackend(), preferred, plan.Reason, plan.SkippedBackend);
