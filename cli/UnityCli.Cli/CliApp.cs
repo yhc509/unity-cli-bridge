@@ -289,14 +289,17 @@ public static class CliApp
         UnityProjectLocator locator,
         ParsedCommand parsed,
         string? projectRoot,
-        Func<InstanceRecord, CommandEnvelope, int, CancellationToken, Task<ResponseEnvelope>>? sendAsync = null)
+        Func<InstanceRecord, CommandEnvelope, int, CancellationToken, Task<ResponseEnvelope>>? sendAsync = null,
+        Func<string, string?>? resolveUnityPath = null)
     {
         var registry = registryStore.Load();
         var candidates = ResolveTargetCandidates(registry, projectRoot);
         var primaryTarget = candidates.Length > 0 ? candidates[0] : null;
         var unityPath = !string.IsNullOrWhiteSpace(projectRoot)
-            ? UnityEditorLocator.TryResolve(projectRoot)
+            ? (resolveUnityPath ?? UnityEditorLocator.TryResolve)(projectRoot)
             : null;
+        // Local file probe only (no process, no system .NET), so doctor stays fast and offline.
+        var bundledToolchain = BuildBundledToolchainData(BundledToolchainLocator.Locate(unityPath));
         var sendCommandAsync = sendAsync ?? new LocalIpcClient().SendAsync;
 
         var liveReachable = false;
@@ -355,6 +358,7 @@ public static class CliApp
             liveErrorCode,
             liveErrorMessage,
             unityPath,
+            bundledToolchain,
             instanceCount = registry.instances.Length,
         };
 
@@ -378,6 +382,44 @@ public static class CliApp
         }
 
         return result;
+    }
+
+    private static object BuildBundledToolchainData(BundledToolchainReport report)
+    {
+        return new
+        {
+            contentsPath = report.ContentsPath,
+            layout = report.Layout,
+            toolchainRoot = report.ToolchainRoot,
+            complete = report.Complete,
+            error = report.Error,
+            runtime = report.Runtime is null
+                ? null
+                : new
+                {
+                    dotnetPath = report.Runtime.Path,
+                    directory = report.Runtime.Directory,
+                    netCoreAppVersion = report.Runtime.Version,
+                    error = report.Runtime.Error,
+                },
+            roslyn = report.Roslyn is null
+                ? null
+                : new
+                {
+                    directory = report.Roslyn.Directory,
+                    cscPath = report.Roslyn.Path,
+                    version = report.Roslyn.Version,
+                    error = report.Roslyn.Error,
+                },
+            mcs = report.Mcs is null
+                ? null
+                : new
+                {
+                    path = report.Mcs.Path,
+                    version = report.Mcs.Version,
+                    error = report.Mcs.Error,
+                },
+        };
     }
 
     /// <summary>

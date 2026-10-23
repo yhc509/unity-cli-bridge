@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `doctor` reports the .NET runtime, Roslyn compiler, and mcs that ship inside the project's Unity editor install, in a new `bundledToolchain` object: the matched install layout, the `dotnet` path and Microsoft.NETCore.App version, the Roslyn directory, `csc.dll` path and version, the `mcs.exe` path and version, and a reason for any part that is missing. It reads only the editor install (never a system .NET or PATH) and starts no process. When the Unity path is unknown, `bundledToolchain.error` says so and `doctor` still succeeds. `execute` behavior is unchanged.
+
 ### Changed
 - Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler. References, caching, error codes, and messages are unchanged.
 

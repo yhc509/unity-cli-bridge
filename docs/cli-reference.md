@@ -160,7 +160,7 @@ Low-level commands for environment inspection and raw protocol debugging.
 | `test run` | `test run --mode <edit\|play> [--filter <substring>] [--category <name>] [--assembly <name>] [--no-domain-reload] [--failures-only] [--timeout <seconds>] [--wait]` | live | `None` | Executes EditMode or PlayMode tests. EditMode returns synchronously; PlayMode returns runId immediately and persists results to Library/com.yhc509.unity-cli-bridge/test-runs/<runId>.json. Add --failures-only to trim tests[] to non-passed entries while preserving summary counts. |
 | `test results` | `test results [--run-id <id>] [--failures-only]` | live | `None` | Retrieves cached test run result (or in-progress status). Without --run-id, returns the last run. Add --failures-only to trim tests[] to non-passed entries while preserving summary counts. |
 | `test cancel` | `test cancel` | live | `None` | Cancels the in-progress test run and releases the run lock; a no-op success when no run is active. |
-| `doctor` | `doctor` | local | `None` | Shows registry, project detection, Unity path, and live reachability diagnostics. |
+| `doctor` | `doctor` | local | `None` | Shows registry, project detection, Unity path, bundled .NET/Roslyn/mcs toolchain, and live reachability diagnostics. |
 | `raw` | `raw [--force] --json '{"command":"status","arguments":{}}'` | live | `None` | Sends a raw live protocol envelope for low-level debugging. |
 
 ## Built-In Asset Create Types
