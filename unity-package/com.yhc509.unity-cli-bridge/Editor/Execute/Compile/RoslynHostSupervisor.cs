@@ -206,6 +206,9 @@ namespace UnityCliBridge.Bridge.Editor
         /// the editor references' symbols, and both sides' compile path already warm. Null skips it.
         /// </summary>
         public Func<IReadOnlyList<string>, RoslynHostCompileRequest?>? PrewarmCompile { get; set; }
+
+        /// <summary>The backend after the host in the chain, reported as the active one while the host is disabled.</summary>
+        public string NextBackendId { get; set; } = CompileBackendIds.CodeDom;
     }
 
     /// <summary>
@@ -695,7 +698,7 @@ namespace UnityCliBridge.Bridge.Editor
                     UpdatedUtc = RoslynHostStatus.FormatUtc(_clock()),
                     EditorPid = _options.EditorPid,
                     ConfiguredCompiler = _settings.RawCompiler,
-                    ActiveBackend = _disabledReason == null && _permanentFailure == null ? CompileBackendIds.RoslynHost : CompileBackendIds.CodeDom,
+                    ActiveBackend = _disabledReason == null && _permanentFailure == null ? CompileBackendIds.RoslynHost : _options.NextBackendId,
                     PrewarmPolicy = _settings.PrewarmName,
                     HostWaitMs = _settings.HostWaitMs,
                     CompileTimeoutMs = _settings.CompileTimeoutMs,

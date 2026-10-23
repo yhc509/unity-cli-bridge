@@ -47,9 +47,10 @@ namespace UnityCliBridge.Bridge.Editor
     /// UCB_ROSLYN_COMPILE_TIMEOUT_MS   10000 per compile; the host is killed when exceeded (1000–600000)
     /// UCB_ROSLYN_IDLE_EXIT_MINUTES    0 = keep the host for the whole domain (0–1440)
     /// </code>
-    /// Until the default changes, only <c>roslyn-host</c> uses the host; <c>auto</c>, unset, and
-    /// <c>codedom</c> compile exactly as before. <c>csc-shared</c> is not implemented yet and falls
-    /// back to CodeDOM. Invalid values fall back to the default and are reported in <see cref="Warnings"/>.
+    /// Until the default changes, only <c>roslyn-host</c> uses the host (chain roslyn-host → csc-shared
+    /// → codedom) and <c>csc-shared</c> starts at csc /shared (csc-shared → codedom); <c>auto</c>,
+    /// unset, and <c>codedom</c> compile exactly as before. Invalid values fall back to the default and
+    /// are reported in <see cref="Warnings"/>.
     /// Unity-free so the parsing is unit-tested.
     /// </summary>
     internal sealed class ExecuteCompilerSettings
@@ -105,6 +106,12 @@ namespace UnityCliBridge.Bridge.Editor
             get { return Mode == ExecuteCompilerMode.RoslynHost; }
         }
 
+        /// <summary>True when the chain has the csc /shared step: <c>roslyn-host</c> (as the host's fallback) or <c>csc-shared</c>.</summary>
+        public bool UsesCscShared
+        {
+            get { return Mode == ExecuteCompilerMode.RoslynHost || Mode == ExecuteCompilerMode.CscShared; }
+        }
+
         /// <summary>
         /// Why a setting that asked for something else compiles with CodeDOM (reported as
         /// <c>timings.compilerFallbackReason</c>); null when CodeDOM is what was asked for.
@@ -113,11 +120,6 @@ namespace UnityCliBridge.Bridge.Editor
         {
             get
             {
-                if (Mode == ExecuteCompilerMode.CscShared)
-                {
-                    return "csc-shared-unavailable: the csc-shared backend is not available in this version";
-                }
-
                 foreach (string warning in Warnings)
                 {
                     if (warning.StartsWith(CompilerVariable, StringComparison.Ordinal))

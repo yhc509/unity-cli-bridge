@@ -251,6 +251,46 @@ namespace UnityCliBridge.Bridge.Editor
             return trimmed.Length == 0 ? null : trimmed;
         }
 
+        /// <summary>
+        /// Every process whose command line contains <paramref name="needle"/> (ordinal, ignoring case):
+        /// <c>ps</c> on macOS/Linux, CIM through PowerShell on Windows. Empty when the table cannot be read.
+        /// </summary>
+        public static List<KeyValuePair<int, string>> FindByCommandLine(string needle)
+        {
+            var found = new List<KeyValuePair<int, string>>();
+            if (string.IsNullOrEmpty(needle))
+            {
+                return found;
+            }
+
+            string? output = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Capture(
+                    "powershell.exe",
+                    "-NoProfile -NonInteractive -Command \"Get-CimInstance Win32_Process | ForEach-Object { [string]$_.ProcessId + ' ' + $_.CommandLine }\"")
+                : Capture("/bin/ps", "-axww -o pid= -o command=");
+            if (output == null)
+            {
+                return found;
+            }
+
+            foreach (string rawLine in output.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                int space = line.IndexOf(' ');
+                if (space <= 0 || line.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                if (int.TryParse(line.Substring(0, space), NumberStyles.Integer, CultureInfo.InvariantCulture, out int pid) && pid > 0)
+                {
+                    found.Add(new KeyValuePair<int, string>(pid, line.Substring(space + 1).Trim()));
+                }
+            }
+
+            return found;
+        }
+
         private static string? Capture(string fileName, string arguments)
         {
             try

@@ -23,8 +23,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <param name="preferred">Tried in order before <paramref name="fallback"/>.</param>
         /// <param name="configurationReason">
-        /// Reported as the fallback reason when the chain is fallback-only because the settings asked
-        /// for a backend that is not available (for example <c>csc-shared</c> before it exists).
+        /// Why the chain does not start where the settings asked (for example the Roslyn host could
+        /// not be set up). Reported as the fallback reason, followed by any skipped backend's reason.
         /// </param>
         public CompileBackendSelector(ICompileBackend fallback, IReadOnlyList<ICompileBackend> preferred, string? configurationReason)
         {
@@ -82,7 +82,8 @@ namespace UnityCliBridge.Bridge.Editor
                     }
                     catch (Exception ex)
                     {
-                        reason = "backend-exception: " + ex.GetType().Name + ": " + ex.Message;
+                        string thrown = "backend-exception: " + ex.GetType().Name + ": " + ex.Message;
+                        reason = reason == null ? thrown : reason + "; " + thrown;
                         fellBackFrom = backend.Id;
                         continue;
                     }
@@ -93,7 +94,9 @@ namespace UnityCliBridge.Bridge.Editor
                     return new CompileOutcome(result, backend.Id, reason, fellBackFrom);
                 }
 
-                reason = DescribeInfrastructureFailure(result);
+                // Keep every skipped backend's reason (host, then csc-shared) rather than only the last.
+                string described = DescribeInfrastructureFailure(result);
+                reason = reason == null ? described : reason + "; " + described;
                 fellBackFrom = backend.Id;
             }
 
@@ -141,13 +144,15 @@ namespace UnityCliBridge.Bridge.Editor
         public string? FellBackFrom { get; }
 
         /// <summary>
-        /// The <c>COMPILE_FAILED</c> text. When the Roslyn host was skipped and mcs then rejected the
-        /// code, one line says so: the snippet may be valid C# 9 that mcs (C# 7.x) cannot parse.
+        /// The <c>COMPILE_FAILED</c> text. When a Roslyn backend (host or csc-shared) was skipped and
+        /// mcs then rejected the code, one line says so: the snippet may be valid C# 9 that mcs (C# 7.x)
+        /// cannot parse.
         /// </summary>
         public string FormatFailureMessage()
         {
             string message = Result.FormatFailureMessage();
-            if (string.Equals(FellBackFrom, CompileBackendIds.RoslynHost, StringComparison.Ordinal)
+            if ((string.Equals(FellBackFrom, CompileBackendIds.RoslynHost, StringComparison.Ordinal)
+                    || string.Equals(FellBackFrom, CompileBackendIds.CscShared, StringComparison.Ordinal))
                 && string.Equals(Compiler, CompileBackendIds.CodeDom, StringComparison.Ordinal)
                 && !Result.IsInfrastructureFailure)
             {
