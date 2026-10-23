@@ -923,6 +923,26 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void OnDomainLoaded_ReturnsWithoutWaitingForTheImageProbe()
+    {
+        var session = new MemoryRoslynHostSessionStore();
+        session.SetString(RoslynHostSupervisor.SessionKeyExecuteUsed, "1");
+        using var probe = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance()) { ProbeGate = probe };
+        using RoslynHostSupervisor supervisor = Supervisor(launcher, session: session);
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        supervisor.OnDomainLoaded();
+        watch.Stop();
+
+        Assert.True(watch.ElapsedMilliseconds < 1000, $"OnDomainLoaded took {watch.ElapsedMilliseconds} ms");
+        Assert.Equal(0, launcher.Launches);
+        probe.Set();
+        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, launcher.Launches);
+    }
+
+    [Fact]
     public void AcquireReady_MarksExecuteAsUsedForTheSession()
     {
         var session = new MemoryRoslynHostSessionStore();

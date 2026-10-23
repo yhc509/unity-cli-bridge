@@ -495,35 +495,46 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Domain-load entry (main thread). Writes the status file and, only when a server record was
-        /// left behind (a failed stop, a killed editor), cleans that server up on a background thread.
-        /// Without a record nothing else runs.
+        /// Domain-load entry (main thread, inside the reload). Writes the status file and, only when a
+        /// server record was left behind (a failed stop, a killed editor), cleans that server up, both on
+        /// a background thread so the reload does not wait for file I/O. The first compile of the domain
+        /// waits for the cleanup (bounded).
         /// </summary>
         public void OnDomainLoaded()
         {
-            WriteStatus();
-            if (!File.Exists(RecordPath))
+            bool leftover = File.Exists(RecordPath);
+            if (leftover)
             {
-                return;
+                _orphansDone.Reset();
             }
 
-            _orphansDone.Reset();
-            var cleanup = new Thread(() =>
+            var load = new Thread(() =>
             {
                 try
                 {
-                    CleanUpLeftoverServer();
+                    WriteStatus();
+                    if (leftover)
+                    {
+                        CleanUpLeftoverServer();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Best effort; Shutdown and the next load try again.
                 }
                 finally
                 {
-                    _orphansDone.Set();
+                    if (leftover)
+                    {
+                        _orphansDone.Set();
+                    }
                 }
             })
             {
                 IsBackground = true,
-                Name = "ucb-csc-shared-orphans",
+                Name = "ucb-csc-shared-load",
             };
-            cleanup.Start();
+            load.Start();
         }
 
         /// <summary>Kills a server this project left behind, per <see cref="CscSharedOrphanPolicy"/>. Returns the killed pids.</summary>

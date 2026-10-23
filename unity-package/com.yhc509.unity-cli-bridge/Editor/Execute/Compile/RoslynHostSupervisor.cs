@@ -412,21 +412,40 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Domain-load entry (main thread, after the assembly reload): orphan cleanup always runs first on a
-        /// background thread; the host starts right after it when the prewarm policy says so.
+        /// Domain-load entry (main thread, after the assembly reload). Only the session-storage read stays
+        /// on the main thread, which is still finishing the reload: the status write, the host-image probe
+        /// of <see cref="BeginStart"/>, and the orphan cleanup run on a background thread. Orphan cleanup
+        /// always runs first; the host starts right after it when the prewarm policy says so. An
+        /// <c>execute</c> that arrives before that thread reaches <see cref="BeginStart"/> starts the host
+        /// itself (<see cref="BeginStart"/> starts at most one).
         /// </summary>
         public void OnDomainLoaded()
         {
             bool prewarmNow = ShouldPrewarmOnLoad(_settings.Prewarm, ExecuteUsedThisSession);
-            WriteStatus();
-            if (prewarmNow)
+            var load = new Thread(() =>
             {
-                BeginStart("domain-load");
-                return;
-            }
-
-            var cleanup = new Thread(() => EnsureOrphansCleaned()) { IsBackground = true, Name = "ucb-roslyn-host-orphans" };
-            cleanup.Start();
+                try
+                {
+                    WriteStatus();
+                    if (prewarmNow)
+                    {
+                        BeginStart("domain-load");
+                    }
+                    else
+                    {
+                        EnsureOrphansCleaned();
+                    }
+                }
+                catch (Exception)
+                {
+                    // The first execute starts the host and cleans orphans instead.
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "ucb-roslyn-host-load",
+            };
+            load.Start();
         }
 
         /// <summary>Starts the host on a background thread unless it is ready, starting, building, disabled, or failed for good.</summary>
