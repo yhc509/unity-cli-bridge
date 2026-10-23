@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using UnityCli.Protocol;
@@ -227,14 +228,46 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>Processes whose command line mentions the compiler server.</summary>
         IReadOnlyList<KeyValuePair<int, string>> ListServers();
 
+        /// <summary>
+        /// True when <see cref="ListServers"/> is too slow for the main thread (Windows: CIM through
+        /// PowerShell, seconds). A stop on the main thread then never lists the process table.
+        /// </summary>
+        bool ListingIsSlow { get; }
+
         bool IsAlive(int pid);
 
+        /// <summary>
+        /// What proves later that a pid is still the process <see cref="ListServers"/> found: its start
+        /// time on Windows; null on macOS/Linux, where <see cref="IsServerOnPipe"/> re-reads the command line.
+        /// </summary>
+        long? ReadStartTicks(int pid);
+
+        /// <summary>
+        /// Whether <paramref name="pid"/> is still the compiler server on <paramref name="pipe"/>,
+        /// without listing every process: Windows compares the start time captured when the server was
+        /// found (reading one command line also needs PowerShell there); macOS/Linux read the command line.
+        /// </summary>
+        bool IsServerOnPipe(int pid, string pipe, long? startTicks);
+
         void Kill(int pid);
+
+        /// <summary>Starts a short-lived child without waiting for it or reading its output.</summary>
+        void StartDetached(ProcessStartInfo startInfo);
     }
 
     internal sealed class CscSharedProcessTable : ICscSharedProcessTable
     {
         public static readonly CscSharedProcessTable Instance = new CscSharedProcessTable();
+
+        private static bool IsWindows
+        {
+            get { return RuntimeInformation.IsOSPlatform(OSPlatform.Windows); }
+        }
+
+        public bool ListingIsSlow
+        {
+            get { return IsWindows; }
+        }
 
         public IReadOnlyList<KeyValuePair<int, string>> ListServers()
         {
@@ -246,9 +279,70 @@ namespace UnityCliBridge.Bridge.Editor
             return RoslynHostProcessInspector.IsAlive(pid);
         }
 
+        public long? ReadStartTicks(int pid)
+        {
+            if (!IsWindows || pid <= 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                using (Process process = Process.GetProcessById(pid))
+                {
+                    return process.StartTime.ToUniversalTime().Ticks;
+                }
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        public bool IsServerOnPipe(int pid, string pipe, long? startTicks)
+        {
+            if (pid <= 0)
+            {
+                return false;
+            }
+
+            if (!IsWindows)
+            {
+                return CscSharedPipe.IsServerCommandLine(RoslynHostProcessInspector.ReadCommandLine(pid), pipe);
+            }
+
+            if (!startTicks.HasValue)
+            {
+                return false;
+            }
+
+            try
+            {
+                using (Process process = Process.GetProcessById(pid))
+                {
+                    return !process.HasExited && process.StartTime.ToUniversalTime().Ticks == startTicks.Value;
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         public void Kill(int pid)
         {
             RoslynHostProcessInspector.TryKill(pid);
+        }
+
+        public void StartDetached(ProcessStartInfo startInfo)
+        {
+            startInfo.RedirectStandardInput = false;
+            startInfo.RedirectStandardOutput = false;
+            startInfo.RedirectStandardError = false;
+            using (Process.Start(startInfo))
+            {
+                // Not waited for: the client exits on its own once the server has its request.
+            }
         }
     }
 
@@ -270,8 +364,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         public int CompileTimeoutMs { get; set; } = ExecuteCompilerSettings.DefaultCompileTimeoutMs;
 
-        /// <summary>How long the <c>-shutdown</c> client may run before the server is killed instead.</summary>
-        public TimeSpan ShutdownWait { get; set; } = TimeSpan.FromMilliseconds(1500);
+        /// <summary>How long a stop waits for a killed server to leave the process table.</summary>
+        public TimeSpan KillWait { get; set; } = TimeSpan.FromMilliseconds(250);
 
         /// <summary>How long the first compile of a domain waits for the leftover-server cleanup.</summary>
         public TimeSpan OrphanWait { get; set; } = TimeSpan.FromSeconds(3);
@@ -321,6 +415,9 @@ namespace UnityCliBridge.Bridge.Editor
         private bool _usedThisDomain;
         private bool _recordWritten;
         private int _serverPid;
+
+        /// <summary>Start time of <see cref="_serverPid"/> where <see cref="ICscSharedProcessTable.ReadStartTicks"/> gives one (Windows).</summary>
+        private long? _serverStartTicks;
         private int _discoveryAttempts;
         private bool _discovering;
 
@@ -506,10 +603,11 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Stops this project's server (main thread; <c>beforeAssemblyReload</c>, <c>quitting</c>): the
-        /// bundled <c>-shutdown</c> client for our pipe with a bounded wait, then a kill of anything
-        /// still serving that pipe per <see cref="CscSharedOrphanPolicy"/>. Does nothing at all (no
-        /// process) when this domain never ran csc and no record is left.
+        /// Stops this project's server (main thread; <c>beforeAssemblyReload</c>, <c>quitting</c>) and
+        /// keeps that cheap (<see cref="StopServerProcesses"/>): the server this domain found is killed
+        /// directly once it is proven to still be ours, with no client process and no process listing.
+        /// Does nothing at all (no process) when this domain never ran csc and no record is left.
+        /// <c>lastShutdownMs</c> is the main-thread time of this call.
         /// </summary>
         public void Shutdown(string reason)
         {
@@ -527,49 +625,140 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             var watch = Stopwatch.StartNew();
-            CscSharedToolchain? toolchain = ResolveToolchain(out string _);
-            if (toolchain != null)
+            bool stopped = StopServerProcesses(allowSlowListing: false, proceed: () => true);
+            if (stopped)
             {
-                try
-                {
-                    ProcessStartInfo startInfo = BundledDotnetProcess.CreateStartInfo(
-                        toolchain.DotnetPath,
-                        CscSharedCommandLine.BuildShutdownArguments(toolchain.ServerPath, PipeName),
-                        _options.Directory);
-                    BundledDotnetProcess.Run(startInfo, _options.ShutdownWait);
-                }
-                catch (Exception)
-                {
-                    // The kill below still applies.
-                }
+                TryDelete(RecordPath);
             }
 
-            CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
-                ?? new CscSharedServerRecord { Pipe = PipeName, EditorPid = _options.EditorPid };
-            List<int> targets = CscSharedOrphanPolicy.SelectTargets(
-                record,
-                _options.ProjectHash,
-                _options.EditorPid,
-                _processes.IsAlive,
-                _processes.ListServers(),
-                out string _);
-            foreach (int pid in targets)
-            {
-                _processes.Kill(pid);
-            }
-
-            TryDelete(RecordPath);
             lock (_gate)
             {
                 _serverPid = 0;
+                _serverStartTicks = null;
                 _recordSynced = false;
                 _discoveryAttempts = 0;
                 _state = "stopped";
-                _note = reason ?? string.Empty;
+                _note = (reason ?? string.Empty) + (stopped ? string.Empty : " (shutdown client started; the next domain load removes what is left)");
                 _lastShutdownMs = watch.Elapsed.TotalMilliseconds;
             }
 
             WriteStatus();
+        }
+
+        /// <summary>
+        /// Stops whatever serves our pipe. Returns true when nothing of ours is left on it (the
+        /// record can go). In order:
+        /// <list type="number">
+        /// <item>The server this domain found: if it already exited, nothing is left (csc runs reset
+        /// a pid that died, and only one server can hold a pipe); if it is still a compiler server on
+        /// our pipe (<see cref="ICscSharedProcessTable.IsServerOnPipe"/>), it is killed and waited for.</item>
+        /// <item>Otherwise the process table is listed and every server on our pipe is killed per
+        /// <see cref="CscSharedOrphanPolicy"/>, unless listing is too slow for the caller
+        /// (<paramref name="allowSlowListing"/> false on Windows).</item>
+        /// <item>Then the bundled <c>-shutdown</c> client is started without waiting and false is
+        /// returned, so the record stays and the next domain load kills a server still on the pipe.</item>
+        /// </list>
+        /// <paramref name="proceed"/> is checked before every kill.
+        /// </summary>
+        private bool StopServerProcesses(bool allowSlowListing, Func<bool> proceed)
+        {
+            int pid;
+            long? startTicks;
+            lock (_gate)
+            {
+                pid = _serverPid;
+                startTicks = _serverStartTicks;
+            }
+
+            if (pid > 0)
+            {
+                if (!_processes.IsAlive(pid))
+                {
+                    return true;
+                }
+
+                if (_processes.IsServerOnPipe(pid, PipeName, startTicks))
+                {
+                    if (!proceed())
+                    {
+                        return false;
+                    }
+
+                    _processes.Kill(pid);
+                    if (WaitUntilGone(pid))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (allowSlowListing || !_processes.ListingIsSlow)
+            {
+                CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
+                    ?? new CscSharedServerRecord { Pipe = PipeName, EditorPid = _options.EditorPid };
+                List<int> targets = CscSharedOrphanPolicy.SelectTargets(
+                    record,
+                    _options.ProjectHash,
+                    _options.EditorPid,
+                    _processes.IsAlive,
+                    _processes.ListServers(),
+                    out string _);
+                foreach (int target in targets)
+                {
+                    if (!proceed())
+                    {
+                        return false;
+                    }
+
+                    _processes.Kill(target);
+                }
+
+                return true;
+            }
+
+            StartShutdownClient();
+            return false;
+        }
+
+        private bool WaitUntilGone(int pid)
+        {
+            var watch = Stopwatch.StartNew();
+            while (true)
+            {
+                if (!_processes.IsAlive(pid))
+                {
+                    return true;
+                }
+
+                if (watch.Elapsed >= _options.KillWait)
+                {
+                    return false;
+                }
+
+                Thread.Sleep(10);
+            }
+        }
+
+        /// <summary>The bundled <c>-shutdown</c> client for our pipe, not waited for.</summary>
+        private void StartShutdownClient()
+        {
+            CscSharedToolchain? toolchain = ResolveToolchain(out string _);
+            if (toolchain == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _processes.StartDetached(BundledDotnetProcess.CreateStartInfo(
+                    toolchain.DotnetPath,
+                    CscSharedCommandLine.BuildShutdownArguments(toolchain.ServerPath, PipeName),
+                    _options.Directory));
+            }
+            catch (Exception)
+            {
+                // The record stays; the next domain load still removes the server.
+            }
         }
 
         public CscSharedStatus Snapshot()
@@ -744,6 +933,7 @@ namespace UnityCliBridge.Bridge.Editor
                     if (_serverPid == knownPid)
                     {
                         _serverPid = 0;
+                        _serverStartTicks = null;
                         _recordSynced = false;
                         knownPid = 0;
                         if (!_discovering)
@@ -805,14 +995,49 @@ namespace UnityCliBridge.Bridge.Editor
                 _lastErrorUtc = DateTime.UtcNow;
             }
 
+            ForgetDeadServer();
+
             WriteStatus();
             return new CscSharedRun { InfrastructureFailure = reason, ElapsedMs = watch.Elapsed.TotalMilliseconds };
         }
 
-        /// <summary>Background: finds the server csc started on our pipe, for the record and doctor.</summary>
+        /// <summary>
+        /// After a failed csc run: a known server that is gone is forgotten, so a stop does not trust
+        /// it while that run may have started a replacement (successful runs do the same in <see cref="Succeed"/>).
+        /// </summary>
+        private void ForgetDeadServer()
+        {
+            int known;
+            lock (_gate)
+            {
+                known = _serverPid;
+            }
+
+            if (known <= 0 || _processes.IsAlive(known))
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                if (_serverPid == known)
+                {
+                    _serverPid = 0;
+                    _serverStartTicks = null;
+                    _recordSynced = false;
+                    if (!_discovering)
+                    {
+                        _discoveryAttempts = 0;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Background: finds the server csc started on our pipe, for the record, doctor, and a cheap stop.</summary>
         private void DiscoverServer()
         {
             int pid = 0;
+            long? startTicks = null;
             try
             {
                 foreach (KeyValuePair<int, string> process in _processes.ListServers())
@@ -822,6 +1047,11 @@ namespace UnityCliBridge.Bridge.Editor
                         pid = process.Key;
                         break;
                     }
+                }
+
+                if (pid > 0)
+                {
+                    startTicks = _processes.ReadStartTicks(pid);
                 }
             }
             catch (Exception)
@@ -838,6 +1068,7 @@ namespace UnityCliBridge.Bridge.Editor
                     if (update)
                     {
                         _serverPid = pid;
+                        _serverStartTicks = startTicks;
                     }
                 }
 

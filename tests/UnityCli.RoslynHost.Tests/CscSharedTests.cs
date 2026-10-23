@@ -488,33 +488,88 @@ public sealed class CscSharedServerTests
         return new KeyValuePair<int, string>(pid, commandLine);
     }
 
-    private sealed class FakeProcessTable : ICscSharedProcessTable
+    internal sealed class FakeProcessTable : ICscSharedProcessTable
     {
+        private readonly object _lock = new object();
+        private int _listCalls;
+
         public List<KeyValuePair<int, string>> Processes { get; } = new List<KeyValuePair<int, string>>();
 
         public HashSet<int> Alive { get; } = new HashSet<int>();
 
         public List<int> Killed { get; } = new List<int>();
 
-        public int ListCalls { get; private set; }
+        public int ListCalls
+        {
+            get { return Volatile.Read(ref _listCalls); }
+        }
 
         /// <summary>When set, <see cref="ListServers"/> returns this instead of <see cref="Processes"/>.</summary>
         public Func<IReadOnlyList<KeyValuePair<int, string>>>? Listing { get; set; }
 
+        public bool ListingIsSlow { get; set; }
+
+        /// <summary>Pids <see cref="IsServerOnPipe"/> confirms (with any start time).</summary>
+        public HashSet<int> OnPipe { get; } = new HashSet<int>();
+
+        public Dictionary<int, long> StartTicks { get; } = new Dictionary<int, long>();
+
+        /// <summary>False: a killed pid stays alive (a kill that does not take).</summary>
+        public bool KillRemovesAlive { get; set; } = true;
+
+        public List<ProcessStartInfo> Detached { get; } = new List<ProcessStartInfo>();
+
+        public int OnPipeChecks { get; private set; }
+
         public IReadOnlyList<KeyValuePair<int, string>> ListServers()
         {
-            ListCalls++;
+            Interlocked.Increment(ref _listCalls);
             return Listing != null ? Listing() : Processes;
         }
 
         public bool IsAlive(int pid)
         {
-            return Alive.Contains(pid);
+            lock (_lock)
+            {
+                return Alive.Contains(pid);
+            }
+        }
+
+        public long? ReadStartTicks(int pid)
+        {
+            lock (_lock)
+            {
+                return StartTicks.TryGetValue(pid, out long ticks) ? ticks : (long?)null;
+            }
+        }
+
+        public bool IsServerOnPipe(int pid, string pipe, long? startTicks)
+        {
+            lock (_lock)
+            {
+                OnPipeChecks++;
+                return OnPipe.Contains(pid) && Alive.Contains(pid);
+            }
         }
 
         public void Kill(int pid)
         {
-            Killed.Add(pid);
+            lock (_lock)
+            {
+                Killed.Add(pid);
+                if (KillRemovesAlive)
+                {
+                    Alive.Remove(pid);
+                }
+            }
+        }
+
+        public void StartDetached(ProcessStartInfo startInfo)
+        {
+            lock (_lock)
+            {
+                Detached.Add(startInfo);
+            }
         }
     }
 
