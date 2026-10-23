@@ -360,6 +360,7 @@ public static class CliApp
             unityPath,
             bundledToolchain,
             roslynHost = BuildRoslynHostData(projectRoot),
+            cscShared = BuildCscSharedData(projectRoot),
             instanceCount = registry.instances.Length,
         };
 
@@ -458,6 +459,113 @@ public static class CliApp
             ignoredProjectOptions = status.IgnoredProjectOptions,
             stderrTail = status.StderrTail,
         };
+    }
+
+    /// <summary>
+    /// The editor's <c>csc /shared</c> fallback, from the status file the bridge writes under the
+    /// project's Library when <c>UCB_EXECUTE_COMPILER</c> is <c>roslyn-host</c> or <c>csc-shared</c>.
+    /// Local file read only; <c>serverAlive</c> looks for a compiler server on the recorded pipe in
+    /// the process table (by its recorded pid where command lines cannot be read).
+    /// </summary>
+    internal static object? BuildCscSharedData(
+        string? projectRoot,
+        Func<string, IReadOnlyList<int>>? findServers = null,
+        Func<int, bool>? isAlive = null)
+    {
+        if (string.IsNullOrWhiteSpace(projectRoot))
+        {
+            return null;
+        }
+
+        string statusPath = CscSharedStatus.GetStatusPath(projectRoot);
+        CscSharedStatus? status = CscSharedStatus.TryRead(statusPath);
+        if (status is null)
+        {
+            return new
+            {
+                statusPath,
+                present = false,
+                note = "No csc-shared status for this project: the csc /shared fallback is used only when the editor "
+                    + "runs with UCB_EXECUTE_COMPILER=roslyn-host or csc-shared.",
+            };
+        }
+
+        Func<int, bool> alive = isAlive ?? IsProcessAlive;
+        bool editorAlive = status.EditorPid > 0 && alive(status.EditorPid);
+        IReadOnlyList<int> servers = string.IsNullOrEmpty(status.PipeName)
+            ? Array.Empty<int>()
+            : (findServers ?? FindCscSharedServers)(status.PipeName);
+        bool serverAlive = servers.Count > 0
+            || (OperatingSystem.IsWindows() && findServers is null && status.ServerPid > 0 && alive(status.ServerPid));
+        return new
+        {
+            statusPath,
+            present = true,
+            stale = !editorAlive,
+            updatedUtc = status.UpdatedUtc,
+            editorPid = status.EditorPid,
+            editorAlive,
+            configuredCompiler = status.ConfiguredCompiler,
+            pipeName = status.PipeName,
+            state = status.State,
+            note = status.Note,
+            serverPid = servers.Count > 0 ? servers[0] : status.ServerPid,
+            serverAlive,
+            dotnetPath = status.DotnetPath,
+            cscPath = status.CscPath,
+            roslynVersion = status.RoslynVersion,
+            compileTimeoutMs = status.CompileTimeoutMs,
+            compiles = status.Compiles,
+            firstCompileMs = status.FirstCompileMs,
+            lastError = status.LastError,
+            lastErrorUtc = status.LastErrorUtc,
+        };
+    }
+
+    /// <summary>Pids of compiler servers on <paramref name="pipeName"/> (macOS/Linux <c>ps</c>; empty on Windows or on error).</summary>
+    private static IReadOnlyList<int> FindCscSharedServers(string pipeName)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return Array.Empty<int>();
+        }
+
+        try
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo("/bin/ps", "-axww -o pid= -o command=")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            using var process = System.Diagnostics.Process.Start(startInfo);
+            if (process is null)
+            {
+                return Array.Empty<int>();
+            }
+
+            string output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(5000);
+            var pids = new List<int>();
+            foreach (string rawLine in output.Split('\n'))
+            {
+                string line = rawLine.Trim();
+                int space = line.IndexOf(' ');
+                if (space > 0
+                    && CscSharedPipe.IsServerCommandLine(line.Substring(space + 1), pipeName)
+                    && int.TryParse(line.AsSpan(0, space), out int pid))
+                {
+                    pids.Add(pid);
+                }
+            }
+
+            return pids;
+        }
+        catch
+        {
+            return Array.Empty<int>();
+        }
     }
 
     private static bool IsProcessAlive(int pid)
