@@ -327,11 +327,12 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>True once <c>server.json</c> reads back with <see cref="_serverPid"/>.</summary>
         private bool _recordSynced;
 
-        /// <summary>How many times one domain looks for the server. The process is not always visible on the first scans.</summary>
+        /// <summary>
+        /// How many times one domain looks for one server. The process is not always visible on the
+        /// first scans. A dead recorded pid starts a fresh budget for the server that replaces it.
+        /// </summary>
         private const int MaxDiscoveryAttempts = 8;
 
-        /// <summary>Bound on the first compile's wait for the server pid. Warm compiles do not wait.</summary>
-        private static readonly TimeSpan FirstServerPidWait = TimeSpan.FromMilliseconds(1500);
         private string _state = "idle";
         private string _note = string.Empty;
         private int _compiles;
@@ -732,8 +733,36 @@ namespace UnityCliBridge.Bridge.Editor
                 _state = "ready";
                 _note = string.Empty;
                 knownPid = _serverPid;
-                // Keep looking until the real pid is on disk. Three immediate misses used to
-                // freeze serverPid at 0 for the rest of the domain even after the server was up.
+            }
+
+            // A replaced server keeps a dead pid unless we look again. IsAlive is a direct probe
+            // (not the command-line listing); the listing stays off this thread.
+            if (knownPid > 0 && !_processes.IsAlive(knownPid))
+            {
+                lock (_gate)
+                {
+                    if (_serverPid == knownPid)
+                    {
+                        _serverPid = 0;
+                        _recordSynced = false;
+                        knownPid = 0;
+                        if (!_discovering)
+                        {
+                            _discoveryAttempts = 0;
+                        }
+                    }
+                    else
+                    {
+                        knownPid = _serverPid;
+                    }
+                }
+            }
+
+            lock (_gate)
+            {
+                knownPid = _serverPid;
+                // Keep looking until the real pid is on disk, and again after that process exits.
+                // Three immediate misses used to freeze serverPid at 0 for the rest of the domain.
                 discover = knownPid == 0 && !_discovering && _discoveryAttempts < MaxDiscoveryAttempts;
                 if (discover)
                 {
@@ -747,17 +776,11 @@ namespace UnityCliBridge.Bridge.Editor
                 TryPersistServerPid(knownPid);
             }
 
-            Thread? discovery = null;
             if (discover)
             {
-                discovery = new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" };
-                discovery.Start();
-                if (writeStatus)
-                {
-                    // The first status of a domain is what doctor reads. Wait for this scan so
-                    // that write is not stuck at serverPid 0. Later compiles do not wait.
-                    discovery.Join(FirstServerPidWait);
-                }
+                // The compile never waits. This thread rewrites server.json and status.json when
+                // the server shows up, including the first status that went out with serverPid 0.
+                new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" }.Start();
             }
 
             if (writeStatus)
@@ -908,10 +931,11 @@ namespace UnityCliBridge.Bridge.Editor
 
             try
             {
-                CscSharedStatus status = Snapshot();
+                // Snapshot inside the lock. A compile and the background lookup both write, and a
+                // snapshot taken before the lookup finished must not overwrite the pid it recorded.
                 lock (_statusGate)
                 {
-                    status.Write(StatusPath);
+                    Snapshot().Write(StatusPath);
                 }
             }
             catch (Exception)

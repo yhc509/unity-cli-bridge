@@ -329,6 +329,95 @@ public sealed class CscSharedServerTests
     }
 
     [Fact]
+    public void Succeed_DoesNotWaitForTheServerPidLookup()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        table.Listing = () =>
+        {
+            started.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(5)), "lookup was not released");
+            return new[] { Proc(432, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+        };
+        var server = new CscSharedServer(Options(temp.Path), table);
+        Invoke(server, "EnsureRecord");
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the pid lookup");
+            Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "pid lookup did not start");
+            Assert.Equal(0, server.Snapshot().ServerPid);
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432, 2000), "lookup did not record the server");
+        Assert.Equal(432, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        Assert.Equal(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+    }
+
+    [Fact]
+    public void ServerPid_UpdatesWhenTheRecordedServerDies()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        int generation = 0;
+        using var started = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        table.Alive.Add(432);
+        table.Listing = () =>
+        {
+            if (Volatile.Read(ref generation) == 0)
+            {
+                return new[] { Proc(432, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+            }
+
+            started.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(5)), "replacement lookup was not released");
+            return new[] { Proc(2244, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+        };
+        var server = new CscSharedServer(Options(temp.Path), table);
+        Invoke(server, "EnsureRecord");
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432, 2000), "first server was not recorded");
+
+        int lists = table.ListCalls;
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+        Assert.False(Discovering(server));
+        Assert.Equal(lists, table.ListCalls);
+        Assert.Equal(432, server.Snapshot().ServerPid);
+
+        Volatile.Write(ref generation, 1);
+        table.Alive.Remove(432);
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+            watch.Stop();
+
+            Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the replacement lookup");
+            Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "replacement lookup did not start");
+            Assert.NotEqual(2244, server.Snapshot().ServerPid);
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 2244, 2000), "replacement server was not recorded");
+        Assert.Equal(2244, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        Assert.Equal(2244, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        Assert.NotEqual(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+    }
+
+    [Fact]
     public void ToolchainFromReport_NeedsTheCompilerServer()
     {
         using var temp = new TempDir();
