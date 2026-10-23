@@ -121,38 +121,30 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>
         /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> by default
         /// (<c>auto</c>, <c>roslyn-host</c>), <c>csc-shared → codedom</c> with <c>csc-shared</c>, and
-        /// <c>codedom</c> alone with <c>codedom</c>. An invalid setting is reported as the fallback reason.
+        /// <c>codedom</c> alone with <c>codedom</c>, or when this editor has no bundled runtime or
+        /// Roslyn (<see cref="CompileChainPlan"/>). An invalid setting is reported as the fallback reason.
+        /// Main thread, first compile of the domain: the toolchain probe is a few file checks.
         /// </summary>
         public static CompileBackendSelector CreateSelector()
         {
-            var codeDom = new CodeDomBackend();
+            CscSharedBackend? cscShared = CscSharedEditorLifecycle.Backend;
+            CompileChainPlan plan = CompileChainPlan.Create(
+                _settings,
+                _supervisor != null ? null : (_setupError ?? "host setup failed"),
+                cscShared != null ? null : CscSharedEditorLifecycle.SetupError,
+                () => CompileChainPlan.DescribeMissingToolchain(BundledToolchainLocator.Locate(EditorApplication.applicationContentsPath)));
             var preferred = new List<ICompileBackend>();
-            if (_supervisor != null)
+            if (plan.UseRoslynHost && _supervisor != null)
             {
                 preferred.Add(new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs));
             }
 
-            CscSharedBackend? cscShared = _settings.UsesCscShared ? CscSharedEditorLifecycle.Backend : null;
-            if (cscShared != null)
+            if (plan.UseCscShared && cscShared != null)
             {
                 preferred.Add(cscShared);
             }
 
-            string? reason;
-            if (_settings.UsesRoslynHost && _supervisor == null)
-            {
-                reason = RoslynHostFailureCodes.StartFailed + ": " + (_setupError ?? "host setup failed");
-            }
-            else if (_settings.Mode == ExecuteCompilerMode.CscShared && cscShared == null)
-            {
-                reason = CscSharedFailureCodes.Unavailable + ": " + CscSharedEditorLifecycle.SetupError;
-            }
-            else
-            {
-                reason = _settings.InvalidSettingReason;
-            }
-
-            return new CompileBackendSelector(codeDom, preferred, reason);
+            return new CompileBackendSelector(new CodeDomBackend(), preferred, plan.Reason, plan.SkippedBackend);
         }
 
         private static void OnDomainLoaded()

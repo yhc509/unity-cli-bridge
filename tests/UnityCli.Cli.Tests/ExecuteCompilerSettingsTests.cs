@@ -1,3 +1,4 @@
+using UnityCli.Protocol;
 using UnityCliBridge.Bridge.Editor;
 
 namespace UnityCli.Cli.Tests;
@@ -162,5 +163,203 @@ public sealed class ExecuteCompilerSettingsTests
         Assert.Equal(ExecuteCompilerMode.Auto, ExecuteCompilerSettings.Default.Mode);
         Assert.True(ExecuteCompilerSettings.Default.UsesRoslynHost);
         Assert.True(ExecuteCompilerSettings.Default.UsesCscShared);
+    }
+}
+
+public sealed class CompileChainPlanTests
+{
+    private static ExecuteCompilerSettings Settings(string? compiler)
+    {
+        return ExecuteCompilerSettings.Parse(name => name == ExecuteCompilerSettings.CompilerVariable ? compiler : null);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("auto")]
+    [InlineData("roslyn-host")]
+    public void Default_UsesTheHostThenCscShared(string? compiler)
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings(compiler), null, null, () => null);
+
+        Assert.True(plan.UseRoslynHost);
+        Assert.True(plan.UseCscShared);
+        Assert.Null(plan.Reason);
+        Assert.Null(plan.SkippedBackend);
+    }
+
+    [Theory]
+    [InlineData(null, "roslyn-host")]
+    [InlineData("roslyn-host", "roslyn-host")]
+    [InlineData("csc-shared", "csc-shared")]
+    public void MissingToolchain_GoesStraightToCodeDomWithTheReason(string? compiler, string skipped)
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(
+            Settings(compiler),
+            null,
+            null,
+            () => "bundled .NET runtime not found: No bundled NetCoreRuntime found; checked /opt/unity/Editor/Data");
+
+        Assert.False(plan.UseRoslynHost);
+        Assert.False(plan.UseCscShared);
+        Assert.Equal("toolchain-missing: bundled .NET runtime not found: No bundled NetCoreRuntime found; checked /opt/unity/Editor/Data", plan.Reason);
+        Assert.Equal(skipped, plan.SkippedBackend);
+    }
+
+    [Fact]
+    public void MissingToolchain_SelectorCompilesOnceWithCodeDomAndNotesTheFallback()
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings(null), null, null, () => "bundled Roslyn not found: no csc.dll");
+        var host = new CountingBackend("roslyn-host", CompileResult.InfrastructureFailure("roslyn-host", "", null, null, "must not run"));
+        var cscShared = new CountingBackend("csc-shared", CompileResult.InfrastructureFailure("csc-shared", "", null, null, "must not run"));
+        var codeDom = new CountingBackend("codedom", CompileResult.CompileError("codedom", "/langversion:latest", new[] { "Line 1: CS1525: Unexpected symbol `not'" }, null));
+        var preferred = new List<ICompileBackend>();
+        if (plan.UseRoslynHost)
+        {
+            preferred.Add(host);
+        }
+
+        if (plan.UseCscShared)
+        {
+            preferred.Add(cscShared);
+        }
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, preferred, plan.Reason, plan.SkippedBackend)
+            .Compile(new CompileRequest("class A {}", "9.0", Array.Empty<string>(), Array.Empty<string>()));
+
+        Assert.Equal(0, host.Calls);
+        Assert.Equal(0, cscShared.Calls);
+        Assert.Equal(1, codeDom.Calls);
+        Assert.Equal("codedom", outcome.Compiler);
+        Assert.Equal("toolchain-missing: bundled Roslyn not found: no csc.dll", outcome.FallbackReason);
+        Assert.EndsWith(
+            "\ncompiled with mcs fallback (C# 7.x); Roslyn host unavailable: toolchain-missing: bundled Roslyn not found: no csc.dll",
+            outcome.FormatFailureMessage());
+    }
+
+    [Fact]
+    public void CodeDom_NeverProbesTheToolchain()
+    {
+        bool probed = false;
+
+        CompileChainPlan plan = CompileChainPlan.Create(Settings("codedom"), "no host", "no csc", () =>
+        {
+            probed = true;
+            return "missing";
+        });
+
+        Assert.False(probed);
+        Assert.False(plan.UseRoslynHost);
+        Assert.False(plan.UseCscShared);
+        Assert.Null(plan.Reason);
+        Assert.Null(plan.SkippedBackend);
+    }
+
+    [Fact]
+    public void ToolchainProbeThatThrows_IsAMissingToolchain()
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings(null), null, null, () => throw new IOException("denied"));
+
+        Assert.False(plan.UseRoslynHost);
+        Assert.Equal("toolchain-missing: IOException: denied", plan.Reason);
+    }
+
+    [Fact]
+    public void InvalidSetting_KeepsTheHostChainAndReportsTheWarning()
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings("fastest"), null, null, () => null);
+
+        Assert.True(plan.UseRoslynHost);
+        Assert.True(plan.UseCscShared);
+        Assert.StartsWith("invalid-setting: UCB_EXECUTE_COMPILER='fastest'", plan.Reason);
+        Assert.Null(plan.SkippedBackend);
+    }
+
+    [Fact]
+    public void HostSetupFailure_StartsAtCscShared()
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings(null), "IOException: read-only Library", null, () => null);
+
+        Assert.False(plan.UseRoslynHost);
+        Assert.True(plan.UseCscShared);
+        Assert.Equal("start-failed: IOException: read-only Library", plan.Reason);
+        Assert.Equal("roslyn-host", plan.SkippedBackend);
+    }
+
+    [Fact]
+    public void CscSharedSetupFailure_InCscSharedMode_IsCodeDomWithTheReason()
+    {
+        CompileChainPlan plan = CompileChainPlan.Create(Settings("csc-shared"), "unused", "not started in a secondary editor process", () => null);
+
+        Assert.False(plan.UseRoslynHost);
+        Assert.False(plan.UseCscShared);
+        Assert.Equal("csc-shared-unavailable: not started in a secondary editor process", plan.Reason);
+        Assert.Equal("csc-shared", plan.SkippedBackend);
+    }
+
+    [Fact]
+    public void DescribeMissingToolchain_NeedsTheRuntimeAndRoslynOnly()
+    {
+        var runtime = new BundledToolComponent("/U/NetCoreRuntime/dotnet", "/U/NetCoreRuntime", "6.0.21", null);
+        var roslyn = new BundledToolComponent("/U/DotNetSdkRoslyn/csc.dll", "/U/DotNetSdkRoslyn", "4.3.1", null);
+        var noMcs = new BundledToolComponent(null, null, null, "No bundled mcs.exe found");
+
+        Assert.Null(CompileChainPlan.DescribeMissingToolchain(new BundledToolchainReport("/U", "/U", "E", "/U", runtime, roslyn, noMcs, null)));
+        Assert.StartsWith(
+            "bundled .NET runtime not found: No bundled NetCoreRuntime",
+            CompileChainPlan.DescribeMissingToolchain(new BundledToolchainReport(
+                "/U", "/U", null, null, new BundledToolComponent(null, null, null, "No bundled NetCoreRuntime found"), roslyn, null, null)));
+        Assert.StartsWith(
+            "bundled Roslyn not found: No bundled DotNetSdkRoslyn",
+            CompileChainPlan.DescribeMissingToolchain(new BundledToolchainReport(
+                "/U", "/U", "E", "/U", runtime, new BundledToolComponent(null, null, null, "No bundled DotNetSdkRoslyn found"), null, null)));
+        Assert.Equal(
+            "bundled .NET runtime not found: Unity editor path is unknown",
+            CompileChainPlan.DescribeMissingToolchain(new BundledToolchainReport(null, null, null, null, null, null, null, "Unity editor path is unknown")));
+    }
+
+    [Fact]
+    public void LinuxInstallWithoutTheBundledTools_IsReportedMissing()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "ucb-linux-" + Guid.NewGuid().ToString("N"));
+        string data = Path.Combine(root, "Editor", "Data");
+        Directory.CreateDirectory(Path.Combine(data, "MonoBleedingEdge", "lib", "mono", "4.5"));
+        File.WriteAllText(Path.Combine(root, "Editor", "Unity"), string.Empty);
+        try
+        {
+            BundledToolchainReport report = BundledToolchainLocator.Locate(Path.Combine(root, "Editor", "Unity"), BundledToolchainPlatform.Linux);
+
+            string? missing = CompileChainPlan.DescribeMissingToolchain(report);
+            CompileChainPlan plan = CompileChainPlan.Create(Settings(null), null, null, () => missing);
+
+            Assert.StartsWith("bundled .NET runtime not found: ", missing);
+            Assert.False(plan.UseRoslynHost);
+            Assert.False(plan.UseCscShared);
+            Assert.StartsWith("toolchain-missing: bundled .NET runtime not found: ", plan.Reason);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    private sealed class CountingBackend : ICompileBackend
+    {
+        private readonly CompileResult _result;
+
+        public CountingBackend(string id, CompileResult result)
+        {
+            Id = id;
+            _result = result;
+        }
+
+        public string Id { get; }
+
+        public int Calls { get; private set; }
+
+        public CompileResult TryCompile(CompileRequest request)
+        {
+            Calls++;
+            return _result;
+        }
     }
 }

@@ -227,7 +227,13 @@ public static class PucExecuteWrapper
         // exactly when cached assemblies could go stale (project scripts recompiled).
         private const int MaxCachedWrappers = 256;
         private static readonly Dictionary<string, CachedWrapper> _compiledCache = new Dictionary<string, CachedWrapper>(StringComparer.Ordinal);
-        private static CompileBackendSelector BackendSelector = RoslynHostEditorLifecycle.CreateSelector();
+        private static CompileBackendSelector? _backendSelector;
+
+        // Built on the first compile of the domain, not when the bridge constructs the handler.
+        private static CompileBackendSelector BackendSelector
+        {
+            get { return _backendSelector ??= RoslynHostEditorLifecycle.CreateSelector(); }
+        }
 
         private sealed class CachedWrapper
         {
@@ -254,7 +260,7 @@ public static class PucExecuteWrapper
         internal static CompileBackendSelector SwapSelectorForTests(CompileBackendSelector selector)
         {
             CompileBackendSelector previous = BackendSelector;
-            BackendSelector = selector ?? throw new ArgumentNullException(nameof(selector));
+            _backendSelector = selector ?? throw new ArgumentNullException(nameof(selector));
             _compiledCache.Clear();
             return previous;
         }
