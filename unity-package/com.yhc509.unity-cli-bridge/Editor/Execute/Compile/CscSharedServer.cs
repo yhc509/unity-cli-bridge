@@ -140,7 +140,35 @@ namespace UnityCliBridge.Bridge.Editor
                 Directory.CreateDirectory(directory);
             }
 
-            File.WriteAllText(path, ToJson(), new UTF8Encoding(false));
+            // Temp file + replace, same as status.json. A direct write of the live server.json
+            // loses on Windows when a reader still has the previous file open, and that failure
+            // used to leave serverPid at the 0 written before the server existed.
+            string temp = path + "." + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+            File.WriteAllText(temp, ToJson(), new UTF8Encoding(false));
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Replace(temp, path, null);
+                }
+                else
+                {
+                    File.Move(temp, path);
+                }
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    File.Delete(temp);
+                }
+                catch (Exception)
+                {
+                    // Best effort.
+                }
+
+                throw;
+            }
         }
     }
 
@@ -295,6 +323,15 @@ namespace UnityCliBridge.Bridge.Editor
         private int _serverPid;
         private int _discoveryAttempts;
         private bool _discovering;
+
+        /// <summary>True once <c>server.json</c> reads back with <see cref="_serverPid"/>.</summary>
+        private bool _recordSynced;
+
+        /// <summary>How many times one domain looks for the server. The process is not always visible on the first scans.</summary>
+        private const int MaxDiscoveryAttempts = 8;
+
+        /// <summary>Bound on the first compile's wait for the server pid. Warm compiles do not wait.</summary>
+        private static readonly TimeSpan FirstServerPidWait = TimeSpan.FromMilliseconds(1500);
         private string _state = "idle";
         private string _note = string.Empty;
         private int _compiles;
@@ -524,6 +561,8 @@ namespace UnityCliBridge.Bridge.Editor
             lock (_gate)
             {
                 _serverPid = 0;
+                _recordSynced = false;
+                _discoveryAttempts = 0;
                 _state = "stopped";
                 _note = reason ?? string.Empty;
                 _lastShutdownMs = watch.Elapsed.TotalMilliseconds;
@@ -680,6 +719,7 @@ namespace UnityCliBridge.Bridge.Editor
             run.ElapsedMs = watch.Elapsed.TotalMilliseconds;
             bool writeStatus;
             bool discover;
+            int knownPid;
             lock (_gate)
             {
                 writeStatus = _compiles == 0 || _state != "ready";
@@ -691,11 +731,32 @@ namespace UnityCliBridge.Bridge.Editor
                 _compiles++;
                 _state = "ready";
                 _note = string.Empty;
-                discover = _serverPid == 0 && !_discovering && _discoveryAttempts < 3;
+                knownPid = _serverPid;
+                // Keep looking until the real pid is on disk. Three immediate misses used to
+                // freeze serverPid at 0 for the rest of the domain even after the server was up.
+                discover = knownPid == 0 && !_discovering && _discoveryAttempts < MaxDiscoveryAttempts;
                 if (discover)
                 {
                     _discovering = true;
                     _discoveryAttempts++;
+                }
+            }
+
+            if (knownPid > 0)
+            {
+                TryPersistServerPid(knownPid);
+            }
+
+            Thread? discovery = null;
+            if (discover)
+            {
+                discovery = new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" };
+                discovery.Start();
+                if (writeStatus)
+                {
+                    // The first status of a domain is what doctor reads. Wait for this scan so
+                    // that write is not stuck at serverPid 0. Later compiles do not wait.
+                    discovery.Join(FirstServerPidWait);
                 }
             }
 
@@ -707,11 +768,6 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 // Keeps the compile count current for doctor without a file write on the request path.
                 ThreadPool.QueueUserWorkItem(_ => WriteStatus());
-            }
-
-            if (discover)
-            {
-                new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" }.Start();
             }
 
             return run;
@@ -751,34 +807,96 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             bool update;
-            lock (_gate)
+            try
             {
-                _discovering = false;
-                update = pid > 0 && _usedThisDomain;
-                if (update)
+                lock (_gate)
                 {
-                    _serverPid = pid;
+                    update = pid > 0 && _usedThisDomain;
+                    if (update)
+                    {
+                        _serverPid = pid;
+                    }
+                }
+
+                if (!update)
+                {
+                    return;
+                }
+
+                TryPersistServerPid(pid);
+                WriteStatus();
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    _discovering = false;
                 }
             }
+        }
 
-            if (!update)
+        /// <summary>
+        /// Writes <paramref name="pid"/> into <c>server.json</c> and only then treats the record as
+        /// current. A failed write (the file is still 0) is retried on the next compile.
+        /// </summary>
+        private void TryPersistServerPid(int pid)
+        {
+            if (pid <= 0)
             {
                 return;
             }
 
-            try
+            lock (_gate)
             {
-                CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
-                    ?? new CscSharedServerRecord { Pipe = PipeName, EditorPid = _options.EditorPid, StartedUtc = RoslynHostStatus.FormatUtc(DateTime.UtcNow) };
-                record.ServerPid = pid;
-                record.Write(RecordPath);
-            }
-            catch (Exception)
-            {
-                // Diagnostics only; cleanup finds the server by its pipe.
+                if (_recordSynced && _serverPid == pid)
+                {
+                    return;
+                }
             }
 
-            WriteStatus();
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    CscSharedServerRecord record = CscSharedServerRecord.TryRead(RecordPath)
+                        ?? new CscSharedServerRecord
+                        {
+                            Pipe = PipeName,
+                            EditorPid = _options.EditorPid,
+                            StartedUtc = RoslynHostStatus.FormatUtc(DateTime.UtcNow),
+                        };
+                    if (!string.Equals(record.Pipe, PipeName, StringComparison.Ordinal))
+                    {
+                        record.Pipe = PipeName;
+                        record.EditorPid = _options.EditorPid;
+                    }
+
+                    record.ServerPid = pid;
+                    record.Write(RecordPath);
+                    CscSharedServerRecord? readBack = CscSharedServerRecord.TryRead(RecordPath);
+                    if (readBack != null && readBack.ServerPid == pid)
+                    {
+                        lock (_gate)
+                        {
+                            if (_serverPid == pid)
+                            {
+                                _recordSynced = true;
+                            }
+                        }
+
+                        return;
+                    }
+                }
+                catch (Exception)
+                {
+                    // The next attempt, or the next compile, tries again.
+                }
+
+                if (attempt < 2)
+                {
+                    Thread.Sleep(50);
+                }
+            }
         }
 
         private void WriteStatus()

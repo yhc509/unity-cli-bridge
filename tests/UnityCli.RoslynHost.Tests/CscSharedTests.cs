@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using UnityCli.Protocol;
@@ -295,6 +296,39 @@ public sealed class CscSharedServerTests
     }
 
     [Fact]
+    public void ServerPid_IsTheRealProcess_NotZero_OnceTheServerIsVisible()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        int listed = 0;
+        table.Listing = () =>
+        {
+            int n = Interlocked.Increment(ref listed);
+            if (n < 4)
+            {
+                return Array.Empty<KeyValuePair<int, string>>();
+            }
+
+            return new[] { Proc(432, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+        };
+        var server = new CscSharedServer(Options(temp.Path), table);
+        Invoke(server, "EnsureRecord");
+        Assert.Equal(0, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+
+        for (int i = 0; i < 4; i++)
+        {
+            Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+            Assert.True(WaitFor(() => !Discovering(server), 2000), "discovery did not finish");
+        }
+
+        Assert.Equal(432, server.Snapshot().ServerPid);
+        Assert.Equal(432, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        Assert.NotEqual(0, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        Assert.Equal(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        Assert.NotEqual(0, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+    }
+
+    [Fact]
     public void ToolchainFromReport_NeedsTheCompilerServer()
     {
         using var temp = new TempDir();
@@ -333,6 +367,33 @@ public sealed class CscSharedServerTests
         };
     }
 
+    private static bool Discovering(CscSharedServer server)
+    {
+        return (bool)typeof(CscSharedServer).GetField("_discovering", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
+    }
+
+    private static void Invoke(CscSharedServer server, string name, params object[] args)
+    {
+        MethodInfo method = typeof(CscSharedServer).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(server, args.Length == 0 ? null : args);
+    }
+
+    private static bool WaitFor(Func<bool> condition, int timeoutMs)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.ElapsedMilliseconds < timeoutMs)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            Thread.Sleep(20);
+        }
+
+        return condition();
+    }
+
     private static KeyValuePair<int, string> Proc(int pid, string commandLine)
     {
         return new KeyValuePair<int, string>(pid, commandLine);
@@ -348,10 +409,13 @@ public sealed class CscSharedServerTests
 
         public int ListCalls { get; private set; }
 
+        /// <summary>When set, <see cref="ListServers"/> returns this instead of <see cref="Processes"/>.</summary>
+        public Func<IReadOnlyList<KeyValuePair<int, string>>>? Listing { get; set; }
+
         public IReadOnlyList<KeyValuePair<int, string>> ListServers()
         {
             ListCalls++;
-            return Processes;
+            return Listing != null ? Listing() : Processes;
         }
 
         public bool IsAlive(int pid)
@@ -381,6 +445,62 @@ public sealed class CscSharedServerTests
         {
             return _result;
         }
+    }
+}
+
+public sealed class CscSharedProcessListingTests
+{
+    private const string Pipe = "ucb-d6887d89-abc123";
+
+    private const string ServerLine =
+        "432 \"C:\\Program Files\\Unity\\Hub\\Editor\\2021.3.45f2\\Editor\\Data\\NetCoreRuntime\\dotnet.exe\" exec "
+        + "\"C:\\Program Files\\Unity\\Hub\\Editor\\2021.3.45f2\\Editor\\Data\\DotNetSdkRoslyn\\VBCSCompiler.dll\" "
+        + "\"-pipename:" + Pipe + "\"";
+
+    [Fact]
+    public void WrappedWindowsListing_KeepsTheServerPid()
+    {
+        var wrapped = new StringBuilder("0 \n");
+        for (int index = 0; index < ServerLine.Length; index += 80)
+        {
+            int take = Math.Min(80, ServerLine.Length - index);
+            wrapped.Append(ServerLine, index, take);
+            wrapped.Append('\n');
+        }
+
+        wrapped.Append("433 \"C:\\U\\dotnet.exe\" exec \"C:\\U\\VBCSCompiler.dll\" -shutdown -pipename:").Append(Pipe).Append('\n');
+
+        List<KeyValuePair<int, string>> found = RoslynHostProcessInspector.ParseCommandLineListing(wrapped.ToString(), "VBCSCompiler");
+
+        Assert.Contains(found, pair => pair.Key == 432);
+        Assert.DoesNotContain(found, pair => pair.Key == 0);
+        string server = found.Single(pair => pair.Key == 432).Value;
+        Assert.True(CscSharedPipe.IsServerCommandLine(server, Pipe));
+        Assert.False(CscSharedPipe.IsServerCommandLine(found.Single(pair => pair.Key == 433).Value, Pipe));
+    }
+
+    [Fact]
+    public void Utf16ListingReadAsSingleByte_KeepsTheServerPid()
+    {
+        string listing = "0 \n" + ServerLine + "\n";
+        string misread = Encoding.GetEncoding("ISO-8859-1").GetString(Encoding.Unicode.GetBytes(listing));
+
+        List<KeyValuePair<int, string>> found = RoslynHostProcessInspector.ParseCommandLineListing(misread, "VBCSCompiler");
+
+        Assert.Equal(432, Assert.Single(found).Key);
+        Assert.NotEqual(0, found[0].Key);
+        Assert.True(CscSharedPipe.IsServerCommandLine(found[0].Value, Pipe));
+    }
+
+    [Fact]
+    public void PsListing_DoesNotJoinSeparateProcesses()
+    {
+        string listing = "10 /bin/sleep 5\n432 /U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe + "\n";
+
+        List<KeyValuePair<int, string>> found = RoslynHostProcessInspector.ParseCommandLineListing(listing, "VBCSCompiler");
+
+        Assert.Equal(432, Assert.Single(found).Key);
+        Assert.NotEqual(0, found[0].Key);
     }
 }
 
