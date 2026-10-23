@@ -727,6 +727,9 @@ public sealed class RoslynHostBackendTests : IDisposable
         using RoslynHostSupervisor supervisor = Supervisor(launcher);
 
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
+        // The start thread writes status before it clears IsStarting. A restart
+        // requested in that window is skipped, so wait until the idle host is fully up.
+        Assert.True(SpinWait.SpinUntil(() => !supervisor.IsStarting, TimeSpan.FromSeconds(5)));
         instances[0].Alive = false;
         IRoslynHostInstance? thisRequest = supervisor.AcquireReady(5000, out string reason);
         IRoslynHostInstance? next = supervisor.AcquireReady(5000, out _);
