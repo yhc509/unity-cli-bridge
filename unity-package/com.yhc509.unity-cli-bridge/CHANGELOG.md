@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Internal: `execute` now compiles snippets through a compiler-backend interface. CodeDOM (mcs) is still the only compiler. References, caching, error codes, and messages are unchanged.
+- Internal: groundwork for a resident Roslyn compiler for `execute`. The package now carries the source of a small compile host (`RoslynHost~/`, which Unity does not import) and Editor-only helpers that build it with the C# compiler bundled in the Unity editor install, run it on the editor's bundled .NET runtime only, and talk to it over a length-prefixed stdin/stdout pipe. Nothing builds, starts, or uses the host yet: `execute` still compiles with mcs and behaves exactly as before.
 
 ### Fixed
 - `execute` on Windows compiles snippets again. mcs was loading its own Mono mscorlib as well as Unity's `mscorlib.dll`, so every snippet failed with CS0433 (`System.Threading.CancellationToken` defined in both). When a reference is already `mscorlib.dll`, the compiler is passed `-nostdlib` and that Unity reference stays. Compiles with no mscorlib reference are unchanged. Seen on Unity 2021.3.45f2 and 6000.3.10f1.
