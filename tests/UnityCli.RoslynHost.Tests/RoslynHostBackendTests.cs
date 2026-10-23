@@ -874,8 +874,8 @@ public sealed class RoslynHostBackendTests : IDisposable
         Assert.Equal("ready", supervisor.State);
         clock.Now = clock.Now.AddSeconds(61);
         Assert.True(SpinWait.SpinUntil(() => supervisor.State == "stopped", TimeSpan.FromSeconds(10)));
-
-        Assert.Equal(1, instances[0].Stops);
+        // State is published before Stop returns, so the stop count can lag the state by one call.
+        Assert.True(SpinWait.SpinUntil(() => instances[0].Stops == 1, TimeSpan.FromSeconds(10)));
         Assert.True(SpinWait.SpinUntil(() => RoslynHostStatus.TryRead(supervisor.StatusFilePath)?.Note == "idle-exit", TimeSpan.FromSeconds(10)));
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
         Assert.Equal(2, launcher.Launches);
