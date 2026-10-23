@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -90,6 +91,7 @@ namespace UnityCliBridge.Bridge.Editor
                         EditorPid = editorPid,
                         HostDirectory = hostDirectory,
                         PrewarmCompile = BuildPrewarmRequest,
+                        NextBackendId = CscSharedEditorLifecycle.Backend != null ? CompileBackendIds.CscShared : CompileBackendIds.CodeDom,
                     });
                 AssemblyReloadEvents.beforeAssemblyReload += OnBeforeAssemblyReload;
                 EditorApplication.quitting += OnQuitting;
@@ -116,24 +118,40 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// The backend chain for this domain: <c>roslyn-host → codedom</c> with the opt-in, otherwise
-        /// <c>codedom</c> alone (a csc-shared step slots in before CodeDOM in a later version).
+        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> with
+        /// <c>roslyn-host</c>, <c>csc-shared → codedom</c> with <c>csc-shared</c>, otherwise
+        /// <c>codedom</c> alone.
         /// </summary>
         public static CompileBackendSelector CreateSelector()
         {
             var codeDom = new CodeDomBackend();
+            var preferred = new List<ICompileBackend>();
             if (_supervisor != null)
             {
-                return new CompileBackendSelector(
-                    codeDom,
-                    new ICompileBackend[] { new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs) },
-                    null);
+                preferred.Add(new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs));
             }
 
-            string? reason = _settings.UsesRoslynHost
-                ? RoslynHostFailureCodes.StartFailed + ": " + (_setupError ?? "host setup failed")
-                : _settings.CodeDomReason;
-            return new CompileBackendSelector(codeDom, Array.Empty<ICompileBackend>(), reason);
+            CscSharedBackend? cscShared = _settings.UsesCscShared ? CscSharedEditorLifecycle.Backend : null;
+            if (cscShared != null)
+            {
+                preferred.Add(cscShared);
+            }
+
+            string? reason;
+            if (_settings.UsesRoslynHost && _supervisor == null)
+            {
+                reason = RoslynHostFailureCodes.StartFailed + ": " + (_setupError ?? "host setup failed");
+            }
+            else if (_settings.Mode == ExecuteCompilerMode.CscShared && cscShared == null)
+            {
+                reason = CscSharedFailureCodes.Unavailable + ": " + CscSharedEditorLifecycle.SetupError;
+            }
+            else
+            {
+                reason = preferred.Count == 0 ? _settings.CodeDomReason : null;
+            }
+
+            return new CompileBackendSelector(codeDom, preferred, reason);
         }
 
         private static void OnDomainLoaded()

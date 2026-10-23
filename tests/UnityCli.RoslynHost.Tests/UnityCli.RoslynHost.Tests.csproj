@@ -33,9 +33,13 @@
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileBackendSelector.cs" Link="Editor\CompileBackendSelector.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileRequest.cs" Link="Editor\CompileRequest.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileResult.cs" Link="Editor\CompileResult.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CscSharedBackend.cs" Link="Editor\CscSharedBackend.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CscSharedCommandLine.cs" Link="Editor\CscSharedCommandLine.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CscSharedServer.cs" Link="Editor\CscSharedServer.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ExecuteCompilerSettings.cs" Link="Editor\ExecuteCompilerSettings.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ICompileBackend.cs" Link="Editor\ICompileBackend.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ProjectCompilerOptions.cs" Link="Editor\ProjectCompilerOptions.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ResponseFileWriter.cs" Link="Editor\ResponseFileWriter.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostBackend.cs" Link="Editor\RoslynHostBackend.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostConnection.cs" Link="Editor\RoslynHostConnection.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostLauncher.cs" Link="Editor\RoslynHostLauncher.cs" />

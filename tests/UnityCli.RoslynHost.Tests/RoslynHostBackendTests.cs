@@ -456,6 +456,148 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void Building_FallsThroughToCscShared_AndLeavesTheBuildRunning()
+    {
+        var beforeSpawn = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance())
+        {
+            ImageDisposition = RoslynHostImageDisposition.NeedsBuild,
+            BeforeSpawn = beforeSpawn,
+        };
+        int waits = 0;
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = _ =>
+            {
+                waits++;
+                return false;
+            });
+        var cscShared = new CountingBackend("csc-shared", succeed: true);
+        var codeDom = new CountingBackend("codedom", succeed: true);
+        var selector = new CompileBackendSelector(
+            codeDom,
+            new ICompileBackend[] { new RoslynHostBackend(supervisor), cscShared },
+            null);
+
+        try
+        {
+            CompileOutcome building = selector.Compile(Request("return 1;"));
+
+            Assert.Equal("csc-shared", building.Compiler);
+            Assert.Equal("roslyn-host", building.FellBackFrom);
+            Assert.Equal("host-building: the host is still being built", building.FallbackReason);
+            Assert.Equal("building", supervisor.State);
+            Assert.True(supervisor.IsStarting);
+            Assert.Equal(0, waits);
+            Assert.Equal(1, cscShared.Calls);
+            Assert.Equal(0, codeDom.Calls);
+
+            beforeSpawn.Set();
+            Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(5)));
+            CompileOutcome ready = selector.Compile(Request("return 2;"));
+
+            Assert.Equal("roslyn-host", ready.Compiler);
+            Assert.Null(ready.FallbackReason);
+            Assert.Equal(1, launcher.Launches);
+            Assert.Equal(1, cscShared.Calls);
+            Assert.Equal(0, codeDom.Calls);
+            Assert.Equal(0, waits);
+        }
+        finally
+        {
+            beforeSpawn.Set();
+        }
+    }
+
+    [Fact]
+    public void Building_WhenCscSharedAlsoFails_ReportsBothReasonsOnCodeDom()
+    {
+        var beforeSpawn = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance())
+        {
+            ImageDisposition = RoslynHostImageDisposition.NeedsBuild,
+            BeforeSpawn = beforeSpawn,
+        };
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = _ => false);
+        var cscShared = new CountingBackend(
+            "csc-shared",
+            infrastructureReason: "csc-shared-timeout: csc did not finish in 10000 ms");
+        var codeDom = new CountingBackend("codedom", succeed: true);
+
+        try
+        {
+            CompileOutcome building = new CompileBackendSelector(
+                codeDom,
+                new ICompileBackend[] { new RoslynHostBackend(supervisor), cscShared },
+                null).Compile(Request("return 1;"));
+
+            Assert.Equal("codedom", building.Compiler);
+            Assert.Equal("csc-shared", building.FellBackFrom);
+            Assert.Equal(
+                "host-building: the host is still being built; csc-shared-timeout: csc did not finish in 10000 ms",
+                building.FallbackReason);
+            Assert.Equal(1, cscShared.Calls);
+            Assert.Equal(1, codeDom.Calls);
+            Assert.Equal("building", supervisor.State);
+        }
+        finally
+        {
+            beforeSpawn.Set();
+        }
+    }
+
+    [Fact]
+    public void HostNotReady_FallsThroughToCscSharedWithTheHostReason()
+    {
+        var gate = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new ScriptedHostInstance(ScriptedHostInstance.Replies(
+            request => new RoslynHostCompileResult { Id = request.Id, Ok = false }.ToMessage())))
+        {
+            Gate = gate,
+        };
+        int waits = 0;
+        using RoslynHostSupervisor supervisor = Supervisor(
+            launcher,
+            Settings((ExecuteCompilerSettings.HostWaitVariable, "15000")),
+            configure: options => options.WaitForStart = _ =>
+            {
+                waits++;
+                return false;
+            });
+        var cscShared = new CountingBackend("csc-shared", succeed: true);
+        var codeDom = new CountingBackend("codedom", succeed: true);
+        try
+        {
+            supervisor.BeginStart("preload");
+            Assert.True(SpinWait.SpinUntil(
+                () => supervisor.State == "starting" && File.Exists(supervisor.PidFilePath),
+                TimeSpan.FromSeconds(5)));
+
+            CompileOutcome waiting = new CompileBackendSelector(
+                codeDom,
+                new ICompileBackend[] { new RoslynHostBackend(supervisor), cscShared },
+                null).Compile(Request("return 1;"));
+
+            Assert.Equal("csc-shared", waiting.Compiler);
+            Assert.Equal("roslyn-host", waiting.FellBackFrom);
+            Assert.StartsWith("host-not-ready: the host is still starting after ", waiting.FallbackReason);
+            Assert.DoesNotContain("csc-shared", waiting.FallbackReason);
+            Assert.Equal(1, waits);
+            Assert.Equal(1, cscShared.Calls);
+            Assert.Equal(0, codeDom.Calls);
+            Assert.Equal("starting", supervisor.State);
+        }
+        finally
+        {
+            gate.Set();
+        }
+    }
+
+    [Fact]
     public void ReadyHost_IsUsedWithoutWaiting()
     {
         var launcher = new FakeLauncher(_ => new InProcessHostInstance());
@@ -585,6 +727,9 @@ public sealed class RoslynHostBackendTests : IDisposable
         using RoslynHostSupervisor supervisor = Supervisor(launcher);
 
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
+        // The start thread writes status before it clears IsStarting. A restart
+        // requested in that window is skipped, so wait until the idle host is fully up.
+        Assert.True(SpinWait.SpinUntil(() => !supervisor.IsStarting, TimeSpan.FromSeconds(5)));
         instances[0].Alive = false;
         IRoslynHostInstance? thisRequest = supervisor.AcquireReady(5000, out string reason);
         IRoslynHostInstance? next = supervisor.AcquireReady(5000, out _);
@@ -732,8 +877,8 @@ public sealed class RoslynHostBackendTests : IDisposable
         Assert.Equal("ready", supervisor.State);
         clock.Now = clock.Now.AddSeconds(61);
         Assert.True(SpinWait.SpinUntil(() => supervisor.State == "stopped", TimeSpan.FromSeconds(10)));
-
-        Assert.Equal(1, instances[0].Stops);
+        // State is published before Stop returns, so the stop count can lag the state by one call.
+        Assert.True(SpinWait.SpinUntil(() => instances[0].Stops == 1, TimeSpan.FromSeconds(10)));
         Assert.True(SpinWait.SpinUntil(() => RoslynHostStatus.TryRead(supervisor.StatusFilePath)?.Note == "idle-exit", TimeSpan.FromSeconds(10)));
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
         Assert.Equal(2, launcher.Launches);
@@ -849,11 +994,13 @@ public sealed class RoslynHostBackendTests : IDisposable
     private sealed class CountingBackend : ICompileBackend
     {
         private readonly bool _succeed;
+        private readonly string? _infrastructureReason;
 
-        public CountingBackend(string id, bool succeed = false)
+        public CountingBackend(string id, bool succeed = false, string? infrastructureReason = null)
         {
             Id = id;
             _succeed = succeed;
+            _infrastructureReason = infrastructureReason;
         }
 
         public string Id { get; }
@@ -863,6 +1010,11 @@ public sealed class RoslynHostBackendTests : IDisposable
         public CompileResult TryCompile(CompileRequest request)
         {
             Calls++;
+            if (_infrastructureReason != null)
+            {
+                return CompileResult.InfrastructureFailure(Id, "/langversion:latest", null, null, _infrastructureReason);
+            }
+
             return _succeed
                 ? CompileResult.Success(Id, typeof(CountingBackend).Assembly, "/langversion:latest")
                 : CompileResult.CompileError(Id, "/langversion:latest", new[] { "Line 1: CS0000: fake" }, null);

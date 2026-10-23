@@ -239,19 +239,150 @@ namespace UnityCliBridge.Bridge.Editor
             string? output = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? Capture(
                     "powershell.exe",
-                    "-NoProfile -NonInteractive -Command \"(Get-CimInstance Win32_Process -Filter 'ProcessId="
-                    + pid.ToString(CultureInfo.InvariantCulture) + "').CommandLine\"")
+                    WindowsPowerShellArguments(
+                        WindowsUtf8Prelude
+                        + "$p = Get-CimInstance Win32_Process -Filter ('ProcessId="
+                        + pid.ToString(CultureInfo.InvariantCulture)
+                        + "')\r\n"
+                        + "if ($null -ne $p -and $null -ne $p.CommandLine) { [Console]::Out.WriteLine([string]$p.CommandLine) }\r\n"),
+                    Utf8NoBom)
                 : Capture("/bin/ps", "-ww -o command= -p " + pid.ToString(CultureInfo.InvariantCulture));
             if (output == null)
             {
                 return null;
             }
 
-            string trimmed = output.Trim();
+            string trimmed = NormalizeProcessListing(output).Trim();
             return trimmed.Length == 0 ? null : trimmed;
         }
 
-        private static string? Capture(string fileName, string arguments)
+        /// <summary>
+        /// Every process whose command line contains <paramref name="needle"/> (ordinal, ignoring case):
+        /// <c>ps</c> on macOS/Linux, CIM through PowerShell on Windows. Empty when the table cannot be read.
+        /// </summary>
+        public static List<KeyValuePair<int, string>> FindByCommandLine(string needle)
+        {
+            var found = new List<KeyValuePair<int, string>>();
+            if (string.IsNullOrEmpty(needle))
+            {
+                return found;
+            }
+
+            string? output = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Capture(
+                    "powershell.exe",
+                    WindowsPowerShellArguments(
+                        WindowsUtf8Prelude
+                        + "Get-CimInstance Win32_Process | ForEach-Object { [Console]::Out.WriteLine(('{0} {1}' -f $_.ProcessId, $_.CommandLine)) }\r\n"),
+                    Utf8NoBom)
+                : Capture("/bin/ps", "-axww -o pid= -o command=");
+            return ParseCommandLineListing(output, needle);
+        }
+
+        /// <summary>
+        /// Pids whose command line contains <paramref name="needle"/>. One process per line
+        /// (<c>pid command</c>). A Windows PowerShell host wraps long lines and, when its UTF-16
+        /// output is read as a single-byte encoding, interleaves NULs; both used to drop the
+        /// compiler server so the recorded pid stayed 0. Wrapped continuations are joined, and
+        /// NULs are stripped, before the pid is parsed. A pid of 0 is never returned.
+        /// </summary>
+        internal static List<KeyValuePair<int, string>> ParseCommandLineListing(string? output, string needle)
+        {
+            var found = new List<KeyValuePair<int, string>>();
+            if (string.IsNullOrEmpty(output) || string.IsNullOrEmpty(needle))
+            {
+                return found;
+            }
+
+            string? pending = null;
+            foreach (string rawLine in NormalizeProcessListing(output!).Split('\n'))
+            {
+                string line = rawLine.Trim().TrimEnd('\r');
+                if (line.Length == 0)
+                {
+                    continue;
+                }
+
+                if (pending != null && !StartsWithPid(line))
+                {
+                    // PowerShell inserts the break at the console width and the trailing space
+                    // was trimmed off the previous fragment, so join without adding one.
+                    pending += line;
+                    continue;
+                }
+
+                if (pending != null)
+                {
+                    ConsiderCommandLine(found, pending, needle);
+                }
+
+                pending = line;
+            }
+
+            if (pending != null)
+            {
+                ConsiderCommandLine(found, pending, needle);
+            }
+
+            return found;
+        }
+
+        private static void ConsiderCommandLine(List<KeyValuePair<int, string>> found, string line, string needle)
+        {
+            int space = line.IndexOf(' ');
+            if (space <= 0 || line.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return;
+            }
+
+            if (int.TryParse(line.Substring(0, space), NumberStyles.Integer, CultureInfo.InvariantCulture, out int pid) && pid > 0)
+            {
+                found.Add(new KeyValuePair<int, string>(pid, line.Substring(space + 1).Trim()));
+            }
+        }
+
+        private static bool StartsWithPid(string line)
+        {
+            int space = line.IndexOf(' ');
+            string token = space > 0 ? line.Substring(0, space) : line;
+            return int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out int pid) && pid > 0;
+        }
+
+        /// <summary>
+        /// Drops NULs left when UTF-16 LE process text was decoded as single-byte characters, and a
+        /// leading BOM. ASCII command lines round-trip; a listing with no NULs is unchanged.
+        /// </summary>
+        internal static string NormalizeProcessListing(string output)
+        {
+            if (output.IndexOf('\0') < 0 && output.IndexOf('\uFEFF') < 0)
+            {
+                return output;
+            }
+
+            var builder = new StringBuilder(output.Length);
+            foreach (char c in output)
+            {
+                if (c != '\0' && c != '\uFEFF')
+                {
+                    builder.Append(c);
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        private const string WindowsUtf8Prelude =
+            "$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\r\n";
+
+        private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
+
+        /// <summary><c>-EncodedCommand</c> so <c>$_</c> and quotes reach Windows PowerShell unchanged.</summary>
+        private static string WindowsPowerShellArguments(string script)
+        {
+            return "-NoProfile -NonInteractive -EncodedCommand " + Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        }
+
+        private static string? Capture(string fileName, string arguments, Encoding? standardOutputEncoding = null)
         {
             try
             {
@@ -262,6 +393,10 @@ namespace UnityCliBridge.Bridge.Editor
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
+                if (standardOutputEncoding != null)
+                {
+                    startInfo.StandardOutputEncoding = standardOutputEncoding;
+                }
                 using (Process process = Process.Start(startInfo)!)
                 {
                     process.ErrorDataReceived += (_, __) => { };

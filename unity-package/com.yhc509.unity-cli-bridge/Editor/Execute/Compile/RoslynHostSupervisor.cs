@@ -226,6 +226,9 @@ namespace UnityCliBridge.Bridge.Editor
         /// </summary>
         public Func<IReadOnlyList<string>, RoslynHostCompileRequest?>? PrewarmCompile { get; set; }
 
+        /// <summary>The backend after the host in the chain, reported as the active one while the host is disabled.</summary>
+        public string NextBackendId { get; set; } = CompileBackendIds.CodeDom;
+
         /// <summary>
         /// Replaces the <c>starting</c>-state readiness wait. The argument is the bound in milliseconds.
         /// The return value is ignored; <see cref="RoslynHostSupervisor.AcquireReady"/> re-reads the host.
@@ -239,7 +242,8 @@ namespace UnityCliBridge.Bridge.Editor
     /// Owns the Roslyn host for one domain (plan §2.5–§2.6): background start (orphan cleanup →
     /// build → spawn → hello → first setRefs, off the main thread), a bounded wait only while the
     /// host is <c>starting</c> (image already built, process spawning or connecting), an immediate
-    /// CodeDOM fallback while it is <c>building</c>, per-compile timeout with kill, crash accounting
+    /// <c>host-building</c> result while it is <c>building</c> (the selector continues at csc-shared,
+    /// then CodeDOM), per-compile timeout with kill, crash accounting
     /// (3 in 60 s disables the host for the editor session), quit-then-kill on reload/quit, optional
     /// idle exit, and the status file.
     /// Unity-free; the editor glue (<c>RoslynHostEditorLifecycle</c>) supplies the session store,
@@ -457,8 +461,8 @@ namespace UnityCliBridge.Bridge.Editor
         /// Main thread: a ready host, or null with a <c>code: detail</c> reason.
         /// <list type="bullet">
         /// <item><c>ready</c> — the live host, no wait.</item>
-        /// <item><c>building</c> — the host image is not in the cache (including a first call that has just started that build). CodeDOM immediately (<c>host-building</c>); the build keeps running. The one-time csc outlasts <paramref name="waitMs"/>, so waiting only made the opt-in slower than mcs.</item>
-        /// <item><c>starting</c> — the image is already built and the process is spawning or connecting (hello, setRefs, prewarm), or a start failure that does not compile. Wait up to <paramref name="waitMs"/>. This is the post-reload first miss: <c>afterAssemblyReload</c> starts the host while the editor finishes the reload, the cache hit reaches spawn well before the next <c>execute</c>, and the remainder fits in the bound and beats mcs. <c>onSpawned</c> moves <c>building</c> to <c>starting</c> once the process is alive, so a call that arrives after the compile still waits.</item>
+        /// <item><c>building</c> — the host image is not in the cache (including a first call that has just started that build). Returns <c>host-building</c> immediately and leaves the build running; the selector continues at csc-shared, then CodeDOM. The one-time csc outlasts <paramref name="waitMs"/>, so waiting only made the opt-in slower than the next compiler.</item>
+        /// <item><c>starting</c> — the image is already built and the process is spawning or connecting (hello, setRefs, prewarm), or a start failure that does not compile. Wait up to <paramref name="waitMs"/>. This is the post-reload first miss: <c>afterAssemblyReload</c> starts the host while the editor finishes the reload, the cache hit reaches spawn well before the next <c>execute</c>, and the remainder fits in the bound and beats mcs. <c>onSpawned</c> moves <c>building</c> to <c>starting</c> once the process is alive, so a call that arrives after the compile still waits. If the host is still not ready when the wait ends, the reason is <c>host-not-ready</c> and the selector continues at csc-shared, then CodeDOM.</item>
         /// <item>A host that died while idle — <c>host-crashed</c> immediately, restart in the background. The image is already built, so that restart is <c>starting</c>.</item>
         /// </list>
         /// </summary>
@@ -806,7 +810,7 @@ namespace UnityCliBridge.Bridge.Editor
                     UpdatedUtc = RoslynHostStatus.FormatUtc(_clock()),
                     EditorPid = _options.EditorPid,
                     ConfiguredCompiler = _settings.RawCompiler,
-                    ActiveBackend = _disabledReason == null && _permanentFailure == null ? CompileBackendIds.RoslynHost : CompileBackendIds.CodeDom,
+                    ActiveBackend = _disabledReason == null && _permanentFailure == null ? CompileBackendIds.RoslynHost : _options.NextBackendId,
                     PrewarmPolicy = _settings.PrewarmName,
                     HostWaitMs = _settings.HostWaitMs,
                     CompileTimeoutMs = _settings.CompileTimeoutMs,

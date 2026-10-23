@@ -18,6 +18,7 @@ public sealed class ExecuteCompilerSettingsTests
         Assert.Equal(ExecuteCompilerMode.Auto, settings.Mode);
         Assert.Equal("auto", settings.RawCompiler);
         Assert.False(settings.UsesRoslynHost);
+        Assert.False(settings.UsesCscShared);
         Assert.Null(settings.CodeDomReason);
         Assert.Equal(RoslynHostPrewarmPolicy.Auto, settings.Prewarm);
         Assert.Equal(1500, settings.HostWaitMs);
@@ -55,13 +56,28 @@ public sealed class ExecuteCompilerSettingsTests
     }
 
     [Fact]
-    public void CscShared_FallsBackToCodeDomWithAReason()
+    public void CscShared_StartsAtCscSharedWithoutTheHost()
     {
         ExecuteCompilerSettings settings = Parse((ExecuteCompilerSettings.CompilerVariable, "csc-shared"));
 
         Assert.Equal(ExecuteCompilerMode.CscShared, settings.Mode);
         Assert.False(settings.UsesRoslynHost);
-        Assert.StartsWith("csc-shared-unavailable: ", settings.CodeDomReason);
+        Assert.True(settings.UsesCscShared);
+        Assert.Null(settings.CodeDomReason);
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("auto", false)]
+    [InlineData("codedom", false)]
+    [InlineData("fastest", false)]
+    [InlineData("roslyn-host", true)]
+    [InlineData("csc-shared", true)]
+    public void CscShared_IsInTheChainOnlyForTheTwoRoslynSettings(string? raw, bool expected)
+    {
+        ExecuteCompilerSettings settings = raw == null ? Parse() : Parse((ExecuteCompilerSettings.CompilerVariable, raw));
+
+        Assert.Equal(expected, settings.UsesCscShared);
     }
 
     [Fact]
