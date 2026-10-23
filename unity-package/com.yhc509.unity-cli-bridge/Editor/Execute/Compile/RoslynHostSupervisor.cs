@@ -264,6 +264,9 @@ namespace UnityCliBridge.Bridge.Editor
         private readonly object _orphanGate = new object();
         private readonly object _statusGate = new object();
         private readonly RoslynHostCrashTracker _crashes = new RoslynHostCrashTracker();
+
+        /// <summary>0 open, 1 shutdown in progress (non-final writes stop), 2 final status written.</summary>
+        private volatile int _statusPhase;
         private readonly ManualResetEvent _startIdle = new ManualResetEvent(true);
 
         private IRoslynHostInstance? _host;
@@ -701,6 +704,11 @@ namespace UnityCliBridge.Bridge.Editor
             lock (_gate)
             {
                 _shutdown = true;
+                if (_statusPhase == 0)
+                {
+                    _statusPhase = 1;
+                }
+
                 host = _host;
                 _host = null;
                 spawning = _spawning;
@@ -742,7 +750,9 @@ namespace UnityCliBridge.Bridge.Editor
 
             RoslynHostPidRecord.TryDelete(PidFilePath);
             Interlocked.Exchange(ref _idleTimer, null)?.Dispose();
-            WriteStatus(reason);
+            // Waits out a write already inside the status lock, then writes the final
+            // snapshot and closes the file. Later WriteStatus calls do not open a temp file.
+            WriteStatus(reason, closing: true);
         }
 
         public void Dispose()
@@ -903,9 +913,9 @@ namespace UnityCliBridge.Bridge.Editor
             }
             finally
             {
-                // Write the status file before clearing _starter. Callers treat IsStarting
-                // as "the start thread is done", then delete the host directory. Clearing
-                // the flag first lets that delete race the temp status file on Windows.
+                // A start torn down by Shutdown no-ops here (_statusPhase is already 1 or 2).
+                // A start that finishes on its own still writes before IsStarting clears, so a
+                // waiter cannot delete the host directory while status.json*.tmp is open.
                 WriteStatus();
                 lock (_gate)
                 {
@@ -1123,9 +1133,31 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
-        private void WriteStatus(string? stoppedReason = null)
+        /// <summary>
+        /// Writes <c>status.json</c> under <see cref="_statusGate"/>, so the temp file and the
+        /// rename both finish before the lock is released. Once <see cref="Shutdown"/> has set
+        /// <see cref="_statusPhase"/>, a non-final call returns without opening a file. The
+        /// closing call waits for any write already in the lock, writes the final snapshot,
+        /// and only then lets <see cref="Shutdown"/> return.
+        /// </summary>
+        private void WriteStatus(string? stoppedReason = null, bool closing = false)
         {
             if (!_options.WriteStatusFile || string.IsNullOrEmpty(_options.HostDirectory))
+            {
+                if (closing)
+                {
+                    _statusPhase = 2;
+                }
+
+                return;
+            }
+
+            if (!closing && _statusPhase != 0)
+            {
+                return;
+            }
+
+            if (closing && _statusPhase == 2)
             {
                 return;
             }
@@ -1135,12 +1167,25 @@ namespace UnityCliBridge.Bridge.Editor
                 RoslynHostStatus status = Snapshot(stoppedReason);
                 lock (_statusGate)
                 {
+                    int phase = _statusPhase;
+                    if (phase == 2 || (!closing && phase != 0))
+                    {
+                        return;
+                    }
+
+                    if (closing)
+                    {
+                        _statusPhase = 2;
+                    }
+
                     status.Write(StatusFilePath);
                 }
             }
             catch (Exception)
             {
-                // Diagnostics only.
+                // Diagnostics only. A closing failure still leaves the phase closed when that
+                // assignment happened before Write; a failure before it can be retried by a
+                // second Shutdown.
             }
         }
     }

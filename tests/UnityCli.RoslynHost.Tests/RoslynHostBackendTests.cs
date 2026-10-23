@@ -15,8 +15,10 @@ public sealed class RoslynHostBackendTests : IDisposable
 
     public void Dispose()
     {
-        // A status write uses a temp file in this directory. On Windows the handle can
-        // outlive the call that started it by a moment; retry rather than fail the test.
+        // Shutdown waits out an in-flight status write and then refuses later ones, so the
+        // supervisor does not leave status.json*.tmp open. Windows can still hold a handle
+        // for a moment after that write has returned. This bounded retry is only that OS
+        // backstop; it is not the fix for a write that continues after Shutdown.
         for (int attempt = 0; ; attempt++)
         {
             try
@@ -664,17 +666,47 @@ public sealed class RoslynHostBackendTests : IDisposable
     {
         var instance = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
         var launcher = new FakeLauncher(_ => instance) { Gate = new ManualResetEventSlim(false) };
-        RoslynHostSupervisor supervisor = Supervisor(launcher);
-        supervisor.BeginStart("test");
-        Assert.True(SpinWait.SpinUntil(() => launcher.Launches == 1 && File.Exists(supervisor.PidFilePath), TimeSpan.FromSeconds(10)));
+        string? statusAfterShutdown = null;
+        string? statusPath = null;
+        using (RoslynHostSupervisor supervisor = Supervisor(launcher))
+        {
+            try
+            {
+                supervisor.BeginStart("test");
+                Assert.True(SpinWait.SpinUntil(() => launcher.Launches == 1 && File.Exists(supervisor.PidFilePath), TimeSpan.FromSeconds(10)));
 
-        supervisor.Shutdown("editor-quit");
-        launcher.Gate.Set();
+                supervisor.Shutdown("editor-quit");
+                statusPath = supervisor.StatusFilePath;
+                statusAfterShutdown = File.ReadAllText(statusPath);
+                Assert.Contains("editor-quit", statusAfterShutdown, StringComparison.Ordinal);
+                Assert.Empty(StatusTempFiles());
 
-        Assert.True(SpinWait.SpinUntil(() => !supervisor.IsStarting, TimeSpan.FromSeconds(10)));
-        Assert.True(instance.Kills >= 1);
-        Assert.Equal(0, supervisor.HostPid);
-        Assert.False(File.Exists(supervisor.PidFilePath));
+                launcher.Gate.Set();
+
+                Assert.True(SpinWait.SpinUntil(() => !supervisor.IsStarting, TimeSpan.FromSeconds(10)));
+                Assert.Equal(statusAfterShutdown, File.ReadAllText(statusPath));
+                Assert.Empty(StatusTempFiles());
+                Assert.True(instance.Kills >= 1);
+                Assert.Equal(0, supervisor.HostPid);
+                Assert.False(File.Exists(supervisor.PidFilePath));
+            }
+            finally
+            {
+                launcher.Gate.Set();
+            }
+        }
+
+        // Dispose calls Shutdown again. That must not reopen a status temp file or rewrite the note.
+        Assert.NotNull(statusAfterShutdown);
+        Assert.Equal(statusAfterShutdown, File.ReadAllText(statusPath!));
+        Assert.Empty(StatusTempFiles());
+    }
+
+    private string[] StatusTempFiles()
+    {
+        return Directory.Exists(_hostDirectory)
+            ? Directory.GetFiles(_hostDirectory, "status.json*.tmp")
+            : Array.Empty<string>();
     }
 
     [Fact]
