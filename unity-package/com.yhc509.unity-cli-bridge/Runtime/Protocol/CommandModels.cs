@@ -176,6 +176,18 @@ namespace UnityCli.Protocol
         public bool cacheHit;
         // Wall milliseconds spent compiling (0 on a cache hit).
         public long compileMs;
+        // Additive (protocol stays 8): which compiler produced the wrapper and why an earlier one was
+        // skipped. On a cache hit, the values from the compile that filled the cache.
+        public ExecuteCompileTimings? timings;
+    }
+
+    [Serializable]
+    public sealed class ExecuteCompileTimings
+    {
+        // "roslyn-host" or "codedom".
+        public string compiler = string.Empty;
+        // Empty when the first backend in the chain compiled it; otherwise "<code>: <detail>".
+        public string compilerFallbackReason = string.Empty;
     }
 
     [Serializable]

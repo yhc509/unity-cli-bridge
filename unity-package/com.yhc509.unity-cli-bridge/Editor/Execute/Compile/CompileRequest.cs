@@ -16,11 +16,22 @@ namespace UnityCliBridge.Bridge.Editor
             string languageVersion,
             IReadOnlyList<string> scriptingDefines,
             IReadOnlyList<string> referencePaths)
+            : this(source, languageVersion, scriptingDefines, referencePaths, null)
+        {
+        }
+
+        public CompileRequest(
+            string source,
+            string languageVersion,
+            IReadOnlyList<string> scriptingDefines,
+            IReadOnlyList<string> referencePaths,
+            ProjectCompilerOptions? projectOptions)
         {
             Source = source ?? throw new ArgumentNullException(nameof(source));
             LanguageVersion = languageVersion ?? string.Empty;
             ScriptingDefines = scriptingDefines ?? Array.Empty<string>();
             ReferencePaths = referencePaths ?? Array.Empty<string>();
+            ProjectOptions = projectOptions ?? ProjectCompilerOptions.Empty;
         }
 
         public string Source { get; }
@@ -31,5 +42,8 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <summary>Assembly file paths, deduplicated, in AppDomain load order.</summary>
         public IReadOnlyList<string> ReferencePaths { get; }
+
+        /// <summary><c>-define</c>/<c>-unsafe</c>/<c>-nowarn</c> from the project's rsp; used by the Roslyn host only.</summary>
+        public ProjectCompilerOptions ProjectOptions { get; }
     }
 }

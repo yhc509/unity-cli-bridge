@@ -387,6 +387,47 @@ public sealed class BundledToolchainLocatorTests
     }
 
     [Fact]
+    public void ReadMcsVersion_UsesTheAssemblyVersionNotTheFileVersionResource()
+    {
+        // System.Private.CoreLib: assembly version 9.0.0.0, product/file version 9.0.x — like mcs.exe,
+        // whose Win32 resource (4.6.57.0) differs from its assembly version (6.13.0.0).
+        string path = typeof(object).Assembly.Location;
+        string expected = System.Reflection.AssemblyName.GetAssemblyName(path).Version!.ToString();
+
+        Assert.Equal(expected, BundledToolchainLocator.ReadAssemblyVersion(path));
+        Assert.Equal(expected, BundledToolchainLocator.ReadMcsVersion(path, _ => "4.6.57.0"));
+        Assert.NotEqual(expected, BundledToolchainLocator.ReadProductVersion(path));
+    }
+
+    [Fact]
+    public void Locate_McsVersion_ComesFromTheAssemblyMetadata_WhateverTheVersionReaderSays()
+    {
+        using var temp = new TempDirectory();
+        string contents = Path.Combine(temp.Path, "Unity.app", "Contents");
+        string executable = CreateMacExecutable(contents);
+        CreateToolchain(contents, BundledToolchainPlatform.MacOS);
+        string mcs = Path.Combine(contents, "MonoBleedingEdge", "lib", "mono", "4.5", "mcs.exe");
+        File.Copy(typeof(object).Assembly.Location, mcs, overwrite: true);
+
+        BundledToolchainReport report = BundledToolchainLocator.Locate(executable, BundledToolchainPlatform.MacOS, _ => "4.6.57.0");
+
+        Assert.Equal(System.Reflection.AssemblyName.GetAssemblyName(mcs).Version!.ToString(), report.Mcs!.Version);
+        Assert.Equal("4.6.57.0", report.Roslyn!.Version);
+    }
+
+    [Fact]
+    public void ReadMcsVersion_NotAnAssembly_FallsBackToTheVersionReader()
+    {
+        using var temp = new TempDirectory();
+        string path = Path.Combine(temp.Path, "mcs.exe");
+        File.WriteAllText(path, "not a PE file");
+
+        Assert.Null(BundledToolchainLocator.ReadAssemblyVersion(path));
+        Assert.Equal("6.13.0.0", BundledToolchainLocator.ReadMcsVersion(path, _ => "6.13.0.0"));
+        Assert.Null(BundledToolchainLocator.ReadMcsVersion(Path.Combine(temp.Path, "missing.exe")));
+    }
+
+    [Fact]
     public void ReadProductVersion_MissingFile_ReturnsNull()
     {
         using var temp = new TempDirectory();

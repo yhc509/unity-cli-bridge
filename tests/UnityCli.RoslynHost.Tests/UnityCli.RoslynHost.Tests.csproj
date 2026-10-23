@@ -29,6 +29,19 @@
 
   <ItemGroup>
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\RoslynHost~\UcbRoslynHost.cs" Link="RoslynHost\UcbRoslynHost.cs" />
+    <!-- Unity-free editor half of the host backend: run here against the real host loop in-process. -->
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileBackendSelector.cs" Link="Editor\CompileBackendSelector.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileRequest.cs" Link="Editor\CompileRequest.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileResult.cs" Link="Editor\CompileResult.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ExecuteCompilerSettings.cs" Link="Editor\ExecuteCompilerSettings.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ICompileBackend.cs" Link="Editor\ICompileBackend.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\ProjectCompilerOptions.cs" Link="Editor\ProjectCompilerOptions.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostBackend.cs" Link="Editor\RoslynHostBackend.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostConnection.cs" Link="Editor\RoslynHostConnection.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostLauncher.cs" Link="Editor\RoslynHostLauncher.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostPidFile.cs" Link="Editor\RoslynHostPidFile.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostProcess.cs" Link="Editor\RoslynHostProcess.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\RoslynHostSupervisor.cs" Link="Editor\RoslynHostSupervisor.cs" />
   </ItemGroup>
 
 </Project>

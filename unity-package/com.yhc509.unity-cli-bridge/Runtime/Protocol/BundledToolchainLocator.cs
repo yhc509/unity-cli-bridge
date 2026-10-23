@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace UnityCli.Protocol
@@ -32,7 +33,10 @@ namespace UnityCli.Protocol
         /// <summary>The tool's root directory (NetCoreRuntime, DotNetSdkRoslyn, mono/4.5).</summary>
         public string? Directory { get; }
 
-        /// <summary>Microsoft.NETCore.App directory name for the runtime; product version for csc/mcs.</summary>
+        /// <summary>
+        /// Microsoft.NETCore.App directory name for the runtime; product version for csc; assembly
+        /// version for mcs (what <c>mcs --version</c> prints).
+        /// </summary>
         public string? Version { get; }
 
         public string? Error { get; }
@@ -272,6 +276,39 @@ namespace UnityCli.Protocol
         }
 
         /// <summary>
+        /// The mcs version as <c>mcs --version</c> reports it: the assembly version in the metadata,
+        /// falling back to <paramref name="versionReader"/> when the file is not a readable assembly.
+        /// mcs.exe's Win32 version resource says 4.6.57.0 while its assembly says 6.13.0.0, and
+        /// <see cref="FileVersionInfo"/> reads the resource under Mono and on Windows but the assembly
+        /// attributes under .NET on macOS/Linux. The metadata reads the same everywhere, so doctor
+        /// (CLI, .NET) and the editor (Mono) agree.
+        /// </summary>
+        public static string? ReadMcsVersion(string filePath, Func<string, string?>? versionReader = null)
+        {
+            string? version = ReadAssemblyVersion(filePath);
+            if (version != null)
+            {
+                return version;
+            }
+
+            return (versionReader ?? ReadProductVersion)(filePath);
+        }
+
+        /// <summary>Assembly version from the file's metadata (the file is not loaded or run). Null when unreadable.</summary>
+        public static string? ReadAssemblyVersion(string filePath)
+        {
+            try
+            {
+                Version? version = AssemblyName.GetAssemblyName(filePath).Version;
+                return version == null ? null : version.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Picks the highest Microsoft.NETCore.App version directory that holds a CoreLib. Release
         /// versions sort above prereleases of the same number; unparseable names are ignored.
         /// </summary>
@@ -383,7 +420,7 @@ namespace UnityCli.Protocol
                 return new BundledToolComponent(null, null, null, "mcs not found: " + mcs);
             }
 
-            return new BundledToolComponent(mcs, monoDirectory, versionReader(mcs), null);
+            return new BundledToolComponent(mcs, monoDirectory, ReadMcsVersion(mcs, versionReader), null);
         }
 
         private static IEnumerable<LayoutCandidate> GetCandidates(BundledToolchainPlatform platform)

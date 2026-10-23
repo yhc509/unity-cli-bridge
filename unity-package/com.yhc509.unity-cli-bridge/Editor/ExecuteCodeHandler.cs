@@ -84,7 +84,8 @@ public static class PucExecuteWrapper
             try
             {
                 string wrappedCode = BuildWrappedCode(args.code);
-                Type wrapperType = GetOrCompileWrapperType(wrappedCode, out bool cacheHit, out long compileMs);
+                CachedWrapper wrapper = GetOrCompileWrapperType(wrappedCode, out bool cacheHit, out long compileMs);
+                Type wrapperType = wrapper.Type;
                 FieldInfo? argsField = wrapperType.GetField("__puc_internal_argsJson", BindingFlags.NonPublic | BindingFlags.Static);
                 if (argsField == null)
                 {
@@ -129,6 +130,11 @@ public static class PucExecuteWrapper
                         result = hasResult ? ExecuteValueSerializer.Serialize(rawResult, cts.Token) : null,
                         cacheHit = cacheHit,
                         compileMs = compileMs,
+                        timings = new ExecuteCompileTimings
+                        {
+                            compiler = wrapper.Compiler,
+                            compilerFallbackReason = wrapper.FallbackReason,
+                        },
                     });
                 }
                 finally
@@ -220,18 +226,43 @@ public static class PucExecuteWrapper
         // ~0.5 s per call; a cache hit skips it entirely. Statics reset on domain reload, which is also
         // exactly when cached assemblies could go stale (project scripts recompiled).
         private const int MaxCachedWrappers = 256;
-        private static readonly Dictionary<string, Type> _compiledCache = new Dictionary<string, Type>(StringComparer.Ordinal);
-        private static readonly CompileBackendSelector BackendSelector = new CompileBackendSelector(new CodeDomBackend());
+        private static readonly Dictionary<string, CachedWrapper> _compiledCache = new Dictionary<string, CachedWrapper>(StringComparer.Ordinal);
+        private static CompileBackendSelector BackendSelector = RoslynHostEditorLifecycle.CreateSelector();
+
+        private sealed class CachedWrapper
+        {
+            public CachedWrapper(Type type, string compiler, string fallbackReason)
+            {
+                Type = type;
+                Compiler = compiler;
+                FallbackReason = fallbackReason;
+            }
+
+            public Type Type { get; }
+
+            public string Compiler { get; }
+
+            public string FallbackReason { get; }
+        }
 
         internal static int CachedWrapperCount
         {
             get { return _compiledCache.Count; }
         }
 
-        private static Type GetOrCompileWrapperType(string wrappedCode, out bool cacheHit, out long compileMs)
+        /// <summary>Test seam: compiles through <paramref name="selector"/> from now on, with an empty cache. Returns the previous selector.</summary>
+        internal static CompileBackendSelector SwapSelectorForTests(CompileBackendSelector selector)
+        {
+            CompileBackendSelector previous = BackendSelector;
+            BackendSelector = selector ?? throw new ArgumentNullException(nameof(selector));
+            _compiledCache.Clear();
+            return previous;
+        }
+
+        private static CachedWrapper GetOrCompileWrapperType(string wrappedCode, out bool cacheHit, out long compileMs)
         {
             string key = HashCode(wrappedCode);
-            if (_compiledCache.TryGetValue(key, out Type? cached))
+            if (_compiledCache.TryGetValue(key, out CachedWrapper? cached))
             {
                 cacheHit = true;
                 compileMs = 0;
@@ -239,7 +270,8 @@ public static class PucExecuteWrapper
             }
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            Assembly assembly = CompileCode(wrappedCode);
+            CompileOutcome outcome = CompileCode(wrappedCode);
+            Assembly assembly = outcome.Result.Assembly!;
             compileMs = sw.ElapsedMilliseconds;
             cacheHit = false;
             Type? wrapperType = assembly.GetType("PucExecuteWrapper");
@@ -253,8 +285,9 @@ public static class PucExecuteWrapper
                 _compiledCache.Clear();
             }
 
-            _compiledCache[key] = wrapperType;
-            return wrapperType;
+            var entry = new CachedWrapper(wrapperType, outcome.Compiler, outcome.FallbackReason ?? string.Empty);
+            _compiledCache[key] = entry;
+            return entry;
         }
 
         private static string HashCode(string text)
@@ -295,15 +328,17 @@ public static class PucExecuteWrapper
             }
         }
 
-        private static Assembly CompileCode(string code)
+        private static CompileOutcome CompileCode(string code)
         {
-            CompileResult result = BackendSelector.Select().TryCompile(CompileRequestBuilder.Build(code));
-            if (!result.Succeeded || result.Assembly == null)
+            CompileRequest request = CompileRequestBuilder.Build(code);
+            CompileOutcome outcome = BackendSelector.Compile(request);
+            RoslynHostEditorLifecycle.Supervisor?.ReportCompile(outcome.Compiler, outcome.FallbackReason, request.ProjectOptions.Ignored);
+            if (!outcome.Result.Succeeded || outcome.Result.Assembly == null)
             {
-                throw new CommandFailureException("COMPILE_FAILED", result.FormatFailureMessage());
+                throw new CommandFailureException("COMPILE_FAILED", outcome.FormatFailureMessage());
             }
 
-            return result.Assembly;
+            return outcome;
         }
 
         private static string MergeOutput(string consoleOutput, IEnumerable<string> logEntries)
