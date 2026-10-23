@@ -264,6 +264,106 @@ public sealed class CompileBackendSeamTests
     }
 
     [Fact]
+    public void ThreeStepChain_KeepsTheOrderHostCscSharedCodeDom()
+    {
+        var selector = new CompileBackendSelector(
+            new FakeBackend("codedom"),
+            new ICompileBackend[] { new FakeBackend("roslyn-host"), new FakeBackend("csc-shared") },
+            null);
+
+        Assert.Equal(new[] { "roslyn-host", "csc-shared", "codedom" }, selector.Chain.Select(b => b.Id));
+        Assert.Equal("roslyn-host", selector.Select().Id);
+    }
+
+    [Fact]
+    public void ThreeStepChain_HostInfrastructureFailure_IsServedByCscSharedWithTheHostReason()
+    {
+        var host = new FakeBackend(
+            "roslyn-host",
+            _ => CompileResult.InfrastructureFailure("roslyn-host", Options, null, null, "host-crashed: the host exited while idle"));
+        var cscShared = new FakeBackend("csc-shared", _ => CompileResult.Success("csc-shared", typeof(CompileBackendSeamTests).Assembly, Options));
+        var codeDom = new FakeBackend("codedom");
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, new ICompileBackend[] { host, cscShared }, null).Compile(Request());
+
+        Assert.True(outcome.Result.Succeeded);
+        Assert.Equal("csc-shared", outcome.Compiler);
+        Assert.Equal("host-crashed: the host exited while idle", outcome.FallbackReason);
+        Assert.Equal("roslyn-host", outcome.FellBackFrom);
+        Assert.Equal(0, codeDom.Calls);
+    }
+
+    [Fact]
+    public void ThreeStepChain_CscSharedUserError_IsReturnedAndNeverRetriedOnCodeDom()
+    {
+        string[] errors = { "Line 2: CS0029: Cannot implicitly convert type 'string' to 'int'" };
+        var host = new FakeBackend(
+            "roslyn-host",
+            _ => CompileResult.InfrastructureFailure("roslyn-host", Options, null, null, "session-disabled: 3 host failures within 60 s"));
+        var cscShared = new FakeBackend("csc-shared", _ => CompileResult.CompileError("csc-shared", Options, errors, null));
+        var codeDom = new FakeBackend("codedom");
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, new ICompileBackend[] { host, cscShared }, null).Compile(Request());
+
+        Assert.Equal("csc-shared", outcome.Compiler);
+        Assert.False(outcome.Result.Succeeded);
+        Assert.False(outcome.Result.IsInfrastructureFailure);
+        Assert.Equal(errors, outcome.Result.Errors);
+        Assert.Equal(0, codeDom.Calls);
+        Assert.Equal(outcome.Result.FormatFailureMessage(), outcome.FormatFailureMessage());
+    }
+
+    [Fact]
+    public void ThreeStepChain_BothRoslynBackendsFail_CodeDomGetsBothReasonsAndTheMcsNote()
+    {
+        string[] errors = { "Line 1: CS1525: Unexpected symbol `with'" };
+        var host = new FakeBackend(
+            "roslyn-host",
+            _ => CompileResult.InfrastructureFailure("roslyn-host", Options, null, null, "host-crashed: gone"));
+        var cscShared = new FakeBackend(
+            "csc-shared",
+            _ => CompileResult.InfrastructureFailure("csc-shared", Options, null, null, "csc-shared-timeout: csc did not finish in 10000 ms"));
+        var codeDom = new FakeBackend("codedom", _ => CompileResult.CompileError("codedom", Options, errors, null));
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, new ICompileBackend[] { host, cscShared }, null).Compile(Request());
+
+        Assert.Equal("codedom", outcome.Compiler);
+        Assert.Equal("csc-shared", outcome.FellBackFrom);
+        Assert.Equal("host-crashed: gone; csc-shared-timeout: csc did not finish in 10000 ms", outcome.FallbackReason);
+        Assert.EndsWith(
+            "\ncompiled with mcs fallback (C# 7.x); Roslyn host unavailable: host-crashed: gone; csc-shared-timeout: csc did not finish in 10000 ms",
+            outcome.FormatFailureMessage());
+    }
+
+    [Fact]
+    public void CscSharedForced_InfrastructureFailure_FallsBackToCodeDom()
+    {
+        var cscShared = new FakeBackend(
+            "csc-shared",
+            _ => CompileResult.InfrastructureFailure("csc-shared", Options, null, null, "csc-shared-unavailable: bundled Roslyn not found"));
+        var codeDom = new FakeBackend("codedom", _ => CompileResult.Success("codedom", typeof(CompileBackendSeamTests).Assembly, Options));
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, new ICompileBackend[] { cscShared }, null).Compile(Request());
+
+        Assert.Equal("codedom", outcome.Compiler);
+        Assert.Equal("csc-shared-unavailable: bundled Roslyn not found", outcome.FallbackReason);
+        Assert.Equal("csc-shared", outcome.FellBackFrom);
+    }
+
+    [Fact]
+    public void ConfigurationReason_PrecedesASkippedBackendsReason()
+    {
+        var cscShared = new FakeBackend(
+            "csc-shared",
+            _ => CompileResult.InfrastructureFailure("csc-shared", Options, null, null, "csc-shared-failed: exit 1"));
+        var codeDom = new FakeBackend("codedom", _ => CompileResult.Success("codedom", typeof(CompileBackendSeamTests).Assembly, Options));
+
+        CompileOutcome outcome = new CompileBackendSelector(codeDom, new ICompileBackend[] { cscShared }, "start-failed: host setup failed").Compile(Request());
+
+        Assert.Equal("start-failed: host setup failed; csc-shared-failed: exit 1", outcome.FallbackReason);
+    }
+
+    [Fact]
     public void BackendIds_MatchTheWireNames()
     {
         Assert.Equal("roslyn-host", CompileBackendIds.RoslynHost);
