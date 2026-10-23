@@ -43,6 +43,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(result.Assembly!.GetType("UcbCompileBackendProbe"), Is.Not.Null);
             Assert.That(result.CompilerOptions, Does.StartWith("/langversion:"));
             Assert.That(result.CompilerOptions, Does.Contain("/define:UNITY_ASSERTIONS"));
+            Assert.That(result.CompilerOptions, Does.Contain(" -nostdlib"));
         }
 
         [Test]
@@ -64,9 +65,8 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         {
             CompileRequest request = CompileRequestBuilder.Build(
                 "public static class UcbCompileBackendRspBroken { public static void M() { int x = ; } }");
-            string expectedOptions = CSharpLanguageVersion.ToCompilerOption(request.LanguageVersion)
-                + " "
-                + ExecuteCompilerDefines.BuildDefineOption(request.ScriptingDefines);
+            string expectedOptions = CodeDomBackend.BuildCompilerOptions(request);
+            Assert.That(expectedOptions, Does.Contain(" -nostdlib"));
 
             CompileResult result = new CodeDomBackend().TryCompile(request);
 

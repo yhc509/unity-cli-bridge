@@ -31,6 +31,7 @@
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\ClientDisconnectMonitor.cs" Link="UnityEditor\ClientDisconnectMonitor.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\CliInstallGuard.cs" Link="UnityEditor\CliInstallGuard.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\EnvelopeJsonWriter.cs" Link="UnityEditor\EnvelopeJsonWriter.cs" />
+    <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CodeDomBackend.cs" Link="UnityEditor\Execute\Compile\CodeDomBackend.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileBackendSelector.cs" Link="UnityEditor\Execute\Compile\CompileBackendSelector.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileRequest.cs" Link="UnityEditor\Execute\Compile\CompileRequest.cs" />
     <Compile Include="..\..\unity-package\com.yhc509.unity-cli-bridge\Editor\Execute\Compile\CompileResult.cs" Link="UnityEditor\Execute\Compile\CompileResult.cs" />
