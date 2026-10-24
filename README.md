@@ -55,24 +55,24 @@ Add the package in either of these ways.
 
 **Option A: .unitypackage**
 
-Download `com.yhc509.unity-cli-bridge-0.5.7.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.5.7 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.5.7). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
+Download `com.yhc509.unity-cli-bridge-0.6.0.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.6.0 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.6.0). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
 
 **Option B: Git URL** (easier to update)
 
 In Package Manager, choose **Add package from git URL** and paste:
 
 ```
-https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.7
+https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.0
 ```
 
-Use `#main` instead of `#v0.5.7` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
+Use `#main` instead of `#v0.6.0` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
 
 The same URL can be written into `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.5.7"
+    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.0"
   }
 }
 ```
@@ -263,6 +263,8 @@ unity-cli execute --file my-script.cs --force --timeout 60
 `compile`, `refresh`, `play`, and `stop` wait until Unity has settled. `--wait` is still accepted. `--no-wait` returns as soon as the request is accepted. `play` returns only once Play Mode has fully entered and the bridge is reachable again after the domain reload. `status` reports `isChangingPlayMode` and `domainId` for that transition.
 
 `execute --args` exposes the supplied JSON as `__pucArgsJson`; do not declare variables with the reserved `__puc_internal_*` prefix in user code. Avoid putting secrets or credentials in `--args`, because CodeDOM compilation can briefly create temporary `.cs` files under the OS temp directory. A repeated `execute` with the same wrapped source is served from an in-Editor compile cache until the next domain reload (`cacheHit: true`). Put changing values in `--args` so the source stays identical.
+
+`execute` accepts C# 9 snippets. The Roslyn host is the default compiler. Set `UCB_EXECUTE_COMPILER=codedom` in the editor's environment and restart the editor to turn it off and compile with mcs instead. Known limits: covariant returns, default interface methods, function pointers, and C# 10 or newer are not accepted. The first call on a new project builds the host once in the background; `csc /shared` or mcs compiles that call, and later calls use the host.
 
 `PucFrameLoop` (`Start`, `Status`, `Stop`, `Running`, available inside `execute`) runs that code once per editor frame. Use it for a Play Mode autopilot instead of calling `execute` in a shell loop.
 
