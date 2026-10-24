@@ -1227,13 +1227,19 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (discover)
             {
-                // The compile never waits. This thread rewrites server.json and status.json when
-                // the server shows up, including the first status that went out with serverPid null.
+                // The compile never waits on the process listing. This thread rewrites server.json
+                // and status.json when the server shows up, including the first status that went
+                // out with serverPid null.
                 new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" }.Start();
             }
 
-            if (writeStatus)
+            if (writeStatus || discover)
             {
+                // The pending transition is written here. A replacement server is not the first
+                // compile, so writeStatus is false and the compile-count update below would be the
+                // only status write. Queuing that leaves status.json on the previous pid until the
+                // pool runs it; on the Windows test host that write did not land while the lookup
+                // was still in flight. The listing itself stays on the background thread.
                 WriteStatus();
             }
             else
