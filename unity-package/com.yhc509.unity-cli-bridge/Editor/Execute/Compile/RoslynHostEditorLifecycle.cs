@@ -230,11 +230,13 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static void OnBeforeAssemblyReload()
         {
+            RoslynHostProcessInspector.CancelInFlightListings();
             _supervisor?.Shutdown("domain-reload", TimeSpan.Zero);
         }
 
         private static void OnQuitting()
         {
+            RoslynHostProcessInspector.CancelInFlightListings();
             _supervisor?.Shutdown("editor-quit");
         }
 

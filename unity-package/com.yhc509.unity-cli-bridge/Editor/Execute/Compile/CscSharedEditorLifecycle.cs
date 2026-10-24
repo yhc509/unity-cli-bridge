@@ -16,11 +16,12 @@ namespace UnityCliBridge.Bridge.Editor
     /// <list type="bullet">
     /// <item>Domain load: the status file, and a background cleanup of a server this project left
     /// behind (only when its record survived a failed stop or a killed editor).</item>
-    /// <item><c>beforeAssemblyReload</c> and <c>quitting</c>: stop our server without blocking the
-    /// main thread on a client process (macOS/Linux: a kill of the servers on our pipe found by a
-    /// process listing; Windows: a direct kill of the server this domain found and proved ours, or,
-    /// without one, the <c>-shutdown</c> client left running and the next domain load removing what
-    /// is left). Nothing runs when this domain never used csc-shared.</item>
+    /// <item><c>beforeAssemblyReload</c> and <c>quitting</c>: abandon a retire and cancel any process
+    /// listing still in flight, so the domain unload does not wait on a pipe read, then stop our
+    /// server without blocking the main thread on a client process (macOS/Linux: a kill of the
+    /// servers on our pipe found by a process listing; Windows: a direct kill of the server this
+    /// domain found and proved ours, or, without one, the <c>-shutdown</c> client left running and
+    /// the next domain load removing what is left). Nothing runs when this domain never used csc-shared.</item>
     /// </list>
     /// </summary>
     [InitializeOnLoad]
@@ -84,11 +85,17 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static void OnBeforeAssemblyReload()
         {
+            // Abandon first so a retire that wakes up does not kill or rewrite status, then cancel
+            // the process listing so its thread is not blocked in a pipe read when the domain unloads.
+            _server?.AbandonForDomainUnload();
+            RoslynHostProcessInspector.CancelInFlightListings();
             _server?.Shutdown("domain-reload");
         }
 
         private static void OnQuitting()
         {
+            _server?.AbandonForDomainUnload();
+            RoslynHostProcessInspector.CancelInFlightListings();
             _server?.Shutdown("editor-quit");
         }
     }

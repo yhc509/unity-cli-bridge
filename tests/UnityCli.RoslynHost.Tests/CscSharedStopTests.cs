@@ -259,6 +259,40 @@ public sealed class CscSharedStopTests
     }
 
     [Fact]
+    public void Retire_AbandonsWhenAReloadStartsDuringTheListing()
+    {
+        using var temp = new TempDir();
+        using var entered = new ManualResetEventSlim(false);
+        var table = new FakeProcessTable { ListingIsSlow = true, Alive = { 432 }, Processes = { Proc(432, ServerLine) } };
+        var server = new CscSharedServer(CscSharedServerTests.Options(temp.Path), table);
+        table.Listing = () =>
+        {
+            entered.Set();
+            var wait = Stopwatch.StartNew();
+            while (!server.DomainUnloadRequested && wait.ElapsedMilliseconds < 5000)
+            {
+                Thread.Sleep(10);
+            }
+
+            return new[] { Proc(432, ServerLine) };
+        };
+        Invoke(server, "EnsureRecord");
+
+        Assert.True(server.RetireInBackground("host-ready"));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(2)), "retire did not list");
+        var watch = Stopwatch.StartNew();
+        server.AbandonForDomainUnload();
+        Assert.True(WaitFor(() => !server.IsRetiring, 2000), "retire did not abandon");
+        watch.Stop();
+
+        Assert.True(watch.ElapsedMilliseconds < 1000, "abandon took " + watch.ElapsedMilliseconds + " ms");
+        Assert.Equal(0, server.Retires);
+        Assert.Empty(table.Killed);
+        Assert.True(File.Exists(server.RecordPath));
+        Assert.DoesNotContain("retired", server.Snapshot().Note);
+    }
+
+    [Fact]
     public void Retire_DoesNotBlockTheCaller_EvenWhenListingTakesSeconds()
     {
         using var temp = new TempDir();

@@ -222,6 +222,40 @@ public sealed class CscSharedStatusTests
     }
 
     [Fact]
+    public void Doctor_OldSession_LeftoverServerThatIsStillRunning_IsAlive()
+    {
+        using var temp = new TempDirectory();
+        new CscSharedStatus
+        {
+            EditorPid = 500,
+            PipeName = "ucb-d6887d89-abc123",
+            State = "ready",
+            ServerPid = 24756,
+        }.Write(CscSharedStatus.GetStatusPath(temp.Path));
+
+        JsonElement data = Serialize(UnityCli.Cli.CliApp.BuildCscSharedData(
+            temp.Path,
+            _ => new[] { 24756 },
+            pid => pid == 24756));
+
+        Assert.True(data.GetProperty("oldSession").GetBoolean());
+        Assert.True(data.GetProperty("serverAlive").GetBoolean());
+        Assert.Equal(24756, data.GetProperty("serverPid").GetInt32());
+        Assert.False(data.GetProperty("serverPidPending").GetBoolean());
+        Assert.Contains("Old-session record", data.GetProperty("note").GetString());
+    }
+
+    [Fact]
+    public void Doctor_WindowsRecordedPid_ReportsLivenessWhenTheListingIsEmpty()
+    {
+        Assert.True(UnityCli.Cli.CliApp.IsCscServerProcessAlive(Array.Empty<int>(), 24756, true, pid => pid == 24756));
+        Assert.False(UnityCli.Cli.CliApp.IsCscServerProcessAlive(Array.Empty<int>(), 24756, true, _ => false));
+        Assert.False(UnityCli.Cli.CliApp.IsCscServerProcessAlive(Array.Empty<int>(), 0, true, _ => true));
+        Assert.False(UnityCli.Cli.CliApp.IsCscServerProcessAlive(Array.Empty<int>(), 24756, false, _ => true));
+        Assert.True(UnityCli.Cli.CliApp.IsCscServerProcessAlive(new[] { 9 }, 0, false, _ => false));
+    }
+
+    [Fact]
     public void Doctor_StatusWrittenBeforeTheEditorStarted_IsAnOldSession()
     {
         using var temp = new TempDirectory();

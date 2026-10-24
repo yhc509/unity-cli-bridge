@@ -313,7 +313,13 @@ public sealed class CscSharedServerTests
         };
         var server = new CscSharedServer(Options(temp.Path), table);
         Invoke(server, "EnsureRecord");
-        Assert.Equal(0, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        CscSharedServerRecord initial = CscSharedServerRecord.TryRead(server.RecordPath)!;
+        Assert.True(initial.ServerPidPending);
+        Assert.Equal(0, initial.ServerPid);
+        string initialJson = File.ReadAllText(server.RecordPath);
+        Assert.Contains("\"serverPid\":null", initialJson);
+        Assert.Contains("\"serverPidPending\":true", initialJson);
+        Assert.DoesNotContain("\"serverPid\":0", initialJson);
 
         for (int i = 0; i < 4; i++)
         {
@@ -357,6 +363,10 @@ public sealed class CscSharedServerTests
             Assert.Contains("\"serverPid\":null", pendingJson);
             Assert.Contains("\"serverPidPending\":true", pendingJson);
             Assert.DoesNotContain("\"serverPid\":0", pendingJson);
+            string pendingRecord = File.ReadAllText(server.RecordPath);
+            Assert.Contains("\"serverPid\":null", pendingRecord);
+            Assert.Contains("\"serverPidPending\":true", pendingRecord);
+            Assert.DoesNotContain("\"serverPid\":0", pendingRecord);
         }
         finally
         {

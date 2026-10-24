@@ -490,10 +490,11 @@ public static class CliApp
     /// <summary>
     /// The editor's <c>csc /shared</c> fallback, from the status file the bridge writes under the
     /// project's Library. Local file read only; <c>serverAlive</c> looks for a compiler server on the
-    /// recorded pipe in the process table (by its recorded pid where command lines cannot be read).
-    /// A file whose editor pid or write time does not match <paramref name="runningEditor"/> is an
-    /// old-session record. <c>serverPid</c> is null and <c>serverPidPending</c> is true while the
-    /// editor is still looking up the compiler-server pid.
+    /// recorded pipe in the process table (by its recorded pid where command lines cannot be read),
+    /// including when the status file is an old session and the server is a leftover. A file whose
+    /// editor pid or write time does not match <paramref name="runningEditor"/> is an old-session
+    /// record. <c>serverPid</c> is null and <c>serverPidPending</c> is true while the editor is still
+    /// looking up the compiler-server pid.
     /// </summary>
     internal static object? BuildCscSharedData(
         string? projectRoot,
@@ -525,8 +526,10 @@ public static class CliApp
         IReadOnlyList<int> servers = string.IsNullOrEmpty(status.PipeName)
             ? Array.Empty<int>()
             : (findServers ?? FindCscSharedServers)(status.PipeName);
-        bool serverAlive = current && (servers.Count > 0
-            || (OperatingSystem.IsWindows() && findServers is null && status.ServerPid > 0 && alive(status.ServerPid)));
+        // An old session still reports a leftover compiler server. On Windows the process table
+        // listing is empty, so the recorded pid is what proves the orphan is running.
+        bool recordedPidCounts = findServers is null && OperatingSystem.IsWindows();
+        bool serverAlive = IsCscServerProcessAlive(servers, status.ServerPid, recordedPidCounts, alive);
         bool serverPidPending = current && status.ServerPidPending && servers.Count == 0;
         int? serverPid = servers.Count > 0
             ? servers[0]
@@ -558,6 +561,25 @@ public static class CliApp
             lastError = status.LastError,
             lastErrorUtc = status.LastErrorUtc,
         };
+    }
+
+    /// <summary>
+    /// True when a compiler server from the status file is still running. A pipe listing wins.
+    /// <paramref name="recordedPidCounts"/> is the Windows doctor path, which cannot list command
+    /// lines cheaply and uses <paramref name="recordedPid"/> instead. An old session uses the same check.
+    /// </summary>
+    internal static bool IsCscServerProcessAlive(
+        IReadOnlyList<int> listedServers,
+        int recordedPid,
+        bool recordedPidCounts,
+        Func<int, bool> isAlive)
+    {
+        if (listedServers.Count > 0)
+        {
+            return true;
+        }
+
+        return recordedPidCounts && recordedPid > 0 && isAlive(recordedPid);
     }
 
     internal const string OldCompilerSessionNote =
