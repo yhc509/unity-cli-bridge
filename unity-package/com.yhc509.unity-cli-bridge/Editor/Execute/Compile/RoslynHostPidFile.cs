@@ -636,7 +636,6 @@ namespace UnityCliBridge.Bridge.Editor
                 registration = token.Register(() => StopListingProcess(child));
                 int limitMs = timeoutMs > 0 ? timeoutMs : ListingTimeoutMs;
                 var watch = Stopwatch.StartNew();
-                int quietAfterExit = 0;
                 while (true)
                 {
                     if (token.IsCancellationRequested)
@@ -656,39 +655,37 @@ namespace UnityCliBridge.Bridge.Editor
                             return null;
                         }
 
-                        // One more pass in case the exit flush landed between the peek and HasExited.
-                        int drained = DrainPipe(output, buffer, decoder, stdout);
+                        // The exit flush can land between the peek and HasExited. Read what is
+                        // already buffered and return. No sleep and no WaitForExit: this runs on
+                        // the editor main thread during reload and quit (lastShutdownMs). On
+                        // Unity's Mono, WaitForExit(200) after HasExited still waited out that
+                        // whole budget, so macOS shutdown sat at about 210 ms. A leaked write end
+                        // never delivers EOF; a quiet drain is the end of this child's output.
+                        while (DrainPipe(output, buffer, decoder, stdout) > 0)
+                        {
+                            DrainPipe(error, discard, null, null);
+                        }
+
                         DrainPipe(error, discard, null, null);
-                        if (drained == 0)
+                        if (token.IsCancellationRequested)
                         {
-                            quietAfterExit++;
-                        }
-                        else
-                        {
-                            quietAfterExit = 0;
+                            cancelled = true;
+                            return null;
                         }
 
-                        // A few empty peeks after exit means the child wrote everything it is going
-                        // to write. A leaked write end keeps EOF from arriving and is not more data.
-                        if (quietAfterExit >= 3)
-                        {
-                            if (token.IsCancellationRequested)
-                            {
-                                cancelled = true;
-                                return null;
-                            }
-
-                            Decode(decoder, buffer, 0, stdout, flush: true);
-                            return FinishExitedChild(child, stdout.ToString(), out failed);
-                        }
+                        Decode(decoder, buffer, 0, stdout, flush: true);
+                        return FinishExitedChild(child, stdout.ToString(), out failed);
                     }
-                    else if (watch.ElapsedMilliseconds >= limitMs)
+
+                    if (watch.ElapsedMilliseconds >= limitMs)
                     {
                         failed = true;
                         return null;
                     }
 
-                    Thread.Sleep(20);
+                    // A still-running child only. One millisecond, so shutdown stays on the
+                    // ps/kill runtime instead of a 20 ms poll tick.
+                    Thread.Sleep(1);
                 }
             }
             catch (Exception)
@@ -918,9 +915,11 @@ namespace UnityCliBridge.Bridge.Editor
             int code;
             try
             {
-                // The timed overload does not wait for stdout EOF. The parameterless one would,
-                // and a leaked write handle would sit here forever.
-                child.WaitForExit(200);
+                // HasExited is already true, so this is the cached status. Do not call
+                // WaitForExit. The parameterless overload waits for stdout EOF, and a leaked
+                // write handle never arrives. The timed overload still waited out its full
+                // budget on Unity's Mono after the exit was already known (macOS
+                // lastShutdownMs about 210 ms, on the 200 ms argument).
                 code = child.ExitCode;
             }
             catch (Exception)

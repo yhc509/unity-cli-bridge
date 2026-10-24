@@ -106,6 +106,46 @@ public sealed class ProcessListingCancelTests
     }
 
     [Fact]
+    public void FastExit_DoesNotWaitOutAnExitTimeout()
+    {
+        using IDisposable scope = RoslynHostProcessInspector.AcquireListingScope();
+        // Warm both paths. The samples below are a child that has already exited.
+        RunEcho();
+        ReadEchoDirect();
+        long worstGap = 0;
+        long worstListing = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            long direct = ReadEchoDirect();
+            var watch = Stopwatch.StartNew();
+            string? output = RunEcho();
+            watch.Stop();
+            Assert.NotNull(output);
+            Assert.Contains("hello", output, StringComparison.Ordinal);
+            long gap = watch.ElapsedMilliseconds - direct;
+            if (gap > worstGap)
+            {
+                worstGap = gap;
+            }
+
+            if (watch.ElapsedMilliseconds > worstListing)
+            {
+                worstListing = watch.ElapsedMilliseconds;
+            }
+        }
+
+        // Shutdown lists processes on the editor main thread. After the child exited, the
+        // listing slept twice (20 ms) and then called WaitForExit(200). On Unity's Mono that
+        // wait consumed the whole budget, so macOS lastShutdownMs sat at about 210 ms.
+        // .NET's WaitForExit(200) returns immediately once HasExited is true, so the gap
+        // against a plain ReadToEnd is the post-exit sleep (about 40 ms), not that budget.
+        // A finished echo has to come back with the process.
+        int gapBoundMs = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 80 : 25;
+        Assert.True(worstGap < gapBoundMs, "listing ran " + worstGap + " ms slower than reading stdout directly (listing " + worstListing + " ms)");
+        _ = scope;
+    }
+
+    [Fact]
     public void Timeout_IsAFailure_NotAnEmptyListing()
     {
         using IDisposable scope = RoslynHostProcessInspector.AcquireListingScope();
@@ -174,6 +214,40 @@ public sealed class ProcessListingCancelTests
     private static string SlowArguments()
     {
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "-n 40 127.0.0.1" : "-c \"exec sleep 30\"";
+    }
+
+    private static long ReadEchoDirect()
+    {
+        var watch = Stopwatch.StartNew();
+        var start = new ProcessStartInfo(EchoFile(), EchoArguments())
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("echo did not start");
+        string text = process.StandardOutput.ReadToEnd();
+        process.WaitForExit();
+        watch.Stop();
+        Assert.Contains("hello", text, StringComparison.Ordinal);
+        return watch.ElapsedMilliseconds;
+    }
+
+    private static string? RunEcho()
+    {
+        string? output = RoslynHostProcessInspector.RunListing(
+            EchoFile(),
+            EchoArguments(),
+            CancellationToken.None,
+            true,
+            true,
+            0,
+            out bool cancelled,
+            out bool failed);
+        Assert.False(cancelled);
+        Assert.False(failed, output ?? "null");
+        return output;
     }
 
     private static string EchoFile()
