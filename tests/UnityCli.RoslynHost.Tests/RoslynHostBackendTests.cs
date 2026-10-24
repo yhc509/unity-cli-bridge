@@ -367,6 +367,43 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void CrashWhileTheStartIsClosingOut_StillRestarts()
+    {
+        // The start thread keeps the starter slot through the status write. A compile can take the
+        // host before that slot is cleared, and the crash restart used to no-op, so later compiles
+        // reported the old failure and never launched (CI: one launch instead of three).
+        var release = new ManualResetEventSlim(false);
+        var entered = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new ScriptedHostInstance(ScriptedHostInstance.Replies(
+            _ => throw new RoslynHostException(RoslynHostFailureCodes.Timeout, "no reply from the host within 10000 ms"))));
+        using RoslynHostSupervisor supervisor = Supervisor(launcher, configure: options =>
+        {
+            options.HoldStartCloseOut = () =>
+            {
+                entered.Set();
+                release.Wait(TimeSpan.FromSeconds(3));
+            };
+        });
+        var backend = new RoslynHostBackend(supervisor);
+
+        supervisor.BeginStart("preload");
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(3)));
+        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(3)));
+
+        CompileResult? result = null;
+        var compile = new Thread(() => result = backend.TryCompile(Request("return 1;"))) { IsBackground = true };
+        compile.Start();
+        bool finishedWhileHeld = compile.Join(TimeSpan.FromMilliseconds(200));
+        release.Set();
+
+        Assert.False(finishedWhileHeld, "the restart returned while the start thread was still closing out");
+        Assert.True(compile.Join(TimeSpan.FromSeconds(5)));
+        Assert.NotNull(result);
+        Assert.StartsWith("timeout: ", result!.FailureDetail);
+        Assert.True(launcher.Launches >= 2, "launches=" + launcher.Launches);
+    }
+
+    [Fact]
     public void CrashesSpreadOverMoreThanSixtySeconds_DoNotDisable()
     {
         var clock = new MutableClock();
