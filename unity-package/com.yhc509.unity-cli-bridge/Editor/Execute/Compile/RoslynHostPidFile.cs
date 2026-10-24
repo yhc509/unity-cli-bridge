@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -198,11 +199,12 @@ namespace UnityCliBridge.Bridge.Editor
     /// the retire instead of treating an interrupted read as an empty process table.
     /// A domain reload must not meet a thread blocked in <c>StandardOutput.ReadToEnd</c>. That read
     /// sits in native pipe I/O, Mono cannot abort it, and the editor hangs in
-    /// <c>Begin MonoManager ReloadAssembly</c>. Listings therefore read asynchronously, with a bounded
-    /// wait, and <see cref="CancelInFlightListings"/> (the reload and quit hooks) kills the child and
-    /// closes the pipes so the read returns before the domain unloads. Completion is the child
-    /// exiting, not stdout EOF: a host or csc process started while the redirected pipe exists can
-    /// inherit the write end, so EOF never arrives after powershell has already exited.
+    /// <c>Begin MonoManager ReloadAssembly</c>. Listings therefore poll bytes already in the pipe,
+    /// with a bounded wait, and <see cref="CancelInFlightListings"/> (the reload and quit hooks) kills
+    /// the child and closes the pipes so the read returns before the domain unloads. Completion is the
+    /// child exiting and the pipe going quiet, not stdout EOF: a host or csc process started while the
+    /// redirected pipe exists can inherit the write end, so EOF never arrives after the listing
+    /// process has already exited.
     /// </summary>
     /// <summary>
     /// The process listing did not finish (timeout, non-zero exit, or no output). An empty list
@@ -559,10 +561,8 @@ namespace UnityCliBridge.Bridge.Editor
             bool registered = false;
             CancellationTokenRegistration registration = default;
             CancellationTokenSource? linked = null;
-            ManualResetEvent? done = null;
             IDisposable? listingPipes = null;
             var stdout = new StringBuilder();
-            var stdoutGate = new object();
             try
             {
                 if (!WaitToStart(cancellation, ignoreListingScope))
@@ -597,11 +597,18 @@ namespace UnityCliBridge.Bridge.Editor
                     return null;
                 }
 
-                // Do not touch StandardOutput or StandardError here. Reading either property builds
-                // the synchronous reader, and BeginOutputReadLine then throws. The write end is not
-                // on those streams anyway. The spawn gate keeps a later child from inheriting it,
-                // and the exit check below does not wait for EOF if one still leaks.
+                // Poll bytes already sitting in the pipe. Do not wait for stdout EOF and do not use
+                // the async line callback: a host started while this pipe existed can inherit the
+                // write end, so EOF never arrives, and a busy thread pool can drop the callback.
+                // The listing thread only reads when a peek says bytes are waiting, so it is not
+                // blocked in a native read when a reload closes the pipe.
                 Process child = process;
+                Stream output = child.StandardOutput.BaseStream;
+                Stream error = child.StandardError.BaseStream;
+                Encoding encoding = standardOutputEncoding ?? Console.OutputEncoding;
+                Decoder decoder = encoding.GetDecoder();
+                var buffer = new byte[8192];
+                var discard = new byte[8192];
                 lock (StartGate)
                 {
                     InFlightListings.Add(child);
@@ -615,72 +622,56 @@ namespace UnityCliBridge.Bridge.Editor
                     return null;
                 }
 
-                done = new ManualResetEvent(false);
-                child.OutputDataReceived += (_, e) =>
-                {
-                    try
-                    {
-                        if (e.Data == null)
-                        {
-                            done.Set();
-                            return;
-                        }
-
-                        lock (stdoutGate)
-                        {
-                            stdout.Append(e.Data);
-                            stdout.Append('\n');
-                        }
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                    }
-                };
-                child.ErrorDataReceived += (_, __) => { };
-                child.BeginOutputReadLine();
-                child.BeginErrorReadLine();
                 registration = token.Register(() => StopListingProcess(child));
                 int limitMs = timeoutMs > 0 ? timeoutMs : ListingTimeoutMs;
                 var watch = Stopwatch.StartNew();
-                while (!done.WaitOne(50))
+                int quietAfterExit = 0;
+                while (true)
                 {
                     if (token.IsCancellationRequested)
                     {
                         cancelled = true;
                         return null;
                     }
+
+                    DrainPipe(output, buffer, decoder, stdout);
+                    DrainPipe(error, discard, null, null);
 
                     if (HasExited(child))
                     {
-                        // The child is done. EOF may never arrive when something else inherited the
-                        // stdout write end, so take the lines already read instead of waiting for it.
-                        DrainAfterExit(done, ExitDrainMs);
-                        return FinishExitedChild(child, stdout, stdoutGate, out failed);
+                        if (token.IsCancellationRequested)
+                        {
+                            cancelled = true;
+                            return null;
+                        }
+
+                        // One more pass in case the exit flush landed between the peek and HasExited.
+                        int drained = DrainPipe(output, buffer, decoder, stdout);
+                        DrainPipe(error, discard, null, null);
+                        if (drained == 0)
+                        {
+                            quietAfterExit++;
+                        }
+                        else
+                        {
+                            quietAfterExit = 0;
+                        }
+
+                        // A few empty peeks after exit means the child wrote everything it is going
+                        // to write. A leaked write end keeps EOF from arriving and is not more data.
+                        if (quietAfterExit >= 3)
+                        {
+                            if (token.IsCancellationRequested)
+                            {
+                                cancelled = true;
+                                return null;
+                            }
+
+                            Decode(decoder, buffer, 0, stdout, flush: true);
+                            return FinishExitedChild(child, stdout.ToString(), out failed);
+                        }
                     }
-
-                    if (watch.ElapsedMilliseconds >= limitMs)
-                    {
-                        failed = true;
-                        return null;
-                    }
-                }
-
-                if (token.IsCancellationRequested)
-                {
-                    cancelled = true;
-                    return null;
-                }
-
-                var exit = Stopwatch.StartNew();
-                while (!HasExited(child))
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        cancelled = true;
-                        return null;
-                    }
-
-                    if (exit.ElapsedMilliseconds >= 2000)
+                    else if (watch.ElapsedMilliseconds >= limitMs)
                     {
                         failed = true;
                         return null;
@@ -688,8 +679,6 @@ namespace UnityCliBridge.Bridge.Editor
 
                     Thread.Sleep(20);
                 }
-
-                return FinishExitedChild(child, stdout, stdoutGate, out failed);
             }
             catch (Exception)
             {
@@ -746,23 +735,127 @@ namespace UnityCliBridge.Bridge.Editor
                 // After the pipes are closed, so the next spawn cannot inherit them.
                 listingPipes?.Dispose();
                 linked?.Dispose();
-                if (done != null)
-                {
-                    try
-                    {
-                        done.Dispose();
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
             }
         }
 
-        /// <summary>How long to keep reading after the child exits, in case the last lines are still queued.</summary>
-        private const int ExitDrainMs = 500;
+        /// <summary>
+        /// Reads bytes a peek says are already buffered. Returns how many were read. A peek of zero
+        /// does not read, so this does not wait for EOF and does not block the caller in the pipe.
+        /// </summary>
+        private static int DrainPipe(Stream stream, byte[] buffer, Decoder? decoder, StringBuilder? sink)
+        {
+            int total = 0;
+            while (TryPeekAvailable(stream, out int available) && available > 0)
+            {
+                int want = Math.Min(available, buffer.Length);
+                int n;
+                try
+                {
+                    n = stream.Read(buffer, 0, want);
+                }
+                catch (Exception)
+                {
+                    break;
+                }
 
-        private static string? FinishExitedChild(Process child, StringBuilder stdout, object stdoutGate, out bool failed)
+                if (n <= 0)
+                {
+                    break;
+                }
+
+                if (decoder != null && sink != null)
+                {
+                    Decode(decoder, buffer, n, sink, flush: false);
+                }
+
+                total += n;
+                if (n < want)
+                {
+                    break;
+                }
+            }
+
+            return total;
+        }
+
+        private static void Decode(Decoder decoder, byte[] buffer, int count, StringBuilder sink, bool flush)
+        {
+            if (count == 0 && !flush)
+            {
+                return;
+            }
+
+            int chars = decoder.GetCharCount(buffer, 0, count, flush);
+            if (chars == 0)
+            {
+                return;
+            }
+
+            var text = new char[chars];
+            decoder.GetChars(buffer, 0, count, text, 0, flush);
+            sink.Append(text);
+        }
+
+        private static bool TryPeekAvailable(Stream stream, out int available)
+        {
+            available = 0;
+            SafeHandle? handle = null;
+            if (stream is PipeStream pipe)
+            {
+                handle = pipe.SafePipeHandle;
+            }
+            else if (stream is FileStream file)
+            {
+                handle = file.SafeFileHandle;
+            }
+
+            if (handle == null || handle.IsInvalid || handle.IsClosed)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    if (!PeekNamedPipe(handle.DangerousGetHandle(), IntPtr.Zero, 0, IntPtr.Zero, out uint queued, IntPtr.Zero))
+                    {
+                        return false;
+                    }
+
+                    available = queued > int.MaxValue ? int.MaxValue : (int)queued;
+                    return true;
+                }
+
+                // FIONREAD: bytes sitting in the pipe. Linux 0x541B, macOS _IOR('f', 127, int).
+                uint request = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? 0x4004667Fu : 0x541Bu;
+                if (Ioctl(handle.DangerousGetHandle().ToInt32(), request, out int queuedUnix) != 0 || queuedUnix < 0)
+                {
+                    return false;
+                }
+
+                available = queuedUnix;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        [DllImport("libc", EntryPoint = "ioctl", SetLastError = true)]
+        private static extern int Ioctl(int fd, uint request, out int value);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool PeekNamedPipe(
+            IntPtr handle,
+            IntPtr buffer,
+            uint bufferSize,
+            IntPtr bytesRead,
+            out uint totalBytesAvail,
+            IntPtr bytesLeftThisMessage);
+
+        private static string? FinishExitedChild(Process child, string text, out bool failed)
         {
             failed = false;
             int code;
@@ -779,12 +872,6 @@ namespace UnityCliBridge.Bridge.Editor
                 return null;
             }
 
-            string text;
-            lock (stdoutGate)
-            {
-                text = stdout.ToString();
-            }
-
             if (code != 0 || string.IsNullOrWhiteSpace(text))
             {
                 failed = true;
@@ -792,18 +879,6 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             return text;
-        }
-
-        private static void DrainAfterExit(ManualResetEvent done, int drainMs)
-        {
-            var watch = Stopwatch.StartNew();
-            while (watch.ElapsedMilliseconds < drainMs)
-            {
-                if (done.WaitOne(20))
-                {
-                    return;
-                }
-            }
         }
 
         private static bool WaitToStart(CancellationToken cancellation, bool ignoreListingScope)

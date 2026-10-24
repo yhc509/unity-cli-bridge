@@ -97,7 +97,7 @@ public sealed class ProcessListingCancelTests
         watch.Stop();
 
         Assert.False(cancelled);
-        Assert.False(failed);
+        Assert.False(failed, output ?? "null");
         Assert.NotNull(output);
         Assert.Contains("hello", output, StringComparison.Ordinal);
         // The grandchild holds the stdout write end for 15 s. Waiting for EOF would miss this bound.
@@ -162,7 +162,7 @@ public sealed class ProcessListingCancelTests
     {
         // The shell prints and exits. The background child inherits stdout, so EOF does not arrive.
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "/d /c \"echo hello& start /b ping -n 15 127.0.0.1\""
+            ? "/d /c \"echo hello& start /b ping -n 15 127.0.0.1 & exit /b 0\""
             : "-c \"echo hello; sleep 15 &\"";
     }
 
