@@ -201,7 +201,10 @@ namespace UnityCliBridge.Bridge.Editor
     /// sits in native pipe I/O, Mono cannot abort it, and the editor hangs in
     /// <c>Begin MonoManager ReloadAssembly</c>. Listings therefore poll bytes already in the pipe,
     /// with a bounded wait, and <see cref="CancelInFlightListings"/> (the reload and quit hooks) kills
-    /// the child and closes the pipes so the read returns before the domain unloads. Completion is the
+    /// the child and closes the pipes so the read returns before the domain unloads. The wait is
+    /// <c>poll</c> (and <c>PeekNamedPipe</c> on Windows). <c>ioctl(FIONREAD)</c> is variadic, and on
+    /// macOS arm64 a normal P/Invoke passes the output pointer in a register while the kernel reads
+    /// it from the stack, so the process dies with an access violation. Completion is the
     /// child exiting and the pipe going quiet, not stdout EOF: a host or csc process started while the
     /// redirected pipe exists can inherit the write end, so EOF never arrives after the listing
     /// process has already exited.
@@ -814,8 +817,10 @@ namespace UnityCliBridge.Bridge.Editor
                 return false;
             }
 
+            bool added = false;
             try
             {
+                handle.DangerousAddRef(ref added);
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
                     if (!PeekNamedPipe(handle.DangerousGetHandle(), IntPtr.Zero, 0, IntPtr.Zero, out uint queued, IntPtr.Zero))
@@ -827,24 +832,58 @@ namespace UnityCliBridge.Bridge.Editor
                     return true;
                 }
 
-                // FIONREAD: bytes sitting in the pipe. Linux 0x541B, macOS _IOR('f', 127, int).
-                uint request = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? 0x4004667Fu : 0x541Bu;
-                if (Ioctl(handle.DangerousGetHandle().ToInt32(), request, out int queuedUnix) != 0 || queuedUnix < 0)
+                // poll is not variadic. ioctl(FIONREAD) is, and on macOS arm64 that P/Invoke
+                // access-violates (run 40066673517). A readable pipe read returns only the
+                // bytes already waiting, so the caller may ask for a full buffer.
+                var polled = new PollFd
+                {
+                    Fd = handle.DangerousGetHandle().ToInt32(),
+                    Events = PollIn,
+                };
+                int rc = Poll(ref polled, (UIntPtr)1, 0);
+                if (rc < 0 || (polled.REvents & PollNval) != 0)
                 {
                     return false;
                 }
 
-                available = queuedUnix;
+                if ((polled.REvents & (PollIn | PollHup)) == 0)
+                {
+                    available = 0;
+                    return true;
+                }
+
+                available = int.MaxValue;
                 return true;
             }
             catch (Exception)
             {
                 return false;
             }
+            finally
+            {
+                if (added)
+                {
+                    handle.DangerousRelease();
+                }
+            }
         }
 
-        [DllImport("libc", EntryPoint = "ioctl", SetLastError = true)]
-        private static extern int Ioctl(int fd, uint request, out int value);
+        private const short PollIn = 1;
+        private const short PollHup = 0x10;
+        private const short PollNval = 0x20;
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        private struct PollFd
+        {
+            public int Fd;
+            public short Events;
+            public short REvents;
+        }
+
+        // nfds_t is 32-bit on macOS and 64-bit on Linux. One fd fits either width.
+        // UIntPtr, not nuint: this file also builds on the Unity 2021 editor profile.
+        [DllImport("libc", EntryPoint = "poll", SetLastError = true)]
+        private static extern int Poll(ref PollFd fds, UIntPtr nfds, int timeout);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool PeekNamedPipe(
