@@ -115,15 +115,32 @@ namespace UnityCli.Protocol
     /// <summary>
     /// Snapshot of the editor's <c>csc /shared</c> fallback, written by the bridge to
     /// <c>Library/com.yhc509.unity-cli-bridge/csc-shared/status.json</c> when its state changes, and
-    /// read by <c>doctor</c> locally (no wire change). Only an editor whose <c>UCB_EXECUTE_COMPILER</c>
-    /// puts csc-shared in the chain (<c>roslyn-host</c> or <c>csc-shared</c>) writes it.
-    /// Unity-free and System.Text.Json-free so both sides share it.
+    /// read by <c>doctor</c> locally (no wire change). The default chain and <c>csc-shared</c> write it.
+    /// <c>UCB_EXECUTE_COMPILER=codedom</c> writes one short off status when the domain loads and does
+    /// not start a compiler server. Unity-free and System.Text.Json-free so both sides share it.
     /// </summary>
     public sealed class CscSharedStatus
     {
         public const string FileName = "status.json";
         public const string ServerRecordFileName = "server.json";
+        public const string OffState = "off";
         public const int CurrentSchema = 1;
+
+        /// <summary>
+        /// One short status for <c>UCB_EXECUTE_COMPILER=codedom</c>, written once per domain load.
+        /// </summary>
+        public static void WriteCodedomOff(string projectRoot, int editorPid, DateTime? utcNow = null)
+        {
+            DateTime now = utcNow ?? DateTime.UtcNow;
+            new CscSharedStatus
+            {
+                UpdatedUtc = RoslynHostStatus.FormatUtc(now),
+                EditorPid = editorPid,
+                ConfiguredCompiler = "codedom",
+                State = OffState,
+                Note = "UCB_EXECUTE_COMPILER=codedom turns csc /shared off.",
+            }.Write(GetStatusPath(projectRoot));
+        }
 
         /// <summary><c>Library/com.yhc509.unity-cli-bridge/csc-shared</c> under <paramref name="projectRoot"/>.</summary>
         public static string GetDirectory(string projectRoot)
@@ -153,8 +170,20 @@ namespace UnityCli.Protocol
         /// <summary>Why the server was stopped (<c>domain-reload</c>, <c>editor-quit</c>).</summary>
         public string Note { get; set; } = string.Empty;
 
-        /// <summary>The compiler server's pid once found (0 = not known).</summary>
+        /// <summary>The compiler server's pid once found (0 = not known). JSON null while <see cref="ServerPidPending"/> or <see cref="ServerPidUnknown"/>.</summary>
         public int ServerPid { get; set; }
+
+        /// <summary>
+        /// True while the background pid lookup is still running. The status file then has
+        /// <c>serverPid</c> null instead of 0. False once the pid is known, or when there is no lookup.
+        /// </summary>
+        public bool ServerPidPending { get; set; }
+
+        /// <summary>
+        /// True when the lookup timed out or failed and the retries are exhausted. <c>serverPid</c> is
+        /// null, not 0. False when the pid is known, still pending, or no lookup has run.
+        /// </summary>
+        public bool ServerPidUnknown { get; set; }
 
         public string DotnetPath { get; set; } = string.Empty;
 
@@ -188,7 +217,9 @@ namespace UnityCli.Protocol
                 ["pipeName"] = PipeName,
                 ["state"] = State,
                 ["note"] = Note,
-                ["serverPid"] = ServerPid,
+                ["serverPid"] = ServerPidPending || ServerPidUnknown ? null : (object?)ServerPid,
+                ["serverPidPending"] = ServerPidPending,
+                ["serverPidUnknown"] = ServerPidUnknown,
                 ["dotnetPath"] = DotnetPath,
                 ["cscPath"] = CscPath,
                 ["roslynVersion"] = RoslynVersion,
@@ -229,6 +260,8 @@ namespace UnityCli.Protocol
                 PipeName = RoslynHostJson.GetString(h, "pipeName") ?? string.Empty,
                 State = RoslynHostJson.GetString(h, "state") ?? string.Empty,
                 Note = RoslynHostJson.GetString(h, "note") ?? string.Empty,
+                ServerPidPending = RoslynHostJson.GetBool(h, "serverPidPending"),
+                ServerPidUnknown = RoslynHostJson.GetBool(h, "serverPidUnknown"),
                 ServerPid = (int)RoslynHostJson.GetInt64(h, "serverPid", 0, 0, int.MaxValue),
                 DotnetPath = RoslynHostJson.GetString(h, "dotnetPath") ?? string.Empty,
                 CscPath = RoslynHostJson.GetString(h, "cscPath") ?? string.Empty,

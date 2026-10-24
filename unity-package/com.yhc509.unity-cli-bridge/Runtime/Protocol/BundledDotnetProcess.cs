@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace UnityCli.Protocol
 {
@@ -225,7 +226,10 @@ namespace UnityCli.Protocol
             {
                 process.OutputDataReceived += (_, e) => Append(stdout, e.Data);
                 process.ErrorDataReceived += (_, e) => Append(stderr, e.Data);
-                process.Start();
+                // Wait out any process-listing pipes. Starting here while those handles are still
+                // inheritable copies them into this child (Mono does not pass a handle list), and the
+                // listing then never sees stdout EOF.
+                ProcessSpawnGate.Run(() => process.Start());
                 if (startInfo.RedirectStandardInput)
                 {
                     process.StandardInput.Close();
@@ -293,5 +297,79 @@ namespace UnityCli.Protocol
         public string StandardError { get; }
 
         public bool TimedOut => !ExitCode.HasValue;
+    }
+
+    /// <summary>
+    /// Stops a host or csc child from inheriting a process listing's redirected pipes.
+    /// <see cref="Process.Start"/> with redirection creates inheritable handles. On Mono the next
+    /// <c>CreateProcess</c> copies every inheritable handle, not only the new child's stdio, so the
+    /// listing's stdout write end stays open after powershell exits and the read never sees EOF.
+    /// A listing holds <see cref="EnterListing"/> until it has closed those pipes. Every other child
+    /// start goes through <see cref="Run"/> and waits.
+    /// </summary>
+    internal static class ProcessSpawnGate
+    {
+        private static readonly object Gate = new object();
+        private static int _listingPipes;
+
+        /// <summary>Runs <paramref name="start"/> only while no listing pipes are open.</summary>
+        public static void Run(Action start)
+        {
+            if (start == null)
+            {
+                throw new ArgumentNullException(nameof(start));
+            }
+
+            lock (Gate)
+            {
+                while (_listingPipes > 0)
+                {
+                    Monitor.Wait(Gate, 20);
+                }
+
+                start();
+            }
+        }
+
+        /// <summary>
+        /// Marks listing pipes as open so <see cref="Run"/> waits. Dispose only after those pipes are closed.
+        /// </summary>
+        public static IDisposable EnterListing()
+        {
+            lock (Gate)
+            {
+                while (_listingPipes > 0)
+                {
+                    Monitor.Wait(Gate, 20);
+                }
+
+                _listingPipes++;
+            }
+
+            return new Release();
+        }
+
+        private sealed class Release : IDisposable
+        {
+            private int _disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    return;
+                }
+
+                lock (Gate)
+                {
+                    if (_listingPipes > 0)
+                    {
+                        _listingPipes--;
+                    }
+
+                    Monitor.PulseAll(Gate);
+                }
+            }
+        }
     }
 }

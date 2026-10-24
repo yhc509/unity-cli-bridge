@@ -15,6 +15,7 @@ namespace UnityCliBridge.Bridge.Editor
     {
         private readonly ICompileBackend[] _chain;
         private readonly string? _configurationReason;
+        private readonly string? _configurationSkipped;
 
         public CompileBackendSelector(ICompileBackend fallback)
             : this(fallback, Array.Empty<ICompileBackend>(), null)
@@ -26,7 +27,15 @@ namespace UnityCliBridge.Bridge.Editor
         /// Why the chain does not start where the settings asked (for example the Roslyn host could
         /// not be set up). Reported as the fallback reason, followed by any skipped backend's reason.
         /// </param>
-        public CompileBackendSelector(ICompileBackend fallback, IReadOnlyList<ICompileBackend> preferred, string? configurationReason)
+        /// <param name="configurationSkipped">
+        /// The backend the settings start with that the chain leaves out (<see cref="CompileOutcome.FellBackFrom"/>
+        /// when nothing else falls back), so an mcs error still carries the fallback note.
+        /// </param>
+        public CompileBackendSelector(
+            ICompileBackend fallback,
+            IReadOnlyList<ICompileBackend> preferred,
+            string? configurationReason,
+            string? configurationSkipped = null)
         {
             if (fallback == null)
             {
@@ -48,6 +57,7 @@ namespace UnityCliBridge.Bridge.Editor
             chain.Add(fallback);
             _chain = chain.ToArray();
             _configurationReason = string.IsNullOrWhiteSpace(configurationReason) ? null : configurationReason;
+            _configurationSkipped = string.IsNullOrWhiteSpace(configurationSkipped) ? null : configurationSkipped;
         }
 
         public IReadOnlyList<ICompileBackend> Chain
@@ -64,7 +74,7 @@ namespace UnityCliBridge.Bridge.Editor
         public CompileOutcome Compile(CompileRequest request)
         {
             string? reason = _configurationReason;
-            string? fellBackFrom = null;
+            string? fellBackFrom = _configurationSkipped;
             for (int index = 0; index < _chain.Length; index++)
             {
                 ICompileBackend backend = _chain[index];

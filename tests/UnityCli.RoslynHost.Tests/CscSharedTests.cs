@@ -313,7 +313,13 @@ public sealed class CscSharedServerTests
         };
         var server = new CscSharedServer(Options(temp.Path), table);
         Invoke(server, "EnsureRecord");
-        Assert.Equal(0, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
+        CscSharedServerRecord initial = CscSharedServerRecord.TryRead(server.RecordPath)!;
+        Assert.True(initial.ServerPidPending);
+        Assert.Equal(0, initial.ServerPid);
+        string initialJson = File.ReadAllText(server.RecordPath);
+        Assert.Contains("\"serverPid\":null", initialJson);
+        Assert.Contains("\"serverPidPending\":true", initialJson);
+        Assert.DoesNotContain("\"serverPid\":0", initialJson);
 
         for (int i = 0; i < 4; i++)
         {
@@ -352,15 +358,26 @@ public sealed class CscSharedServerTests
             Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the pid lookup");
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "pid lookup did not start");
             Assert.Equal(0, server.Snapshot().ServerPid);
+            Assert.True(server.Snapshot().ServerPidPending);
+            string pendingJson = File.ReadAllText(server.StatusPath);
+            Assert.Contains("\"serverPid\":null", pendingJson);
+            Assert.Contains("\"serverPidPending\":true", pendingJson);
+            Assert.DoesNotContain("\"serverPid\":0", pendingJson);
+            string pendingRecord = File.ReadAllText(server.RecordPath);
+            Assert.Contains("\"serverPid\":null", pendingRecord);
+            Assert.Contains("\"serverPidPending\":true", pendingRecord);
+            Assert.DoesNotContain("\"serverPid\":0", pendingRecord);
         }
         finally
         {
             release.Set();
         }
 
-        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432, 2000), "lookup did not record the server");
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432 && !server.Snapshot().ServerPidPending, 2000), "lookup did not record the server");
         Assert.Equal(432, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
-        Assert.Equal(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        CscSharedStatus recorded = CscSharedStatus.TryRead(server.StatusPath)!;
+        Assert.Equal(432, recorded.ServerPid);
+        Assert.False(recorded.ServerPidPending);
     }
 
     [Fact]
@@ -405,16 +422,102 @@ public sealed class CscSharedServerTests
             Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the replacement lookup");
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "replacement lookup did not start");
             Assert.NotEqual(2244, server.Snapshot().ServerPid);
+            Assert.True(server.Snapshot().ServerPidPending);
+            Assert.True(WaitFor(() =>
+            {
+                string json = File.ReadAllText(server.StatusPath);
+                return json.Contains("\"serverPid\":null") && json.Contains("\"serverPidPending\":true");
+            }, 2000), "pending status was not written");
         }
         finally
         {
             release.Set();
         }
 
-        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 2244, 2000), "replacement server was not recorded");
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 2244 && !server.Snapshot().ServerPidPending, 2000), "replacement server was not recorded");
         Assert.Equal(2244, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
-        Assert.Equal(2244, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
-        Assert.NotEqual(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        CscSharedStatus replaced = CscSharedStatus.TryRead(server.StatusPath)!;
+        Assert.Equal(2244, replaced.ServerPid);
+        Assert.False(replaced.ServerPidPending);
+        Assert.NotEqual(432, replaced.ServerPid);
+    }
+
+    [Fact]
+    public void ServerPid_ListingFailure_RetriesAndDoesNotWriteZero()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        int failuresLeft = 2;
+        var seenRecords = new List<string>();
+        var seenStatus = new List<string>();
+        table.Listing = () =>
+        {
+            seenRecords.Add(File.ReadAllText(Path.Combine(temp.Path, "server.json")));
+            string statusPath = Path.Combine(temp.Path, "status.json");
+            if (File.Exists(statusPath))
+            {
+                seenStatus.Add(File.ReadAllText(statusPath));
+            }
+
+            if (Interlocked.Decrement(ref failuresLeft) >= 0)
+            {
+                throw new ProcessListingFailedException();
+            }
+
+            return new[] { Proc(432, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+        };
+        CscSharedServerOptions options = Options(temp.Path);
+        options.DiscoveryRetryDelayMs = 0;
+        var server = new CscSharedServer(options, table);
+        Invoke(server, "EnsureRecord");
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432 && !server.Snapshot().ServerPidPending, 2000), "lookup did not recover");
+        Assert.Equal(3, table.ListCalls);
+        Assert.NotEmpty(seenRecords);
+        foreach (string json in seenRecords.Concat(seenStatus))
+        {
+            Assert.Contains("\"serverPid\":null", json);
+            Assert.Contains("\"serverPidPending\":true", json);
+            Assert.DoesNotContain("\"serverPid\":0", json);
+        }
+        Assert.False(server.Snapshot().ServerPidUnknown);
+        string finalStatus = File.ReadAllText(server.StatusPath);
+        string finalRecord = File.ReadAllText(server.RecordPath);
+        Assert.Contains("\"serverPid\":432", finalStatus);
+        Assert.Contains("\"serverPid\":432", finalRecord);
+        Assert.DoesNotContain("\"serverPid\":0", finalStatus);
+        Assert.DoesNotContain("\"serverPid\":0", finalRecord);
+        Assert.False(CscSharedStatus.TryRead(server.StatusPath)!.ServerPidUnknown);
+        Assert.False(CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPidUnknown);
+    }
+
+    [Fact]
+    public void ServerPid_ListingFailure_Exhausted_IsUnknownNotZero()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        table.Listing = () => throw new ProcessListingFailedException();
+        CscSharedServerOptions options = Options(temp.Path);
+        options.DiscoveryRetryDelayMs = 0;
+        var server = new CscSharedServer(options, table);
+        Invoke(server, "EnsureRecord");
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+
+        Assert.True(WaitFor(() => !Discovering(server), 2000), "discovery did not finish");
+        Assert.Equal(CscSharedServer.DiscoveryAttemptsPerLookup, table.ListCalls);
+        Assert.Equal(0, server.Snapshot().ServerPid);
+        Assert.False(server.Snapshot().ServerPidPending);
+        Assert.True(server.Snapshot().ServerPidUnknown);
+        Assert.Equal("server pid unknown", server.Snapshot().Note);
+        foreach (string path in new[] { server.StatusPath, server.RecordPath })
+        {
+            string json = File.ReadAllText(path);
+            Assert.Contains("\"serverPid\":null", json);
+            Assert.Contains("\"serverPidUnknown\":true", json);
+            Assert.Contains("\"serverPidPending\":false", json);
+            Assert.DoesNotContain("\"serverPid\":0", json);
+        }
     }
 
     [Fact]
@@ -488,33 +591,88 @@ public sealed class CscSharedServerTests
         return new KeyValuePair<int, string>(pid, commandLine);
     }
 
-    private sealed class FakeProcessTable : ICscSharedProcessTable
+    internal sealed class FakeProcessTable : ICscSharedProcessTable
     {
+        private readonly object _lock = new object();
+        private int _listCalls;
+
         public List<KeyValuePair<int, string>> Processes { get; } = new List<KeyValuePair<int, string>>();
 
         public HashSet<int> Alive { get; } = new HashSet<int>();
 
         public List<int> Killed { get; } = new List<int>();
 
-        public int ListCalls { get; private set; }
+        public int ListCalls
+        {
+            get { return Volatile.Read(ref _listCalls); }
+        }
 
         /// <summary>When set, <see cref="ListServers"/> returns this instead of <see cref="Processes"/>.</summary>
         public Func<IReadOnlyList<KeyValuePair<int, string>>>? Listing { get; set; }
 
+        public bool ListingIsSlow { get; set; }
+
+        /// <summary>Pids <see cref="IsServerOnPipe"/> confirms (with any start time).</summary>
+        public HashSet<int> OnPipe { get; } = new HashSet<int>();
+
+        public Dictionary<int, long> StartTicks { get; } = new Dictionary<int, long>();
+
+        /// <summary>False: a killed pid stays alive (a kill that does not take).</summary>
+        public bool KillRemovesAlive { get; set; } = true;
+
+        public List<ProcessStartInfo> Detached { get; } = new List<ProcessStartInfo>();
+
+        public int OnPipeChecks { get; private set; }
+
         public IReadOnlyList<KeyValuePair<int, string>> ListServers()
         {
-            ListCalls++;
+            Interlocked.Increment(ref _listCalls);
             return Listing != null ? Listing() : Processes;
         }
 
         public bool IsAlive(int pid)
         {
-            return Alive.Contains(pid);
+            lock (_lock)
+            {
+                return Alive.Contains(pid);
+            }
+        }
+
+        public long? ReadStartTicks(int pid)
+        {
+            lock (_lock)
+            {
+                return StartTicks.TryGetValue(pid, out long ticks) ? ticks : (long?)null;
+            }
+        }
+
+        public bool IsServerOnPipe(int pid, string pipe, long? startTicks)
+        {
+            lock (_lock)
+            {
+                OnPipeChecks++;
+                return OnPipe.Contains(pid) && Alive.Contains(pid);
+            }
         }
 
         public void Kill(int pid)
         {
-            Killed.Add(pid);
+            lock (_lock)
+            {
+                Killed.Add(pid);
+                if (KillRemovesAlive)
+                {
+                    Alive.Remove(pid);
+                }
+            }
+        }
+
+        public void StartDetached(ProcessStartInfo startInfo)
+        {
+            lock (_lock)
+            {
+                Detached.Add(startInfo);
+            }
         }
     }
 

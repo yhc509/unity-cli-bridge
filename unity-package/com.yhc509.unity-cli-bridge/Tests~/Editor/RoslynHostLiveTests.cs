@@ -89,7 +89,8 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             if (_supervisor != null)
             {
                 int pid = _supervisor.HostPid;
-                _supervisor.Shutdown("test-teardown");
+                // The domain-reload stop: kill without waiting for the exit.
+                _supervisor.Shutdown("test-teardown", TimeSpan.Zero);
                 Assert.That(File.Exists(Path.Combine(_hostDirectory, RoslynHostStatus.PidFileName)), Is.False);
                 if (pid > 0)
                 {

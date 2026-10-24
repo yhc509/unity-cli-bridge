@@ -236,6 +236,12 @@ namespace UnityCliBridge.Bridge.Editor
         /// the wait was not called, and a <c>starting</c> decision can record the bound without sleeping.
         /// </summary>
         public Func<int, bool>? WaitForStart { get; set; }
+
+        /// <summary>
+        /// Runs on the start thread after the status write and before the starter slot is cleared.
+        /// Tests hold this to keep the "failed, but still closing out" window open. Production leaves it null.
+        /// </summary>
+        public Action? HoldStartCloseOut { get; set; }
     }
 
     /// <summary>
@@ -412,26 +418,72 @@ namespace UnityCliBridge.Bridge.Editor
         }
 
         /// <summary>
-        /// Domain-load entry (main thread, after the assembly reload): orphan cleanup always runs first on a
-        /// background thread; the host starts right after it when the prewarm policy says so.
+        /// Domain-load entry (main thread, after the assembly reload). Only the session-storage read stays
+        /// on the main thread, which is still finishing the reload: the status write, the host-image probe
+        /// of <see cref="BeginStart"/>, and the orphan cleanup run on a background thread. Orphan cleanup
+        /// always runs first; the host starts right after it when the prewarm policy says so. An
+        /// <c>execute</c> that arrives before that thread reaches <see cref="BeginStart"/> starts the host
+        /// itself (<see cref="BeginStart"/> starts at most one).
         /// </summary>
         public void OnDomainLoaded()
         {
             bool prewarmNow = ShouldPrewarmOnLoad(_settings.Prewarm, ExecuteUsedThisSession);
-            WriteStatus();
-            if (prewarmNow)
+            var load = new Thread(() =>
             {
-                BeginStart("domain-load");
-                return;
-            }
+                try
+                {
+                    WriteStatus();
+                    if (prewarmNow)
+                    {
+                        BeginStart("domain-load");
+                    }
+                    else
+                    {
+                        EnsureOrphansCleaned();
+                    }
+                }
+                catch (Exception)
+                {
+                    // The first execute starts the host and cleans orphans instead.
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "ucb-roslyn-host-load",
+            };
+            load.Start();
+        }
 
-            var cleanup = new Thread(() => EnsureOrphansCleaned()) { IsBackground = true, Name = "ucb-roslyn-host-orphans" };
-            cleanup.Start();
+        /// <summary>
+        /// True when a start has already failed and its thread has not cleared the starter slot.
+        /// An in-progress start (building, starting, or a live host) is not this.
+        /// </summary>
+        private bool FailedStartIsClosingOut()
+        {
+            lock (_gate)
+            {
+                return _starter != null
+                    && _host == null
+                    && _state == "failed"
+                    && _disabledReason == null
+                    && _permanentFailure == null
+                    && !_shutdown;
+            }
         }
 
         /// <summary>Starts the host on a background thread unless it is ready, starting, building, disabled, or failed for good.</summary>
         public void BeginStart(string trigger)
         {
+            // A compile can take the host as soon as it is adopted, while this start is still
+            // writing status with the starter slot held. The crash restart calls BeginStart in
+            // that window and used to no-op, so the next execute reported the old failure and
+            // never launched. The slot stays held until the status file is closed; wait for
+            // that close-out, then start. A live start (building/starting) is not this case.
+            if (FailedStartIsClosingOut())
+            {
+                _startIdle.WaitOne(5000);
+            }
+
             // File probe stays outside the lock. NeedsBuild is the one-time csc of the host image;
             // Ready and Unavailable are spawn-and-connect or a fast start failure.
             RoslynHostImageDisposition disposition = ReadImageDisposition();
@@ -702,6 +754,15 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>Quit → wait → kill, delete the pidfile, and cancel a start in flight. Safe to call repeatedly.</summary>
         public void Shutdown(string reason)
         {
+            Shutdown(reason, _options.QuitWait);
+        }
+
+        /// <summary>
+        /// <see cref="Shutdown(string)"/> with its own quit wait. <see cref="TimeSpan.Zero"/> kills the host
+        /// without waiting for it to exit, which keeps the wait out of a domain reload.
+        /// </summary>
+        public void Shutdown(string reason, TimeSpan quitWait)
+        {
             IRoslynHostInstance? host;
             IRoslynHostInstance? spawning;
             Thread? starter;
@@ -734,7 +795,7 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 lock (_hostUse)
                 {
-                    host.Stop(_options.QuitWait);
+                    host.Stop(quitWait);
                 }
             }
 
@@ -921,6 +982,17 @@ namespace UnityCliBridge.Bridge.Editor
                 // A start that finishes on its own still writes before IsStarting clears, so a
                 // waiter cannot delete the host directory while status.json*.tmp is open.
                 WriteStatus();
+                try
+                {
+                    // After the status write, still holding the starter slot. Tests hold this
+                    // open; the restart must wait it out instead of dropping the launch.
+                    _options.HoldStartCloseOut?.Invoke();
+                }
+                catch (Exception)
+                {
+                    // Clearing the slot below is what lets the next start run.
+                }
+
                 lock (_gate)
                 {
                     _starter = null;

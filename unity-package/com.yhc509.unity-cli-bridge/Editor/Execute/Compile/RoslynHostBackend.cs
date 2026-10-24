@@ -9,7 +9,7 @@ namespace UnityCliBridge.Bridge.Editor
 {
     /// <summary>
     /// Compiles through the resident Roslyn host (bundled .NET runtime + bundled Roslyn), C# 9.
-    /// Used only when <c>UCB_EXECUTE_COMPILER=roslyn-host</c>. Anything that is not the user's own
+    /// Used when the settings use the host (<see cref="ExecuteCompilerSettings.UsesRoslynHost"/>). Anything that is not the user's own
     /// compile error (no toolchain, host still building, host not ready in time, crash, timeout, bad
     /// frame, foreign runtime, an emitted image Mono cannot load) is an infrastructure failure, so the
     /// selector continues at csc-shared when that step is in the chain, then CodeDOM. <c>host-building</c>

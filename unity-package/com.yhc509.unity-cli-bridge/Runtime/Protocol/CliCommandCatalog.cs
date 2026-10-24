@@ -911,7 +911,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "doctor",
                 "doctor",
-                "Shows registry, project detection, Unity path, bundled .NET/Roslyn/mcs toolchain, and live reachability diagnostics.",
+                "Shows registry, project detection, Unity path, the bundled .NET/Roslyn/mcs toolchain, Roslyn host and csc /shared status, and live reachability. The default compiler is the Roslyn host; set UCB_EXECUTE_COMPILER=codedom to turn it off. A status file whose editor pid or write time does not match the running editor is an old-session record with an empty active backend. A leftover compiler server from that session is still reported alive when the process is running. A compiler-server pid that is still being looked up is pending, not 0. A lookup that fails is retried and then reported unknown, still not 0.",
                 CliCommandGroup.Diagnostics,
                 protocolCommand: null,
                 canUseLocal: true,

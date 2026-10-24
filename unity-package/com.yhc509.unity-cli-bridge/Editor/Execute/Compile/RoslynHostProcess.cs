@@ -25,7 +25,10 @@ namespace UnityCliBridge.Bridge.Editor
 
         RoslynHostMessage Request(RoslynHostMessage request, string expectedType, TimeSpan timeout);
 
-        /// <summary>Sends <c>quit</c>, waits up to <paramref name="quitWait"/> for the exit, then kills.</summary>
+        /// <summary>
+        /// Sends <c>quit</c>, waits up to <paramref name="quitWait"/> for the exit, then kills. A zero
+        /// wait kills at once and does not wait for the exit (the host has nothing to flush).
+        /// </summary>
         void Stop(TimeSpan quitWait);
 
         void Kill();
@@ -150,10 +153,13 @@ namespace UnityCliBridge.Bridge.Editor
             Stopwatch spawn = Stopwatch.StartNew();
             try
             {
-                if (!process.Start())
+                ProcessSpawnGate.Run(() =>
                 {
-                    throw new InvalidOperationException("Process.Start returned false");
-                }
+                    if (!process.Start())
+                    {
+                        throw new InvalidOperationException("Process.Start returned false");
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -225,6 +231,13 @@ namespace UnityCliBridge.Bridge.Editor
                 return;
             }
 
+            if (quitWait <= TimeSpan.Zero)
+            {
+                KillCore(waitForExit: false);
+                Dispose();
+                return;
+            }
+
             try
             {
                 if (IsAlive)
@@ -274,7 +287,7 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
-        private void KillCore()
+        private void KillCore(bool waitForExit = true)
         {
             try
             {
@@ -286,6 +299,11 @@ namespace UnityCliBridge.Bridge.Editor
             catch (Exception)
             {
                 // Already gone.
+            }
+
+            if (!waitForExit)
+            {
+                return;
             }
 
             try

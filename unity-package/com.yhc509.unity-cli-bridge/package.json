@@ -1,7 +1,7 @@
 {
   "name": "com.yhc509.unity-cli-bridge",
   "displayName": "Unity CLI Bridge",
-  "version": "0.5.7",
+  "version": "0.6.0",
   "unity": "2021.3",
   "description": "Project-aware Unity Editor bridge for CLI control without manual servers or per-project ports.",
   "keywords": [

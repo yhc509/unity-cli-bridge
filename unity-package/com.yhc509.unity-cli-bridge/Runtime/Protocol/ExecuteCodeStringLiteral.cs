@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 
 [assembly: InternalsVisibleTo("UnityCli.Cli.Tests")]
+[assembly: InternalsVisibleTo("UnityCli.RoslynHost.Tests")]
 [assembly: InternalsVisibleTo("UnityCliBridge.Bridge.Editor")]
 
 namespace UnityCli.Protocol

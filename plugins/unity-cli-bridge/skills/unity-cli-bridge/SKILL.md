@@ -3,12 +3,12 @@ name: unity-cli-bridge
 description: "Use when the user wants to operate Unity through Unity CLI Bridge (`unity-cli`/`ucli`), including live command selection, asset commands, scene/prefab inspect/patch flows, QA test automation (Play Mode input simulation), console-log verification, or Unity CLI Bridge troubleshooting."
 ---
 
-<!-- unity-cli-bridge-package-version: 0.5.7 -->
+<!-- unity-cli-bridge-package-version: 0.6.0 -->
 <!-- unity-cli-bridge-skill-channel: plugin -->
 
 # Unity CLI Bridge
 
-This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bridge` 0.5.7. It is one skill for every project, so the open project may be on a different package version. Warn the user when the versions differ, then keep going.
+This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bridge` 0.6.0. It is one skill for every project, so the open project may be on a different package version. Warn the user when the versions differ, then keep going.
 
 `unity-cli status` does not include the package version. Use it to confirm the live editor (`projectName`, `projectRoot`, `unityVersion`, and the play/compile flags). Read `version` from the resolved package file: `Packages/com.yhc509.unity-cli-bridge/package.json` when the package is embedded, otherwise `Library/PackageCache/com.yhc509.unity-cli-bridge@*/package.json`. Ignore `Packages/packages-lock.json` for this check when the dependency is `git` or `file:` — that `version` is a URL or path.
 
@@ -26,7 +26,7 @@ This copy is the shared plugin skill for Unity package `com.yhc509.unity-cli-bri
 - Add `--output compact` whenever an LLM reads the output.
 - `play`, `stop`, `refresh`, and `compile` wait until Unity has settled, including the domain reload. **Do not `sleep` or poll `status` after them.** `--no-wait` returns at once.
 - Scripts: write the `.cs` file, run `refresh`, then `read-console --type error`. `--type error` includes Exception and Assert as well as Error; the entry `type` stays `Exception` or `Assert`.
-- `execute --force --code '...'` runs C# in the Editor. Return a value with `__pucResult = ...;`. Pass inputs with `--args '{json}'` and read the string `__pucArgsJson`. A snippet is compiled once per domain (`cacheHit: true`, `compileMs: 0` on repeats), so keep `--code` identical and vary `--args`. Long work: `--timeout <s>` (max 600) and check `__pucToken`. Snippets compile with the Editor's scripting defines, including `UNITY_ASSERTIONS`, so `Debug.Assert` and `Debug.LogAssertion` are kept.
+- `execute --force --code '...'` runs C# in the Editor. Return a value with `__pucResult = ...;`. Pass inputs with `--args '{json}'` and read the string `__pucArgsJson`. A snippet is compiled once per domain (`cacheHit: true`, `compileMs: 0` on repeats), so keep `--code` identical and vary `--args`. Long work: `--timeout <s>` (max 600) and check `__pucToken`. Snippets compile with the Editor's scripting defines, including `UNITY_ASSERTIONS`, so `Debug.Assert` and `Debug.LogAssertion` are kept. Snippets can use C# 9. They cannot use covariant returns, default interface methods, function pointers, or C# 10 or newer. Set `UCB_EXECUTE_COMPILER=codedom` and restart the editor to turn the Roslyn host off.
 - Inside `execute`, `Object` is `UnityEngine.Object`, so `Object.FindFirstObjectByType<T>()` compiles as written.
 - Destructive or overwriting commands need `--force`. The full list, backups, and dirty-scene rules: [operating-rules.md](references/operating-rules.md).
 - Before `scene patch` / `prefab patch`, inspect with `--with-values --omit-defaults` and copy paths and property names from it. Never guess `propertyPath`. Prefer `scene add-object`, `set-transform`, `assign-material` over a patch spec.

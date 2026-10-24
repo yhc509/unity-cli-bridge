@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
@@ -25,19 +26,22 @@ namespace UnityCliBridge.Bridge.Editor
     }
 
     /// <summary>
-    /// Editor hooks for the Roslyn host (plan §2.5). Does nothing at all unless
-    /// <c>UCB_EXECUTE_COMPILER=roslyn-host</c>, so the default editor keeps today's CodeDOM path
-    /// with no extra hook, thread, file, or process. With the opt-in:
+    /// Editor hooks for the Roslyn host (plan §2.5), for the settings that use it
+    /// (<see cref="ExecuteCompilerSettings.UsesRoslynHost"/>: <c>roslyn-host</c>, and <c>auto</c> when it
+    /// is the default). <c>csc-shared</c> does nothing here. <c>codedom</c> does not start a host; it
+    /// queues one short off status (Roslyn host and csc /shared) on a background thread when the domain
+    /// loads, so <c>doctor</c> does not keep the previous session's file. With the host:
     /// <list type="bullet">
-    /// <item><c>beforeAssemblyReload</c>: quit, wait ≤ 300 ms, kill, delete the pidfile — a reload
-    /// loses the managed <c>Process</c> but not necessarily its pipe, so the host would never see EOF.</item>
+    /// <item><c>beforeAssemblyReload</c>: kill without waiting for the exit, delete the pidfile — a
+    /// reload loses the managed <c>Process</c> but not necessarily its pipe, so the host would never
+    /// see EOF. The host has nothing to flush, and waiting for its exit lengthened every reload.</item>
     /// <item>After a reload (<c>afterAssemblyReload</c>, or the first editor tick if that never
     /// fires): orphan cleanup, then the prewarm policy's start, both off the main thread. The
     /// event fires while the editor is still finishing the reload, so the host overlaps that work
     /// instead of starting after it (6000.3: the first miss right after a reload went from ~476 ms
     /// to ~332 ms). Not <c>delayCall</c>, which rides the inspector-update cycle and starves in an
     /// unfocused GUI editor.</item>
-    /// <item><c>quitting</c>: quit, then kill.</item>
+    /// <item><c>quitting</c>: quit, wait ≤ 300 ms, then kill.</item>
     /// </list>
     /// Entering Play Mode without a domain reload fires none of these, so the host stays.
     /// </summary>
@@ -53,6 +57,12 @@ namespace UnityCliBridge.Bridge.Editor
         static RoslynHostEditorLifecycle()
         {
             _settings = ExecuteCompilerSettings.FromEnvironment();
+            if (_settings.Mode == ExecuteCompilerMode.CodeDom)
+            {
+                QueueCodedomOffStatus();
+                return;
+            }
+
             if (!_settings.UsesRoslynHost)
             {
                 return;
@@ -111,47 +121,81 @@ namespace UnityCliBridge.Bridge.Editor
             get { return _settings; }
         }
 
-        /// <summary>Null unless the host is opted into and set up in this (main) editor process.</summary>
+        /// <summary>Null unless the settings use the host and it is set up in this (main) editor process.</summary>
         public static RoslynHostSupervisor? Supervisor
         {
             get { return _supervisor; }
         }
 
         /// <summary>
-        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> with
-        /// <c>roslyn-host</c>, <c>csc-shared → codedom</c> with <c>csc-shared</c>, otherwise
-        /// <c>codedom</c> alone.
+        /// The backend chain for this domain: <c>roslyn-host → csc-shared → codedom</c> with the host
+        /// (<c>roslyn-host</c>, and <c>auto</c> when it is the default), <c>csc-shared → codedom</c> with
+        /// <c>csc-shared</c>, and <c>codedom</c> alone otherwise, or when this editor has no bundled runtime or
+        /// Roslyn (<see cref="CompileChainPlan"/>). An invalid setting is reported as the fallback reason.
+        /// Main thread, first compile of the domain: the toolchain probe is a few file checks.
         /// </summary>
         public static CompileBackendSelector CreateSelector()
         {
-            var codeDom = new CodeDomBackend();
+            CscSharedBackend? cscShared = CscSharedEditorLifecycle.Backend;
+            CompileChainPlan plan = CompileChainPlan.Create(
+                _settings,
+                _supervisor != null ? null : (_setupError ?? "host setup failed"),
+                cscShared != null ? null : CscSharedEditorLifecycle.SetupError,
+                () => CompileChainPlan.DescribeMissingToolchain(BundledToolchainLocator.Locate(EditorApplication.applicationContentsPath)));
             var preferred = new List<ICompileBackend>();
-            if (_supervisor != null)
+            bool useCscShared = plan.UseCscShared && cscShared != null;
+            if (plan.UseRoslynHost && _supervisor != null)
             {
-                preferred.Add(new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs));
+                ICompileBackend host = new MainThreadPreparedBackend(new RoslynHostBackend(_supervisor), EnsureMainThreadInputs);
+                // A server started while the host could not serve is stopped once the host serves again.
+                preferred.Add(useCscShared ? new RetiresCscSharedBackend(host, cscShared!.Server) : host);
             }
 
-            CscSharedBackend? cscShared = _settings.UsesCscShared ? CscSharedEditorLifecycle.Backend : null;
-            if (cscShared != null)
+            if (useCscShared)
             {
-                preferred.Add(cscShared);
+                preferred.Add(cscShared!);
             }
 
-            string? reason;
-            if (_settings.UsesRoslynHost && _supervisor == null)
-            {
-                reason = RoslynHostFailureCodes.StartFailed + ": " + (_setupError ?? "host setup failed");
-            }
-            else if (_settings.Mode == ExecuteCompilerMode.CscShared && cscShared == null)
-            {
-                reason = CscSharedFailureCodes.Unavailable + ": " + CscSharedEditorLifecycle.SetupError;
-            }
-            else
-            {
-                reason = preferred.Count == 0 ? _settings.CodeDomReason : null;
-            }
+            return new CompileBackendSelector(new CodeDomBackend(), preferred, plan.Reason, plan.SkippedBackend);
+        }
 
-            return new CompileBackendSelector(codeDom, preferred, reason);
+        /// <summary>
+        /// Once per domain, off the main thread. A secondary Unity process does not write. A failed
+        /// write leaves the previous file, which <c>doctor</c> labels as an old session.
+        /// </summary>
+        private static void QueueCodedomOffStatus()
+        {
+            try
+            {
+                if (BridgeHost.IsSecondaryUnityProcess())
+                {
+                    return;
+                }
+
+                string projectRoot = ProtocolConstants.GetCanonicalPath(Path.Combine(Application.dataPath, ".."));
+                int editorPid = Process.GetCurrentProcess().Id;
+                var thread = new Thread(() =>
+                {
+                    try
+                    {
+                        RoslynHostStatus.WriteCodedomOff(projectRoot, editorPid);
+                        CscSharedStatus.WriteCodedomOff(projectRoot, editorPid);
+                    }
+                    catch (Exception)
+                    {
+                        // Diagnostics only.
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "ucb-codedom-off-status",
+                };
+                thread.Start();
+            }
+            catch (Exception)
+            {
+                // The editor still runs. doctor labels whatever status file is left.
+            }
         }
 
         private static void OnDomainLoaded()
@@ -186,11 +230,13 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static void OnBeforeAssemblyReload()
         {
-            _supervisor?.Shutdown("domain-reload");
+            RoslynHostProcessInspector.CancelInFlightListings();
+            _supervisor?.Shutdown("domain-reload", TimeSpan.Zero);
         }
 
         private static void OnQuitting()
         {
+            RoslynHostProcessInspector.CancelInFlightListings();
             _supervisor?.Shutdown("editor-quit");
         }
 

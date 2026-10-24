@@ -10,16 +10,35 @@ namespace UnityCli.Protocol
     /// <summary>
     /// Snapshot of the editor's Roslyn compile host, written by the bridge to
     /// <c>Library/com.yhc509.unity-cli-bridge/roslyn-host/status.json</c> whenever the host changes
-    /// state, and read by <c>doctor</c> locally (no IPC round trip, no wire change). Only an editor
-    /// that opted into the host (<c>UCB_EXECUTE_COMPILER=roslyn-host</c>) writes it, so a missing
-    /// file means the default CodeDOM compiler. Unity-free and System.Text.Json-free so both sides
-    /// share it.
+    /// state, and read by <c>doctor</c> locally (no IPC round trip, no wire change). The host is the
+    /// default compiler, so a running editor writes this file. <c>UCB_EXECUTE_COMPILER=codedom</c>
+    /// writes one short off status when the domain loads and does not start the host. A missing file
+    /// is not a live session. Unity-free and System.Text.Json-free so both sides share it.
     /// </summary>
     public sealed class RoslynHostStatus
     {
         public const string FileName = "status.json";
         public const string PidFileName = "host.pid";
+        public const string OffState = "off";
         public const int CurrentSchema = 1;
+
+        /// <summary>
+        /// One short status for <c>UCB_EXECUTE_COMPILER=codedom</c>, written once per domain load so
+        /// <c>doctor</c> does not keep reading the previous session's file.
+        /// </summary>
+        public static void WriteCodedomOff(string projectRoot, int editorPid, DateTime? utcNow = null)
+        {
+            DateTime now = utcNow ?? DateTime.UtcNow;
+            new RoslynHostStatus
+            {
+                UpdatedUtc = FormatUtc(now),
+                EditorPid = editorPid,
+                ConfiguredCompiler = "codedom",
+                ActiveBackend = "codedom",
+                State = OffState,
+                Note = "UCB_EXECUTE_COMPILER=codedom turns the Roslyn host off.",
+            }.Write(GetStatusPath(projectRoot));
+        }
 
         /// <summary><c>Library/com.yhc509.unity-cli-bridge/roslyn-host</c> under <paramref name="projectRoot"/>.</summary>
         public static string GetHostDirectory(string projectRoot)

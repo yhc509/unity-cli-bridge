@@ -9,7 +9,7 @@ using UnityEditor;
 
 namespace UnityCliBridge.Bridge.Editor.Tests
 {
-    /// <summary>The backend chain with fake backends, the default (no opt-in) wiring, env scrubbing, and the mcs version under Mono.</summary>
+    /// <summary>The backend chain with fake backends, the default wiring, env scrubbing, and the mcs version under Mono.</summary>
     public sealed class CompileBackendSelectorTests
     {
         private const string Options = "/langversion:9 /define:UNITY_ASSERTIONS";
@@ -73,22 +73,39 @@ namespace UnityCliBridge.Bridge.Editor.Tests
         }
 
         [Test]
-        public void DefaultEditor_HasNoHostAndCompilesWithCodeDomOnly()
+        public void DefaultEditor_ChainFollowsTheDefault()
         {
-            Assume.That(Environment.GetEnvironmentVariable(ExecuteCompilerSettings.CompilerVariable), Is.Null.Or.Empty, "the editor was started with the opt-in");
+            Assume.That(Environment.GetEnvironmentVariable(ExecuteCompilerSettings.CompilerVariable), Is.Null.Or.Empty, "the editor was started with UCB_EXECUTE_COMPILER set");
+            BundledToolchainReport toolchain = BundledToolchainLocator.Locate(EditorApplication.applicationContentsPath);
+            Assume.That(toolchain.Complete, "this editor has no complete bundled toolchain");
 
             CompileBackendSelector selector = RoslynHostEditorLifecycle.CreateSelector();
 
-            Assert.That(RoslynHostEditorLifecycle.Supervisor, Is.Null);
-            Assert.That(RoslynHostEditorLifecycle.Settings.UsesRoslynHost, Is.False);
-            Assert.That(selector.Chain.Count, Is.EqualTo(1));
-            Assert.That(selector.Select().Id, Is.EqualTo("codedom"));
+            Assert.That(RoslynHostEditorLifecycle.Settings.UsesRoslynHost, Is.EqualTo(ExecuteCompilerSettings.AutoUsesRoslynHost));
+            if (ExecuteCompilerSettings.AutoUsesRoslynHost)
+            {
+                Assert.That(RoslynHostEditorLifecycle.Supervisor, Is.Not.Null);
+                Assert.That(CscSharedEditorLifecycle.Backend, Is.Not.Null);
+                Assert.That(selector.Chain.Count, Is.EqualTo(3));
+                Assert.That(selector.Chain[0].Id, Is.EqualTo("roslyn-host"));
+                Assert.That(selector.Chain[1].Id, Is.EqualTo("csc-shared"));
+                Assert.That(selector.Chain[2].Id, Is.EqualTo("codedom"));
+            }
+            else
+            {
+                Assert.That(RoslynHostEditorLifecycle.Supervisor, Is.Null);
+                Assert.That(CscSharedEditorLifecycle.Backend, Is.Null);
+                Assert.That(selector.Chain.Count, Is.EqualTo(1));
+                Assert.That(selector.Select().Id, Is.EqualTo("codedom"));
+            }
         }
 
         [Test]
-        public void DefaultEditor_ExecuteReportsCodeDomInTimings()
+        public void DefaultEditor_ExecuteReportsTheDefaultBackendInTimings()
         {
-            Assume.That(Environment.GetEnvironmentVariable(ExecuteCompilerSettings.CompilerVariable), Is.Null.Or.Empty, "the editor was started with the opt-in");
+            Assume.That(Environment.GetEnvironmentVariable(ExecuteCompilerSettings.CompilerVariable), Is.Null.Or.Empty, "the editor was started with UCB_EXECUTE_COMPILER set");
+            BundledToolchainReport toolchain = BundledToolchainLocator.Locate(EditorApplication.applicationContentsPath);
+            Assume.That(toolchain.Complete, "this editor has no complete bundled toolchain");
             var handler = new ExecuteCodeHandler();
             string args = ProtocolJson.Serialize(new ExecuteCodeArgs { code = "__pucResult = 6 * 7; // timings " + Guid.NewGuid().ToString("N"), force = true });
 
@@ -96,8 +113,17 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
             Assert.That(payload.result, Is.EqualTo("42"));
             Assert.That(payload.timings, Is.Not.Null);
-            Assert.That(payload.timings!.compiler, Is.EqualTo("codedom"));
-            Assert.That(payload.timings.compilerFallbackReason, Is.Empty);
+            if (ExecuteCompilerSettings.AutoUsesRoslynHost)
+            {
+                // The first call of a fresh project falls back while the host image is built in the
+                // background (host-building -> csc-shared); every other call is the host.
+                Assert.That(payload.timings!.compiler, Is.EqualTo("roslyn-host").Or.EqualTo("csc-shared"));
+            }
+            else
+            {
+                Assert.That(payload.timings!.compiler, Is.EqualTo("codedom"));
+                Assert.That(payload.timings.compilerFallbackReason, Is.Empty);
+            }
         }
 
         [Test]

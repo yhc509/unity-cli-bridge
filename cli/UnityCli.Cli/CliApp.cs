@@ -8,6 +8,23 @@ namespace UnityCli.Cli;
 
 public static class CliApp
 {
+    /// <summary>The editor process <c>doctor</c> is comparing a status file against.</summary>
+    internal readonly struct DoctorRunningEditor
+    {
+        public DoctorRunningEditor(int pid, DateTime startedUtc, bool hasStartTime = true)
+        {
+            Pid = pid;
+            StartedUtc = startedUtc;
+            HasStartTime = hasStartTime;
+        }
+
+        public int Pid { get; }
+
+        public DateTime StartedUtc { get; }
+
+        public bool HasStartTime { get; }
+    }
+
     public static Task<int> RunAsync(string[] args) => RunAsync(args, dispatcher: null);
 
     internal static async Task<int> RunAsync(string[] args, ICliVersionDispatcher? dispatcher)
@@ -343,6 +360,7 @@ public static class CliApp
         }
 
         var reportedTarget = respondedTarget ?? primaryTarget;
+        DoctorRunningEditor? runningEditor = TryResolveRunningEditor(reportedTarget);
 
         var data = new
         {
@@ -359,8 +377,8 @@ public static class CliApp
             liveErrorMessage,
             unityPath,
             bundledToolchain,
-            roslynHost = BuildRoslynHostData(projectRoot),
-            cscShared = BuildCscSharedData(projectRoot),
+            roslynHost = BuildRoslynHostData(projectRoot, runningEditor: runningEditor),
+            cscShared = BuildCscSharedData(projectRoot, runningEditor: runningEditor),
             instanceCount = registry.instances.Length,
         };
 
@@ -388,9 +406,14 @@ public static class CliApp
 
     /// <summary>
     /// The editor's Roslyn compile host, from the status file the bridge writes under the project's
-    /// Library when the host is opted into. Local file read only; liveness is a process-table probe.
+    /// Library. Local file read only; liveness is a process-table probe. A file whose editor pid or
+    /// write time does not match <paramref name="runningEditor"/> is an old-session record.
     /// </summary>
-    internal static object? BuildRoslynHostData(string? projectRoot, Func<int, bool>? isAlive = null, DateTime? nowUtc = null)
+    internal static object? BuildRoslynHostData(
+        string? projectRoot,
+        Func<int, bool>? isAlive = null,
+        DateTime? nowUtc = null,
+        DoctorRunningEditor? runningEditor = null)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
         {
@@ -405,14 +428,15 @@ public static class CliApp
             {
                 statusPath,
                 present = false,
-                activeBackend = "codedom",
-                note = "No Roslyn host status for this project: execute uses the default CodeDOM compiler. "
-                    + "Start the editor with UCB_EXECUTE_COMPILER=roslyn-host to opt in.",
+                activeBackend = "roslyn-host",
+                note = "No Roslyn host status for this project. The default compiler is the Roslyn host. "
+                    + "Set UCB_EXECUTE_COMPILER=codedom to turn it off.",
             };
         }
 
         Func<int, bool> alive = isAlive ?? IsProcessAlive;
-        bool editorAlive = status.EditorPid > 0 && alive(status.EditorPid);
+        bool current = IsCurrentCompilerSession(status.EditorPid, File.GetLastWriteTimeUtc(statusPath), runningEditor);
+        bool editorAlive = current && status.EditorPid > 0 && alive(status.EditorPid);
         bool hostAlive = status.Pid > 0 && alive(status.Pid);
         DateTime? started = RoslynHostStatus.ParseUtc(status.HostStartedUtc);
         double? uptimeSeconds = hostAlive && started.HasValue
@@ -422,18 +446,20 @@ public static class CliApp
         {
             statusPath,
             present = true,
-            stale = !editorAlive,
+            oldSession = !current,
+            stale = !current || !editorAlive,
             updatedUtc = status.UpdatedUtc,
             editorPid = status.EditorPid,
+            runningEditorPid = runningEditor is { Pid: > 0 } editor ? (int?)editor.Pid : null,
             editorAlive,
             configuredCompiler = status.ConfiguredCompiler,
-            activeBackend = status.ActiveBackend,
+            activeBackend = current ? status.ActiveBackend : string.Empty,
             prewarmPolicy = status.PrewarmPolicy,
             hostWaitMs = status.HostWaitMs,
             compileTimeoutMs = status.CompileTimeoutMs,
             idleExitMinutes = status.IdleExitMinutes,
             state = status.State,
-            note = status.Note,
+            note = current ? status.Note : OldCompilerSessionNote,
             pid = status.Pid,
             hostAlive,
             hostStartedUtc = status.HostStartedUtc,
@@ -463,14 +489,19 @@ public static class CliApp
 
     /// <summary>
     /// The editor's <c>csc /shared</c> fallback, from the status file the bridge writes under the
-    /// project's Library when <c>UCB_EXECUTE_COMPILER</c> is <c>roslyn-host</c> or <c>csc-shared</c>.
-    /// Local file read only; <c>serverAlive</c> looks for a compiler server on the recorded pipe in
-    /// the process table (by its recorded pid where command lines cannot be read).
+    /// project's Library. Local file read only; <c>serverAlive</c> looks for a compiler server on the
+    /// recorded pipe in the process table (by its recorded pid where command lines cannot be read),
+    /// including when the status file is an old session and the server is a leftover. A file whose
+    /// editor pid or write time does not match <paramref name="runningEditor"/> is an old-session
+    /// record. <c>serverPid</c> is null and <c>serverPidPending</c> is true while the editor is still
+    /// looking up the compiler-server pid. A lookup that times out stays pending and is retried; when
+    /// the retries are exhausted <c>serverPid</c> is null and <c>serverPidUnknown</c> is true, not 0.
     /// </summary>
     internal static object? BuildCscSharedData(
         string? projectRoot,
         Func<string, IReadOnlyList<int>>? findServers = null,
-        Func<int, bool>? isAlive = null)
+        Func<int, bool>? isAlive = null,
+        DoctorRunningEditor? runningEditor = null)
     {
         if (string.IsNullOrWhiteSpace(projectRoot))
         {
@@ -485,31 +516,43 @@ public static class CliApp
             {
                 statusPath,
                 present = false,
-                note = "No csc-shared status for this project: the csc /shared fallback is used only when the editor "
-                    + "runs with UCB_EXECUTE_COMPILER=roslyn-host or csc-shared.",
+                note = "No csc-shared status for this project. The default compiler is the Roslyn host, "
+                    + "which uses csc /shared as a fallback. Set UCB_EXECUTE_COMPILER=codedom to turn it off.",
             };
         }
 
         Func<int, bool> alive = isAlive ?? IsProcessAlive;
-        bool editorAlive = status.EditorPid > 0 && alive(status.EditorPid);
+        bool current = IsCurrentCompilerSession(status.EditorPid, File.GetLastWriteTimeUtc(statusPath), runningEditor);
+        bool editorAlive = current && status.EditorPid > 0 && alive(status.EditorPid);
         IReadOnlyList<int> servers = string.IsNullOrEmpty(status.PipeName)
             ? Array.Empty<int>()
             : (findServers ?? FindCscSharedServers)(status.PipeName);
-        bool serverAlive = servers.Count > 0
-            || (OperatingSystem.IsWindows() && findServers is null && status.ServerPid > 0 && alive(status.ServerPid));
+        // An old session still reports a leftover compiler server. On Windows the process table
+        // listing is empty, so the recorded pid is what proves the orphan is running.
+        bool recordedPidCounts = findServers is null && OperatingSystem.IsWindows();
+        bool serverAlive = IsCscServerProcessAlive(servers, status.ServerPid, recordedPidCounts, alive);
+        bool serverPidPending = current && status.ServerPidPending && servers.Count == 0;
+        bool serverPidUnknown = status.ServerPidUnknown && servers.Count == 0 && !serverPidPending;
+        int? serverPid = servers.Count > 0
+            ? servers[0]
+            : (serverPidPending || serverPidUnknown ? null : (int?)status.ServerPid);
         return new
         {
             statusPath,
             present = true,
-            stale = !editorAlive,
+            oldSession = !current,
+            stale = !current || !editorAlive,
             updatedUtc = status.UpdatedUtc,
             editorPid = status.EditorPid,
+            runningEditorPid = runningEditor is { Pid: > 0 } editor ? (int?)editor.Pid : null,
             editorAlive,
             configuredCompiler = status.ConfiguredCompiler,
             pipeName = status.PipeName,
             state = status.State,
-            note = status.Note,
-            serverPid = servers.Count > 0 ? servers[0] : status.ServerPid,
+            note = current ? status.Note : OldCompilerSessionNote,
+            serverPid,
+            serverPidPending,
+            serverPidUnknown,
             serverAlive,
             dotnetPath = status.DotnetPath,
             cscPath = status.CscPath,
@@ -521,6 +564,81 @@ public static class CliApp
             lastError = status.LastError,
             lastErrorUtc = status.LastErrorUtc,
         };
+    }
+
+    /// <summary>
+    /// True when a compiler server from the status file is still running. A pipe listing wins.
+    /// <paramref name="recordedPidCounts"/> is the Windows doctor path, which cannot list command
+    /// lines cheaply and uses <paramref name="recordedPid"/> instead. An old session uses the same check.
+    /// </summary>
+    internal static bool IsCscServerProcessAlive(
+        IReadOnlyList<int> listedServers,
+        int recordedPid,
+        bool recordedPidCounts,
+        Func<int, bool> isAlive)
+    {
+        if (listedServers.Count > 0)
+        {
+            return true;
+        }
+
+        return recordedPidCounts && recordedPid > 0 && isAlive(recordedPid);
+    }
+
+    internal const string OldCompilerSessionNote =
+        "Old-session record. This status.json does not match the running editor (editor pid or file write time).";
+
+    /// <summary>How far a status file's write time may sit before the editor process start and still be this session.</summary>
+    private const double CompilerStatusSessionSkewSeconds = 2;
+
+    /// <summary>
+    /// True when <paramref name="statusEditorPid"/> is the running editor and the status file was
+    /// written after that process started. No running editor, a different pid, or an older write is
+    /// a previous session (including a reused pid).
+    /// </summary>
+    internal static bool IsCurrentCompilerSession(int statusEditorPid, DateTime statusWrittenUtc, DoctorRunningEditor? runningEditor)
+    {
+        if (runningEditor is null || runningEditor.Value.Pid <= 0 || statusEditorPid != runningEditor.Value.Pid)
+        {
+            return false;
+        }
+
+        if (!runningEditor.Value.HasStartTime)
+        {
+            return true;
+        }
+
+        DateTime started = runningEditor.Value.StartedUtc.Kind == DateTimeKind.Utc
+            ? runningEditor.Value.StartedUtc
+            : runningEditor.Value.StartedUtc.ToUniversalTime();
+        DateTime written = statusWrittenUtc.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(statusWrittenUtc, DateTimeKind.Utc)
+            : statusWrittenUtc.ToUniversalTime();
+        return written >= started.AddSeconds(-CompilerStatusSessionSkewSeconds);
+    }
+
+    private static DoctorRunningEditor? TryResolveRunningEditor(InstanceRecord? record)
+    {
+        if (record == null || record.editorProcessId <= 0 || !IsProcessAlive(record.editorProcessId))
+        {
+            return null;
+        }
+
+        DateTime? started = TryProcessStartUtc(record.editorProcessId);
+        return new DoctorRunningEditor(record.editorProcessId, started ?? default, started.HasValue);
+    }
+
+    private static DateTime? TryProcessStartUtc(int pid)
+    {
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.StartTime.ToUniversalTime();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>Pids of compiler servers on <paramref name="pipeName"/> (macOS/Linux <c>ps</c>; empty on Windows or on error).</summary>

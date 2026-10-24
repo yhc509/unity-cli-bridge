@@ -367,6 +367,43 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void CrashWhileTheStartIsClosingOut_StillRestarts()
+    {
+        // The start thread keeps the starter slot through the status write. A compile can take the
+        // host before that slot is cleared, and the crash restart used to no-op, so later compiles
+        // reported the old failure and never launched (CI: one launch instead of three).
+        var release = new ManualResetEventSlim(false);
+        var entered = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new ScriptedHostInstance(ScriptedHostInstance.Replies(
+            _ => throw new RoslynHostException(RoslynHostFailureCodes.Timeout, "no reply from the host within 10000 ms"))));
+        using RoslynHostSupervisor supervisor = Supervisor(launcher, configure: options =>
+        {
+            options.HoldStartCloseOut = () =>
+            {
+                entered.Set();
+                release.Wait(TimeSpan.FromSeconds(3));
+            };
+        });
+        var backend = new RoslynHostBackend(supervisor);
+
+        supervisor.BeginStart("preload");
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(3)));
+        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(3)));
+
+        CompileResult? result = null;
+        var compile = new Thread(() => result = backend.TryCompile(Request("return 1;"))) { IsBackground = true };
+        compile.Start();
+        bool finishedWhileHeld = compile.Join(TimeSpan.FromMilliseconds(200));
+        release.Set();
+
+        Assert.False(finishedWhileHeld, "the restart returned while the start thread was still closing out");
+        Assert.True(compile.Join(TimeSpan.FromSeconds(5)));
+        Assert.NotNull(result);
+        Assert.StartsWith("timeout: ", result!.FailureDetail);
+        Assert.True(launcher.Launches >= 2, "launches=" + launcher.Launches);
+    }
+
+    [Fact]
     public void CrashesSpreadOverMoreThanSixtySeconds_DoNotDisable()
     {
         var clock = new MutableClock();
@@ -807,6 +844,29 @@ public sealed class RoslynHostBackendTests : IDisposable
     }
 
     [Fact]
+    public void Shutdown_PassesItsQuitWaitToTheHost_AndDefaultsToTheOptions()
+    {
+        var reload = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
+        using (RoslynHostSupervisor supervisor = Supervisor(new FakeLauncher(_ => reload)))
+        {
+            Assert.NotNull(supervisor.AcquireReady(10000, out _));
+            supervisor.Shutdown("domain-reload", TimeSpan.Zero);
+            Assert.False(File.Exists(supervisor.PidFilePath));
+            Assert.Equal("stopped", RoslynHostStatus.TryRead(supervisor.StatusFilePath)!.State);
+        }
+
+        var quit = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
+        using (RoslynHostSupervisor supervisor = Supervisor(new FakeLauncher(_ => quit)))
+        {
+            Assert.NotNull(supervisor.AcquireReady(10000, out _));
+            supervisor.Shutdown("editor-quit");
+        }
+
+        Assert.Equal(new[] { TimeSpan.Zero }, reload.QuitWaits);
+        Assert.Equal(new[] { new RoslynHostSupervisorOptions().QuitWait }, quit.QuitWaits);
+    }
+
+    [Fact]
     public void Shutdown_DuringAStart_KillsTheSpawnedHost()
     {
         var instance = new ScriptedHostInstance(ScriptedHostInstance.Replies(request => new RoslynHostCompileResult { Id = request.Id }.ToMessage()));
@@ -920,6 +980,26 @@ public sealed class RoslynHostBackendTests : IDisposable
 
         Assert.Equal(new[] { true }, launcher.PrewarmFlags);
         Assert.Equal(new[] { false }, lazy.PrewarmFlags);
+    }
+
+    [Fact]
+    public void OnDomainLoaded_ReturnsWithoutWaitingForTheImageProbe()
+    {
+        var session = new MemoryRoslynHostSessionStore();
+        session.SetString(RoslynHostSupervisor.SessionKeyExecuteUsed, "1");
+        using var probe = new ManualResetEventSlim(false);
+        var launcher = new FakeLauncher(_ => new InProcessHostInstance()) { ProbeGate = probe };
+        using RoslynHostSupervisor supervisor = Supervisor(launcher, session: session);
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        supervisor.OnDomainLoaded();
+        watch.Stop();
+
+        Assert.True(watch.ElapsedMilliseconds < 1000, $"OnDomainLoaded took {watch.ElapsedMilliseconds} ms");
+        Assert.Equal(0, launcher.Launches);
+        probe.Set();
+        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, launcher.Launches);
     }
 
     [Fact]
