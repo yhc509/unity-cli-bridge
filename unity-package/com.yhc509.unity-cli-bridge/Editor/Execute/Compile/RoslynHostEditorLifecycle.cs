@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEngine;
@@ -27,8 +28,9 @@ namespace UnityCliBridge.Bridge.Editor
     /// <summary>
     /// Editor hooks for the Roslyn host (plan §2.5), for the settings that use it
     /// (<see cref="ExecuteCompilerSettings.UsesRoslynHost"/>: <c>roslyn-host</c>, and <c>auto</c> when it
-    /// is the default). Otherwise (always with <c>codedom</c> or <c>csc-shared</c>) this does nothing at
-    /// all: no extra hook, thread, file, or process. With the host:
+    /// is the default). <c>csc-shared</c> does nothing here. <c>codedom</c> does not start a host; it
+    /// queues one short off status (Roslyn host and csc /shared) on a background thread when the domain
+    /// loads, so <c>doctor</c> does not keep the previous session's file. With the host:
     /// <list type="bullet">
     /// <item><c>beforeAssemblyReload</c>: kill without waiting for the exit, delete the pidfile — a
     /// reload loses the managed <c>Process</c> but not necessarily its pipe, so the host would never
@@ -55,6 +57,12 @@ namespace UnityCliBridge.Bridge.Editor
         static RoslynHostEditorLifecycle()
         {
             _settings = ExecuteCompilerSettings.FromEnvironment();
+            if (_settings.Mode == ExecuteCompilerMode.CodeDom)
+            {
+                QueueCodedomOffStatus();
+                return;
+            }
+
             if (!_settings.UsesRoslynHost)
             {
                 return;
@@ -149,6 +157,45 @@ namespace UnityCliBridge.Bridge.Editor
             }
 
             return new CompileBackendSelector(new CodeDomBackend(), preferred, plan.Reason, plan.SkippedBackend);
+        }
+
+        /// <summary>
+        /// Once per domain, off the main thread. A secondary Unity process does not write. A failed
+        /// write leaves the previous file, which <c>doctor</c> labels as an old session.
+        /// </summary>
+        private static void QueueCodedomOffStatus()
+        {
+            try
+            {
+                if (BridgeHost.IsSecondaryUnityProcess())
+                {
+                    return;
+                }
+
+                string projectRoot = ProtocolConstants.GetCanonicalPath(Path.Combine(Application.dataPath, ".."));
+                int editorPid = Process.GetCurrentProcess().Id;
+                var thread = new Thread(() =>
+                {
+                    try
+                    {
+                        RoslynHostStatus.WriteCodedomOff(projectRoot, editorPid);
+                        CscSharedStatus.WriteCodedomOff(projectRoot, editorPid);
+                    }
+                    catch (Exception)
+                    {
+                        // Diagnostics only.
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "ucb-codedom-off-status",
+                };
+                thread.Start();
+            }
+            catch (Exception)
+            {
+                // The editor still runs. doctor labels whatever status file is left.
+            }
         }
 
         private static void OnDomainLoaded()

@@ -352,15 +352,22 @@ public sealed class CscSharedServerTests
             Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the pid lookup");
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "pid lookup did not start");
             Assert.Equal(0, server.Snapshot().ServerPid);
+            Assert.True(server.Snapshot().ServerPidPending);
+            string pendingJson = File.ReadAllText(server.StatusPath);
+            Assert.Contains("\"serverPid\":null", pendingJson);
+            Assert.Contains("\"serverPidPending\":true", pendingJson);
+            Assert.DoesNotContain("\"serverPid\":0", pendingJson);
         }
         finally
         {
             release.Set();
         }
 
-        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432, 2000), "lookup did not record the server");
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432 && !server.Snapshot().ServerPidPending, 2000), "lookup did not record the server");
         Assert.Equal(432, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
-        Assert.Equal(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        CscSharedStatus recorded = CscSharedStatus.TryRead(server.StatusPath)!;
+        Assert.Equal(432, recorded.ServerPid);
+        Assert.False(recorded.ServerPidPending);
     }
 
     [Fact]
@@ -405,16 +412,24 @@ public sealed class CscSharedServerTests
             Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(750), "compile waited " + watch.ElapsedMilliseconds + " ms for the replacement lookup");
             Assert.True(started.Wait(TimeSpan.FromSeconds(2)), "replacement lookup did not start");
             Assert.NotEqual(2244, server.Snapshot().ServerPid);
+            Assert.True(server.Snapshot().ServerPidPending);
+            Assert.True(WaitFor(() =>
+            {
+                string json = File.ReadAllText(server.StatusPath);
+                return json.Contains("\"serverPid\":null") && json.Contains("\"serverPidPending\":true");
+            }, 2000), "pending status was not written");
         }
         finally
         {
             release.Set();
         }
 
-        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 2244, 2000), "replacement server was not recorded");
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 2244 && !server.Snapshot().ServerPidPending, 2000), "replacement server was not recorded");
         Assert.Equal(2244, CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPid);
-        Assert.Equal(2244, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
-        Assert.NotEqual(432, CscSharedStatus.TryRead(server.StatusPath)!.ServerPid);
+        CscSharedStatus replaced = CscSharedStatus.TryRead(server.StatusPath)!;
+        Assert.Equal(2244, replaced.ServerPid);
+        Assert.False(replaced.ServerPidPending);
+        Assert.NotEqual(432, replaced.ServerPid);
     }
 
     [Fact]

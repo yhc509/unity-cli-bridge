@@ -50,7 +50,8 @@ namespace UnityCliBridge.Bridge.Editor
     /// </code>
     /// <c>roslyn-host</c> uses the Roslyn host (chain roslyn-host → csc-shared → codedom),
     /// <c>csc-shared</c> starts at csc /shared (csc-shared → codedom), and <c>codedom</c> is the kill
-    /// switch: mcs only, with no host, compiler server, thread, or status file. <c>auto</c> (also unset
+    /// switch: mcs only, with no host, compiler server, or thread. It writes one short off status when
+    /// the domain loads so <c>doctor</c> does not keep the previous session's file. <c>auto</c> (also unset
     /// or invalid) is whatever <see cref="AutoUsesRoslynHost"/> says. Invalid values fall back to
     /// <c>auto</c> and are reported in <see cref="Warnings"/>.
     /// Unity-free so the parsing is unit-tested.

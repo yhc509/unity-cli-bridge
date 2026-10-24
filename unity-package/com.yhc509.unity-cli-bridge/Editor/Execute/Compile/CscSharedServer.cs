@@ -431,6 +431,9 @@ namespace UnityCliBridge.Bridge.Editor
         private int _discoveryAttempts;
         private bool _discovering;
 
+        /// <summary>True from the moment a lookup starts until its status file has the result. Not the same as <see cref="_discovering"/>, which stays set until that write finishes.</summary>
+        private bool _serverPidPending;
+
         /// <summary>Bumped by every csc run; a retire that sees it change leaves the new server alone.</summary>
         private int _runGeneration;
 
@@ -666,6 +669,7 @@ namespace UnityCliBridge.Bridge.Editor
             lock (_gate)
             {
                 _serverPid = 0;
+                _serverPidPending = false;
                 _serverStartTicks = null;
                 _recordSynced = false;
                 _discoveryAttempts = 0;
@@ -787,6 +791,7 @@ namespace UnityCliBridge.Bridge.Editor
                             _usedThisDomain = false;
                             _recordWritten = false;
                             _serverPid = 0;
+                            _serverPidPending = false;
                             _serverStartTicks = null;
                             _recordSynced = false;
                             _discoveryAttempts = 0;
@@ -952,6 +957,7 @@ namespace UnityCliBridge.Bridge.Editor
                     State = _state,
                     Note = _note,
                     ServerPid = _serverPid,
+                    ServerPidPending = _serverPidPending,
                     DotnetPath = _toolchain?.DotnetPath ?? string.Empty,
                     CscPath = _toolchain?.CscPath ?? string.Empty,
                     RoslynVersion = _toolchain?.RoslynVersion ?? string.Empty,
@@ -1140,6 +1146,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     _discovering = true;
                     _discoveryAttempts++;
+                    _serverPidPending = true;
                 }
             }
 
@@ -1151,7 +1158,7 @@ namespace UnityCliBridge.Bridge.Editor
             if (discover)
             {
                 // The compile never waits. This thread rewrites server.json and status.json when
-                // the server shows up, including the first status that went out with serverPid 0.
+                // the server shows up, including the first status that went out with serverPid null.
                 new Thread(DiscoverServer) { IsBackground = true, Name = "ucb-csc-shared-pid" }.Start();
             }
 
@@ -1241,9 +1248,9 @@ namespace UnityCliBridge.Bridge.Editor
                 pid = 0;
             }
 
-            bool update;
             try
             {
+                bool update;
                 lock (_gate)
                 {
                     update = pid > 0 && _usedThisDomain;
@@ -1254,16 +1261,28 @@ namespace UnityCliBridge.Bridge.Editor
                     }
                 }
 
-                if (!update)
+                if (update)
                 {
-                    return;
+                    TryPersistServerPid(pid);
                 }
-
-                TryPersistServerPid(pid);
-                WriteStatus();
             }
             finally
             {
+                bool stillThisDomain;
+                lock (_gate)
+                {
+                    // Cleared before the write, so the file gets the real pid (or null-free 0) and
+                    // serverPidPending false. _discovering stays set until that write returns, so a
+                    // waiter that sees discovery finished also sees the file.
+                    _serverPidPending = false;
+                    stillThisDomain = _usedThisDomain;
+                }
+
+                if (stillThisDomain)
+                {
+                    WriteStatus();
+                }
+
                 lock (_gate)
                 {
                     _discovering = false;
