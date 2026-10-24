@@ -231,6 +231,7 @@ namespace UnityCliBridge.Bridge.Editor
         private static CancellationTokenSource DomainListings = new CancellationTokenSource();
         private static int CancelDepth;
         private static int ListingScopeDepth;
+        private static int ListingReservations;
 
         /// <summary>How many process listings are past start. The reload hook waits until this drops.</summary>
         internal static int InFlightListingCount
@@ -252,7 +253,7 @@ namespace UnityCliBridge.Bridge.Editor
         {
             lock (StartGate)
             {
-                while (ListingScopeDepth > 0 || InFlightListings.Count > 0)
+                while (ListingScopeDepth > 0 || InFlightListings.Count > 0 || ListingReservations > 0)
                 {
                     Monitor.Wait(StartGate, 20);
                 }
@@ -566,19 +567,20 @@ namespace UnityCliBridge.Bridge.Editor
             CancellationTokenSource? linked = null;
             IDisposable? listingPipes = null;
             var stdout = new StringBuilder();
+            bool reserved = false;
             try
             {
-                if (!WaitToStart(cancellation, ignoreListingScope))
+                // Snapshot the domain token and take a reservation under StartGate. The reservation
+                // is visible to AcquireListingScope before Process.Start returns, so a parallel test
+                // cannot cancel this generation in the gap before the process is in InFlightListings.
+                // A real reload still cancels it: CancelInFlightListings does not take that lock.
+                if (!TryReserveListing(cancellation, ignoreListingScope, linkDomainCancellation, out linked, out CancellationToken token))
                 {
                     cancelled = true;
                     return null;
                 }
 
-                CancellationTokenSource domain = Volatile.Read(ref DomainListings);
-                linked = linkDomainCancellation
-                    ? CancellationTokenSource.CreateLinkedTokenSource(domain.Token, cancellation)
-                    : CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-                CancellationToken token = linked.Token;
+                reserved = true;
                 var startInfo = new ProcessStartInfo(fileName, arguments)
                 {
                     UseShellExecute = false,
@@ -616,6 +618,12 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     InFlightListings.Add(child);
                     registered = true;
+                    if (reserved)
+                    {
+                        ListingReservations--;
+                        reserved = false;
+                    }
+
                     Monitor.PulseAll(StartGate);
                 }
 
@@ -699,6 +707,16 @@ namespace UnityCliBridge.Bridge.Editor
             finally
             {
                 registration.Dispose();
+                if (reserved)
+                {
+                    lock (StartGate)
+                    {
+                        ListingReservations--;
+                        reserved = false;
+                        Monitor.PulseAll(StartGate);
+                    }
+                }
+
                 if (process != null)
                 {
                     if (cancelled || failed || !HasExited(process))
@@ -920,8 +938,15 @@ namespace UnityCliBridge.Bridge.Editor
             return text;
         }
 
-        private static bool WaitToStart(CancellationToken cancellation, bool ignoreListingScope)
+        private static bool TryReserveListing(
+            CancellationToken cancellation,
+            bool ignoreListingScope,
+            bool linkDomainCancellation,
+            out CancellationTokenSource? linked,
+            out CancellationToken token)
         {
+            linked = null;
+            token = cancellation;
             var watch = Stopwatch.StartNew();
             lock (StartGate)
             {
@@ -934,6 +959,13 @@ namespace UnityCliBridge.Bridge.Editor
 
                     Monitor.Wait(StartGate, 20);
                 }
+
+                CancellationTokenSource domain = DomainListings;
+                linked = linkDomainCancellation
+                    ? CancellationTokenSource.CreateLinkedTokenSource(domain.Token, cancellation)
+                    : CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                token = linked.Token;
+                ListingReservations++;
             }
 
             return true;
