@@ -200,8 +200,22 @@ namespace UnityCliBridge.Bridge.Editor
     /// sits in native pipe I/O, Mono cannot abort it, and the editor hangs in
     /// <c>Begin MonoManager ReloadAssembly</c>. Listings therefore read asynchronously, with a bounded
     /// wait, and <see cref="CancelInFlightListings"/> (the reload and quit hooks) kills the child and
-    /// closes the pipes so the read returns before the domain unloads.
+    /// closes the pipes so the read returns before the domain unloads. Completion is the child
+    /// exiting, not stdout EOF: a host or csc process started while the redirected pipe exists can
+    /// inherit the write end, so EOF never arrives after powershell has already exited.
     /// </summary>
+    /// <summary>
+    /// The process listing did not finish (timeout, non-zero exit, or no output). An empty list
+    /// would mean "no compiler server", so callers must not record pid 0.
+    /// </summary>
+    internal sealed class ProcessListingFailedException : Exception
+    {
+        public ProcessListingFailedException()
+            : base("process listing did not finish")
+        {
+        }
+    }
+
     internal static class RoslynHostProcessInspector
     {
         private const int ListingTimeoutMs = 10000;
@@ -308,7 +322,7 @@ namespace UnityCliBridge.Bridge.Editor
                 }
             }
 
-            string? output = Capture("/bin/ps", "-o pid= -p " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, out bool _);
+            string? output = Capture("/bin/ps", "-o pid= -p " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, 0, out bool _, out bool _);
             return output != null && output.Trim() == pid.ToString(CultureInfo.InvariantCulture);
         }
 
@@ -336,8 +350,10 @@ namespace UnityCliBridge.Bridge.Editor
                     CancellationToken.None,
                     true,
                     false,
+                    0,
+                    out bool _,
                     out bool _)
-                : Capture("/bin/ps", "-ww -o command= -p " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, out bool _);
+                : Capture("/bin/ps", "-ww -o command= -p " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, 0, out bool _, out bool _);
             if (output == null)
             {
                 return null;
@@ -349,7 +365,10 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <summary>
         /// Every process whose command line contains <paramref name="needle"/> (ordinal, ignoring case):
-        /// <c>ps</c> on macOS/Linux, CIM through PowerShell on Windows. Empty when the table cannot be read.
+        /// <c>ps</c> on macOS/Linux, CIM through PowerShell on Windows. Throws
+        /// <see cref="OperationCanceledException"/> when a reload or quit cancels the listing, and
+        /// <see cref="ProcessListingFailedException"/> when the listing times out or exits without a
+        /// table. That failure is not an empty table: an empty result would mean no compiler server.
         /// </summary>
         public static List<KeyValuePair<int, string>> FindByCommandLine(string needle)
         {
@@ -370,11 +389,20 @@ namespace UnityCliBridge.Bridge.Editor
                     CancellationToken.None,
                     true,
                     false,
-                    out cancelled)
-                : Capture("/bin/ps", "-axww -o pid= -o command=", null, CancellationToken.None, true, false, out cancelled);
+                    0,
+                    out cancelled,
+                    out bool failed)
+                : Capture("/bin/ps", "-axww -o pid= -o command=", null, CancellationToken.None, true, false, 0, out cancelled, out failed);
             if (cancelled)
             {
                 throw new OperationCanceledException();
+            }
+
+            // A timeout or a child that exited without writing is not an empty process table.
+            // Callers that treat empty as "the server is already gone" would record pid 0.
+            if (failed || string.IsNullOrWhiteSpace(output))
+            {
+                throw new ProcessListingFailedException();
             }
 
             return ParseCommandLineListing(output, needle);
@@ -486,14 +514,33 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>Test entry. <paramref name="ignoreListingScope"/> lets the sleeper run inside <see cref="AcquireListingScope"/>.</summary>
         internal static string? RunListing(string fileName, string arguments, CancellationToken cancellation, bool linkDomainCancellation, bool ignoreListingScope)
         {
-            return Capture(fileName, arguments, null, cancellation, linkDomainCancellation, ignoreListingScope, out bool _);
+            return RunListing(fileName, arguments, cancellation, linkDomainCancellation, ignoreListingScope, 0, out bool _, out bool _);
+        }
+
+        /// <summary>
+        /// Test entry with the timeout and the failure flag. <paramref name="timeoutMs"/> 0 uses
+        /// <see cref="ListingTimeoutMs"/>. <paramref name="failed"/> is a timeout or a child that
+        /// exited without producing output, which is not an empty process table.
+        /// </summary>
+        internal static string? RunListing(
+            string fileName,
+            string arguments,
+            CancellationToken cancellation,
+            bool linkDomainCancellation,
+            bool ignoreListingScope,
+            int timeoutMs,
+            out bool cancelled,
+            out bool failed)
+        {
+            return Capture(fileName, arguments, null, cancellation, linkDomainCancellation, ignoreListingScope, timeoutMs, out cancelled, out failed);
         }
 
         /// <summary>
         /// Runs <paramref name="fileName"/> and returns its stdout. The calling thread waits on the
-        /// line event, not inside a pipe read. <paramref name="cancelled"/> is true when a reload,
-        /// quit, or <paramref name="cancellation"/> stopped the read; the output is then null so a
-        /// caller cannot mistake the interrupt for an empty process table.
+        /// child exiting or the line event, not inside a pipe read. <paramref name="cancelled"/> is
+        /// true when a reload, quit, or <paramref name="cancellation"/> stopped the read.
+        /// <paramref name="failed"/> is true when the child did not exit in time or exited without
+        /// output. Both leave the output null so a caller cannot mistake them for an empty process table.
         /// </summary>
         private static string? Capture(
             string fileName,
@@ -502,14 +549,20 @@ namespace UnityCliBridge.Bridge.Editor
             CancellationToken cancellation,
             bool linkDomainCancellation,
             bool ignoreListingScope,
-            out bool cancelled)
+            int timeoutMs,
+            out bool cancelled,
+            out bool failed)
         {
             cancelled = false;
+            failed = false;
             Process? process = null;
             bool registered = false;
             CancellationTokenRegistration registration = default;
             CancellationTokenSource? linked = null;
             ManualResetEvent? done = null;
+            IDisposable? listingPipes = null;
+            var stdout = new StringBuilder();
+            var stdoutGate = new object();
             try
             {
                 if (!WaitToStart(cancellation, ignoreListingScope))
@@ -535,12 +588,19 @@ namespace UnityCliBridge.Bridge.Editor
                     startInfo.StandardOutputEncoding = standardOutputEncoding;
                 }
 
+                // Held until the pipes are closed in finally, so a host or csc spawn cannot inherit them.
+                listingPipes = ProcessSpawnGate.EnterListing();
                 process = Process.Start(startInfo);
                 if (process == null)
                 {
+                    failed = true;
                     return null;
                 }
 
+                // Do not touch StandardOutput or StandardError here. Reading either property builds
+                // the synchronous reader, and BeginOutputReadLine then throws. The write end is not
+                // on those streams anyway. The spawn gate keeps a later child from inheriting it,
+                // and the exit check below does not wait for EOF if one still leaks.
                 Process child = process;
                 lock (StartGate)
                 {
@@ -555,7 +615,6 @@ namespace UnityCliBridge.Bridge.Editor
                     return null;
                 }
 
-                var stdout = new StringBuilder();
                 done = new ManualResetEvent(false);
                 child.OutputDataReceived += (_, e) =>
                 {
@@ -567,8 +626,11 @@ namespace UnityCliBridge.Bridge.Editor
                             return;
                         }
 
-                        stdout.Append(e.Data);
-                        stdout.Append('\n');
+                        lock (stdoutGate)
+                        {
+                            stdout.Append(e.Data);
+                            stdout.Append('\n');
+                        }
                     }
                     catch (ObjectDisposedException)
                     {
@@ -578,6 +640,7 @@ namespace UnityCliBridge.Bridge.Editor
                 child.BeginOutputReadLine();
                 child.BeginErrorReadLine();
                 registration = token.Register(() => StopListingProcess(child));
+                int limitMs = timeoutMs > 0 ? timeoutMs : ListingTimeoutMs;
                 var watch = Stopwatch.StartNew();
                 while (!done.WaitOne(50))
                 {
@@ -587,8 +650,17 @@ namespace UnityCliBridge.Bridge.Editor
                         return null;
                     }
 
-                    if (watch.ElapsedMilliseconds >= ListingTimeoutMs)
+                    if (HasExited(child))
                     {
+                        // The child is done. EOF may never arrive when something else inherited the
+                        // stdout write end, so take the lines already read instead of waiting for it.
+                        DrainAfterExit(done, ExitDrainMs);
+                        return FinishExitedChild(child, stdout, stdoutGate, out failed);
+                    }
+
+                    if (watch.ElapsedMilliseconds >= limitMs)
+                    {
+                        failed = true;
                         return null;
                     }
                 }
@@ -600,7 +672,7 @@ namespace UnityCliBridge.Bridge.Editor
                 }
 
                 var exit = Stopwatch.StartNew();
-                while (!process.WaitForExit(50))
+                while (!HasExited(child))
                 {
                     if (token.IsCancellationRequested)
                     {
@@ -610,17 +682,24 @@ namespace UnityCliBridge.Bridge.Editor
 
                     if (exit.ElapsedMilliseconds >= 2000)
                     {
+                        failed = true;
                         return null;
                     }
+
+                    Thread.Sleep(20);
                 }
 
-                return stdout.ToString();
+                return FinishExitedChild(child, stdout, stdoutGate, out failed);
             }
             catch (Exception)
             {
                 if (cancellation.IsCancellationRequested || (linked != null && linked.IsCancellationRequested))
                 {
                     cancelled = true;
+                }
+                else
+                {
+                    failed = true;
                 }
 
                 return null;
@@ -630,9 +709,15 @@ namespace UnityCliBridge.Bridge.Editor
                 registration.Dispose();
                 if (process != null)
                 {
-                    if (cancelled || !HasExited(process))
+                    if (cancelled || failed || !HasExited(process))
                     {
                         StopListingProcess(process);
+                    }
+                    else
+                    {
+                        // The child has exited. A leaked stdout write end means EOF never arrives,
+                        // and Dispose waits on that reader, so close the pipes first.
+                        CloseListingPipes(process);
                     }
 
                     if (registered)
@@ -658,6 +743,8 @@ namespace UnityCliBridge.Bridge.Editor
                     }
                 }
 
+                // After the pipes are closed, so the next spawn cannot inherit them.
+                listingPipes?.Dispose();
                 linked?.Dispose();
                 if (done != null)
                 {
@@ -668,6 +755,53 @@ namespace UnityCliBridge.Bridge.Editor
                     catch (Exception)
                     {
                     }
+                }
+            }
+        }
+
+        /// <summary>How long to keep reading after the child exits, in case the last lines are still queued.</summary>
+        private const int ExitDrainMs = 500;
+
+        private static string? FinishExitedChild(Process child, StringBuilder stdout, object stdoutGate, out bool failed)
+        {
+            failed = false;
+            int code;
+            try
+            {
+                // The timed overload does not wait for stdout EOF. The parameterless one would,
+                // and a leaked write handle would sit here forever.
+                child.WaitForExit(200);
+                code = child.ExitCode;
+            }
+            catch (Exception)
+            {
+                failed = true;
+                return null;
+            }
+
+            string text;
+            lock (stdoutGate)
+            {
+                text = stdout.ToString();
+            }
+
+            if (code != 0 || string.IsNullOrWhiteSpace(text))
+            {
+                failed = true;
+                return null;
+            }
+
+            return text;
+        }
+
+        private static void DrainAfterExit(ManualResetEvent done, int drainMs)
+        {
+            var watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < drainMs)
+            {
+                if (done.WaitOne(20))
+                {
+                    return;
                 }
             }
         }
@@ -705,6 +839,15 @@ namespace UnityCliBridge.Bridge.Editor
             {
             }
 
+            CloseListingPipes(process);
+        }
+
+        /// <summary>
+        /// Ends the async readers. Closing is what unblocks them when a leaked write end keeps EOF
+        /// from arriving; <see cref="Process.Dispose"/> would otherwise wait on that read.
+        /// </summary>
+        private static void CloseListingPipes(Process process)
+        {
             try
             {
                 process.CancelOutputRead();
@@ -776,7 +919,7 @@ namespace UnityCliBridge.Bridge.Editor
 
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Capture("/bin/kill", "-KILL " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, out bool _);
+                Capture("/bin/kill", "-KILL " + pid.ToString(CultureInfo.InvariantCulture), null, CancellationToken.None, true, false, 0, out bool _, out bool _);
                 return;
             }
 

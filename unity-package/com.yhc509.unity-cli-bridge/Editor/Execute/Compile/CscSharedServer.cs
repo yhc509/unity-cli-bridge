@@ -81,11 +81,14 @@ namespace UnityCliBridge.Bridge.Editor
 
         public int EditorPid { get; set; }
 
-        /// <summary>The server's pid once found. JSON null while <see cref="ServerPidPending"/>; the parsed value is then 0.</summary>
+        /// <summary>The server's pid once found. JSON null while <see cref="ServerPidPending"/> or <see cref="ServerPidUnknown"/>; the parsed value is then 0.</summary>
         public int ServerPid { get; set; }
 
         /// <summary>True while the pid lookup has not finished. The file then has <c>serverPid</c> null, never 0.</summary>
         public bool ServerPidPending { get; set; }
+
+        /// <summary>True when the lookup failed and retries are exhausted. <c>serverPid</c> is null, never 0.</summary>
+        public bool ServerPidUnknown { get; set; }
 
         public string StartedUtc { get; set; } = string.Empty;
 
@@ -95,8 +98,9 @@ namespace UnityCliBridge.Bridge.Editor
             {
                 ["pipe"] = Pipe,
                 ["editorPid"] = EditorPid,
-                ["serverPid"] = ServerPidPending ? null : (object?)ServerPid,
+                ["serverPid"] = ServerPidPending || ServerPidUnknown ? null : (object?)ServerPid,
                 ["serverPidPending"] = ServerPidPending,
+                ["serverPidUnknown"] = ServerPidUnknown,
                 ["startedUtc"] = StartedUtc,
             };
             return RoslynHostJson.Serialize(obj) + "\n";
@@ -116,6 +120,7 @@ namespace UnityCliBridge.Bridge.Editor
                     Pipe = RoslynHostJson.GetString(h, "pipe") ?? string.Empty,
                     EditorPid = (int)RoslynHostJson.GetInt64(h, "editorPid", 0, 0, int.MaxValue),
                     ServerPidPending = RoslynHostJson.GetBool(h, "serverPidPending"),
+                    ServerPidUnknown = RoslynHostJson.GetBool(h, "serverPidUnknown"),
                     ServerPid = (int)RoslynHostJson.GetInt64(h, "serverPid", 0, 0, int.MaxValue),
                     StartedUtc = RoslynHostJson.GetString(h, "startedUtc") ?? string.Empty,
                 };
@@ -344,10 +349,13 @@ namespace UnityCliBridge.Bridge.Editor
             startInfo.RedirectStandardInput = false;
             startInfo.RedirectStandardOutput = false;
             startInfo.RedirectStandardError = false;
-            using (Process.Start(startInfo))
+            ProcessSpawnGate.Run(() =>
             {
-                // Not waited for: the client exits on its own once the server has its request.
-            }
+                using (Process.Start(startInfo))
+                {
+                    // Not waited for: the client exits on its own once the server has its request.
+                }
+            });
         }
     }
 
@@ -380,6 +388,9 @@ namespace UnityCliBridge.Bridge.Editor
 
         /// <summary>How long a retire waits for a server pid lookup still in flight before it lists the processes itself.</summary>
         public TimeSpan RetireDiscoveryWait { get; set; } = TimeSpan.FromSeconds(10);
+
+        /// <summary>Delay before retrying a pid lookup that timed out. Doubled each retry, capped at 2 s. Tests use 0.</summary>
+        public int DiscoveryRetryDelayMs { get; set; } = 200;
 
         public bool WriteStatusFile { get; set; } = true;
 
@@ -439,6 +450,9 @@ namespace UnityCliBridge.Bridge.Editor
         /// <summary>True from the moment a lookup starts until its status file has the result. Not the same as <see cref="_discovering"/>, which stays set until that write finishes.</summary>
         private bool _serverPidPending;
 
+        /// <summary>True after a lookup's retries are exhausted without a table. The files keep <c>serverPid</c> null.</summary>
+        private bool _serverPidUnknown;
+
         /// <summary>Bumped by every csc run; a retire that sees it change leaves the new server alone.</summary>
         private int _runGeneration;
 
@@ -458,6 +472,9 @@ namespace UnityCliBridge.Bridge.Editor
         /// first scans. A dead recorded pid starts a fresh budget for the server that replaces it.
         /// </summary>
         private const int MaxDiscoveryAttempts = 8;
+
+        /// <summary>How many times one lookup retries a listing that timed out or produced no table.</summary>
+        internal const int DiscoveryAttemptsPerLookup = 3;
 
         private string _state = "idle";
         private string _note = string.Empty;
@@ -558,12 +575,27 @@ namespace UnityCliBridge.Bridge.Editor
                 return new List<int>();
             }
 
+            IReadOnlyList<KeyValuePair<int, string>> listed;
+            try
+            {
+                listed = _processes.ListServers();
+            }
+            catch (OperationCanceledException)
+            {
+                return new List<int>();
+            }
+            catch (ProcessListingFailedException)
+            {
+                // A failed listing is not "no server". Leave the record so the next load can try again.
+                return new List<int>();
+            }
+
             List<int> targets = CscSharedOrphanPolicy.SelectTargets(
                 record,
                 _options.ProjectHash,
                 _options.EditorPid,
                 _processes.IsAlive,
-                _processes.ListServers(),
+                listed,
                 out string reason);
             if (targets.Count == 0 && reason.StartsWith("editor pid ", StringComparison.Ordinal))
             {
@@ -902,6 +934,12 @@ namespace UnityCliBridge.Bridge.Editor
                     // like the server was already gone and the retire would delete the record.
                     return false;
                 }
+                catch (ProcessListingFailedException)
+                {
+                    // Timed out or the child exited without a table. Same as a cancel: do not delete
+                    // the record, and do not treat the server as already gone.
+                    return false;
+                }
 
                 if (!proceed())
                 {
@@ -1019,6 +1057,7 @@ namespace UnityCliBridge.Bridge.Editor
                     Note = _note,
                     ServerPid = _serverPid,
                     ServerPidPending = _serverPidPending,
+                    ServerPidUnknown = _serverPidUnknown,
                     DotnetPath = _toolchain?.DotnetPath ?? string.Empty,
                     CscPath = _toolchain?.CscPath ?? string.Empty,
                     RoslynVersion = _toolchain?.RoslynVersion ?? string.Empty,
@@ -1217,6 +1256,7 @@ namespace UnityCliBridge.Bridge.Editor
                     _discovering = true;
                     _discoveryAttempts++;
                     _serverPidPending = true;
+                    _serverPidUnknown = false;
                 }
             }
 
@@ -1304,32 +1344,75 @@ namespace UnityCliBridge.Bridge.Editor
             int pid = 0;
             long? startTicks = null;
             bool cancelled = false;
+            bool failed = false;
             try
             {
                 // The record is written before this lookup. Until it finishes, serverPid is null
                 // and serverPidPending is true — the same rule as status.json, never 0.
-                TryWriteRecordState(pending: true, pid: 0);
-                foreach (KeyValuePair<int, string> process in _processes.ListServers())
+                TryWriteRecordState(pending: true, pid: 0, unknown: false);
+                int delayMs = Math.Max(0, _options.DiscoveryRetryDelayMs);
+                for (int attempt = 0; attempt < DiscoveryAttemptsPerLookup; attempt++)
                 {
-                    if (CscSharedPipe.IsServerCommandLine(process.Value, PipeName))
+                    if (attempt > 0)
                     {
-                        pid = process.Key;
+                        if (!WaitForRetry(delayMs))
+                        {
+                            cancelled = true;
+                            break;
+                        }
+
+                        if (delayMs > 0)
+                        {
+                            delayMs = Math.Min(delayMs * 2, 2000);
+                        }
+
+                        // Still pending. A failed attempt must not have published 0.
+                        TryWriteRecordState(pending: true, pid: 0, unknown: false);
+                    }
+
+                    if (DomainUnloadRequested)
+                    {
+                        cancelled = true;
                         break;
                     }
-                }
 
-                if (pid > 0)
-                {
-                    startTicks = _processes.ReadStartTicks(pid);
+                    try
+                    {
+                        pid = 0;
+                        foreach (KeyValuePair<int, string> process in _processes.ListServers())
+                        {
+                            if (CscSharedPipe.IsServerCommandLine(process.Value, PipeName))
+                            {
+                                pid = process.Key;
+                                break;
+                            }
+                        }
+
+                        failed = false;
+                        if (pid > 0)
+                        {
+                            startTicks = _processes.ReadStartTicks(pid);
+                        }
+
+                        break;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancelled = true;
+                        pid = 0;
+                        break;
+                    }
+                    catch (Exception)
+                    {
+                        // Timeout or a listing that exited without a table. Retry; do not record 0.
+                        failed = true;
+                        pid = 0;
+                    }
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                cancelled = true;
-                pid = 0;
             }
             catch (Exception)
             {
+                failed = true;
                 pid = 0;
             }
 
@@ -1343,6 +1426,15 @@ namespace UnityCliBridge.Bridge.Editor
                     {
                         _serverPid = pid;
                         _serverStartTicks = startTicks;
+                        _serverPidUnknown = false;
+                    }
+                    else if (failed && !cancelled && _usedThisDomain && !_unloadRequested)
+                    {
+                        _serverPidUnknown = true;
+                        if (_note.Length == 0)
+                        {
+                            _note = "server pid unknown";
+                        }
                     }
                 }
 
@@ -1350,7 +1442,7 @@ namespace UnityCliBridge.Bridge.Editor
                 {
                     TryPersistServerPid(pid);
                 }
-                else if (!cancelled)
+                else if (failed && !cancelled)
                 {
                     bool live;
                     lock (_gate)
@@ -1360,8 +1452,22 @@ namespace UnityCliBridge.Bridge.Editor
 
                     if (live)
                     {
-                        // The lookup finished and found nothing. Pending is over, so 0 is the result.
-                        TryWriteRecordState(pending: false, pid: 0);
+                        // Retries are exhausted. Unknown is null, never 0.
+                        TryWriteRecordState(pending: false, pid: 0, unknown: true);
+                    }
+                }
+                else if (!cancelled && !failed)
+                {
+                    bool live;
+                    lock (_gate)
+                    {
+                        live = _usedThisDomain && !_unloadRequested;
+                    }
+
+                    if (live)
+                    {
+                        // The listing finished and found nothing. Pending is over, so 0 is the result.
+                        TryWriteRecordState(pending: false, pid: 0, unknown: false);
                     }
                 }
             }
@@ -1370,11 +1476,16 @@ namespace UnityCliBridge.Bridge.Editor
                 bool stillThisDomain;
                 lock (_gate)
                 {
-                    // Cleared before the write, so the file gets the real pid (or 0 once the lookup
-                    // finished) and serverPidPending false. _discovering stays set until that write
-                    // returns, so a waiter that sees discovery finished also sees the file. A reload
-                    // that cancelled the listing does not overwrite the stop status.
+                    // Cleared before the write, so the file gets the real pid (or null when the
+                    // lookup failed) and serverPidPending false. _discovering stays set until that
+                    // write returns, so a waiter that sees discovery finished also sees the file.
+                    // A reload that cancelled the listing does not overwrite the stop status.
                     _serverPidPending = false;
+                    if (pid > 0)
+                    {
+                        _serverPidUnknown = false;
+                    }
+
                     stillThisDomain = _usedThisDomain && !_unloadRequested && !cancelled;
                 }
 
@@ -1390,11 +1501,28 @@ namespace UnityCliBridge.Bridge.Editor
             }
         }
 
+        /// <summary>False when a reload or quit starts during the backoff.</summary>
+        private bool WaitForRetry(int delayMs)
+        {
+            var watch = Stopwatch.StartNew();
+            while (watch.ElapsedMilliseconds < delayMs)
+            {
+                if (DomainUnloadRequested)
+                {
+                    return false;
+                }
+
+                Thread.Sleep(20);
+            }
+
+            return !DomainUnloadRequested;
+        }
+
         /// <summary>
-        /// Rewrites <c>server.json</c>. Pending writes <c>serverPid</c> null, never 0. A failed write
-        /// leaves the previous file; the next compile tries again.
+        /// Rewrites <c>server.json</c>. Pending and unknown write <c>serverPid</c> null, never 0.
+        /// A failed write leaves the previous file; the next compile tries again.
         /// </summary>
-        private void TryWriteRecordState(bool pending, int pid)
+        private void TryWriteRecordState(bool pending, int pid, bool unknown)
         {
             try
             {
@@ -1411,8 +1539,9 @@ namespace UnityCliBridge.Bridge.Editor
                     record.EditorPid = _options.EditorPid;
                 }
 
-                record.ServerPid = pending ? 0 : pid;
+                record.ServerPid = pending || unknown ? 0 : pid;
                 record.ServerPidPending = pending;
+                record.ServerPidUnknown = unknown && !pending;
                 record.Write(RecordPath);
             }
             catch (Exception)
@@ -1459,6 +1588,7 @@ namespace UnityCliBridge.Bridge.Editor
 
                     record.ServerPid = pid;
                     record.ServerPidPending = false;
+                    record.ServerPidUnknown = false;
                     record.Write(RecordPath);
                     CscSharedServerRecord? readBack = CscSharedServerRecord.TryRead(RecordPath);
                     if (readBack != null && readBack.ServerPid == pid)

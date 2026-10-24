@@ -494,7 +494,8 @@ public static class CliApp
     /// including when the status file is an old session and the server is a leftover. A file whose
     /// editor pid or write time does not match <paramref name="runningEditor"/> is an old-session
     /// record. <c>serverPid</c> is null and <c>serverPidPending</c> is true while the editor is still
-    /// looking up the compiler-server pid.
+    /// looking up the compiler-server pid. A lookup that times out stays pending and is retried; when
+    /// the retries are exhausted <c>serverPid</c> is null and <c>serverPidUnknown</c> is true, not 0.
     /// </summary>
     internal static object? BuildCscSharedData(
         string? projectRoot,
@@ -531,9 +532,10 @@ public static class CliApp
         bool recordedPidCounts = findServers is null && OperatingSystem.IsWindows();
         bool serverAlive = IsCscServerProcessAlive(servers, status.ServerPid, recordedPidCounts, alive);
         bool serverPidPending = current && status.ServerPidPending && servers.Count == 0;
+        bool serverPidUnknown = status.ServerPidUnknown && servers.Count == 0 && !serverPidPending;
         int? serverPid = servers.Count > 0
             ? servers[0]
-            : (serverPidPending ? null : status.ServerPid);
+            : (serverPidPending || serverPidUnknown ? null : (int?)status.ServerPid);
         return new
         {
             statusPath,
@@ -550,6 +552,7 @@ public static class CliApp
             note = current ? status.Note : OldCompilerSessionNote,
             serverPid,
             serverPidPending,
+            serverPidUnknown,
             serverAlive,
             dotnetPath = status.DotnetPath,
             cscPath = status.CscPath,

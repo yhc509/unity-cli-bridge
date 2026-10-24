@@ -170,7 +170,7 @@ namespace UnityCli.Protocol
         /// <summary>Why the server was stopped (<c>domain-reload</c>, <c>editor-quit</c>).</summary>
         public string Note { get; set; } = string.Empty;
 
-        /// <summary>The compiler server's pid once found (0 = not known). JSON null while <see cref="ServerPidPending"/>.</summary>
+        /// <summary>The compiler server's pid once found (0 = not known). JSON null while <see cref="ServerPidPending"/> or <see cref="ServerPidUnknown"/>.</summary>
         public int ServerPid { get; set; }
 
         /// <summary>
@@ -178,6 +178,12 @@ namespace UnityCli.Protocol
         /// <c>serverPid</c> null instead of 0. False once the pid is known, or when there is no lookup.
         /// </summary>
         public bool ServerPidPending { get; set; }
+
+        /// <summary>
+        /// True when the lookup timed out or failed and the retries are exhausted. <c>serverPid</c> is
+        /// null, not 0. False when the pid is known, still pending, or no lookup has run.
+        /// </summary>
+        public bool ServerPidUnknown { get; set; }
 
         public string DotnetPath { get; set; } = string.Empty;
 
@@ -211,8 +217,9 @@ namespace UnityCli.Protocol
                 ["pipeName"] = PipeName,
                 ["state"] = State,
                 ["note"] = Note,
-                ["serverPid"] = ServerPidPending ? null : (object?)ServerPid,
+                ["serverPid"] = ServerPidPending || ServerPidUnknown ? null : (object?)ServerPid,
                 ["serverPidPending"] = ServerPidPending,
+                ["serverPidUnknown"] = ServerPidUnknown,
                 ["dotnetPath"] = DotnetPath,
                 ["cscPath"] = CscPath,
                 ["roslynVersion"] = RoslynVersion,
@@ -254,6 +261,7 @@ namespace UnityCli.Protocol
                 State = RoslynHostJson.GetString(h, "state") ?? string.Empty,
                 Note = RoslynHostJson.GetString(h, "note") ?? string.Empty,
                 ServerPidPending = RoslynHostJson.GetBool(h, "serverPidPending"),
+                ServerPidUnknown = RoslynHostJson.GetBool(h, "serverPidUnknown"),
                 ServerPid = (int)RoslynHostJson.GetInt64(h, "serverPid", 0, 0, int.MaxValue),
                 DotnetPath = RoslynHostJson.GetString(h, "dotnetPath") ?? string.Empty,
                 CscPath = RoslynHostJson.GetString(h, "cscPath") ?? string.Empty,

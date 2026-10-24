@@ -196,6 +196,39 @@ public sealed class CscSharedStatusTests
         Assert.False(data.GetProperty("oldSession").GetBoolean());
         Assert.Equal(JsonValueKind.Null, data.GetProperty("serverPid").ValueKind);
         Assert.True(data.GetProperty("serverPidPending").GetBoolean());
+        Assert.False(data.GetProperty("serverPidUnknown").GetBoolean());
+        Assert.False(data.GetProperty("serverAlive").GetBoolean());
+    }
+
+    [Fact]
+    public void Doctor_UnknownServerPid_IsNullNotZero()
+    {
+        using var temp = new TempDirectory();
+        new CscSharedStatus
+        {
+            EditorPid = 500,
+            PipeName = "ucb-d6887d89-abc123",
+            State = "ready",
+            Note = "server pid unknown",
+            ServerPidUnknown = true,
+        }.Write(CscSharedStatus.GetStatusPath(temp.Path));
+
+        string json = File.ReadAllText(CscSharedStatus.GetStatusPath(temp.Path));
+        Assert.Contains("\"serverPid\":null", json);
+        Assert.Contains("\"serverPidUnknown\":true", json);
+        Assert.DoesNotContain("\"serverPid\":0", json);
+
+        JsonElement data = Serialize(UnityCli.Cli.CliApp.BuildCscSharedData(
+            temp.Path,
+            _ => Array.Empty<int>(),
+            pid => pid == 500,
+            RunningEditor(500)));
+
+        Assert.False(data.GetProperty("oldSession").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, data.GetProperty("serverPid").ValueKind);
+        Assert.False(data.GetProperty("serverPidPending").GetBoolean());
+        Assert.True(data.GetProperty("serverPidUnknown").GetBoolean());
+        Assert.Equal("server pid unknown", data.GetProperty("note").GetString());
         Assert.False(data.GetProperty("serverAlive").GetBoolean());
     }
 

@@ -153,10 +153,13 @@ namespace UnityCliBridge.Bridge.Editor
             Stopwatch spawn = Stopwatch.StartNew();
             try
             {
-                if (!process.Start())
+                ProcessSpawnGate.Run(() =>
                 {
-                    throw new InvalidOperationException("Process.Start returned false");
-                }
+                    if (!process.Start())
+                    {
+                        throw new InvalidOperationException("Process.Start returned false");
+                    }
+                });
             }
             catch (Exception ex)
             {

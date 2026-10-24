@@ -443,6 +443,84 @@ public sealed class CscSharedServerTests
     }
 
     [Fact]
+    public void ServerPid_ListingFailure_RetriesAndDoesNotWriteZero()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        int failuresLeft = 2;
+        var seenRecords = new List<string>();
+        var seenStatus = new List<string>();
+        table.Listing = () =>
+        {
+            seenRecords.Add(File.ReadAllText(Path.Combine(temp.Path, "server.json")));
+            string statusPath = Path.Combine(temp.Path, "status.json");
+            if (File.Exists(statusPath))
+            {
+                seenStatus.Add(File.ReadAllText(statusPath));
+            }
+
+            if (Interlocked.Decrement(ref failuresLeft) >= 0)
+            {
+                throw new ProcessListingFailedException();
+            }
+
+            return new[] { Proc(432, "/U/dotnet exec /U/VBCSCompiler.dll -pipename:" + Pipe) };
+        };
+        CscSharedServerOptions options = Options(temp.Path);
+        options.DiscoveryRetryDelayMs = 0;
+        var server = new CscSharedServer(options, table);
+        Invoke(server, "EnsureRecord");
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+
+        Assert.True(WaitFor(() => !Discovering(server) && server.Snapshot().ServerPid == 432 && !server.Snapshot().ServerPidPending, 2000), "lookup did not recover");
+        Assert.Equal(3, table.ListCalls);
+        Assert.NotEmpty(seenRecords);
+        foreach (string json in seenRecords.Concat(seenStatus))
+        {
+            Assert.Contains("\"serverPid\":null", json);
+            Assert.Contains("\"serverPidPending\":true", json);
+            Assert.DoesNotContain("\"serverPid\":0", json);
+        }
+        Assert.False(server.Snapshot().ServerPidUnknown);
+        string finalStatus = File.ReadAllText(server.StatusPath);
+        string finalRecord = File.ReadAllText(server.RecordPath);
+        Assert.Contains("\"serverPid\":432", finalStatus);
+        Assert.Contains("\"serverPid\":432", finalRecord);
+        Assert.DoesNotContain("\"serverPid\":0", finalStatus);
+        Assert.DoesNotContain("\"serverPid\":0", finalRecord);
+        Assert.False(CscSharedStatus.TryRead(server.StatusPath)!.ServerPidUnknown);
+        Assert.False(CscSharedServerRecord.TryRead(server.RecordPath)!.ServerPidUnknown);
+    }
+
+    [Fact]
+    public void ServerPid_ListingFailure_Exhausted_IsUnknownNotZero()
+    {
+        using var temp = new TempDir();
+        var table = new FakeProcessTable();
+        table.Listing = () => throw new ProcessListingFailedException();
+        CscSharedServerOptions options = Options(temp.Path);
+        options.DiscoveryRetryDelayMs = 0;
+        var server = new CscSharedServer(options, table);
+        Invoke(server, "EnsureRecord");
+        Invoke(server, "Succeed", new CscSharedRun(), Stopwatch.StartNew());
+
+        Assert.True(WaitFor(() => !Discovering(server), 2000), "discovery did not finish");
+        Assert.Equal(CscSharedServer.DiscoveryAttemptsPerLookup, table.ListCalls);
+        Assert.Equal(0, server.Snapshot().ServerPid);
+        Assert.False(server.Snapshot().ServerPidPending);
+        Assert.True(server.Snapshot().ServerPidUnknown);
+        Assert.Equal("server pid unknown", server.Snapshot().Note);
+        foreach (string path in new[] { server.StatusPath, server.RecordPath })
+        {
+            string json = File.ReadAllText(path);
+            Assert.Contains("\"serverPid\":null", json);
+            Assert.Contains("\"serverPidUnknown\":true", json);
+            Assert.Contains("\"serverPidPending\":false", json);
+            Assert.DoesNotContain("\"serverPid\":0", json);
+        }
+    }
+
+    [Fact]
     public void ToolchainFromReport_NeedsTheCompilerServer()
     {
         using var temp = new TempDir();
