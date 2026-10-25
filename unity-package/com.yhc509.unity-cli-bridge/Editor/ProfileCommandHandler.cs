@@ -179,6 +179,12 @@ namespace UnityCliBridge.Bridge.Editor
             int frames = args.frames > 0
                 ? Math.Min(args.frames, ProtocolConstants.MaxProfileStatsFrames)
                 : ProtocolConstants.DefaultProfileStatsFrames;
+            if (args.markers != null && args.markers.Length > 0)
+            {
+                StartMarkerStatsDeferred(args, frames, completion, projectHash, requestId);
+                return;
+            }
+
             string preset = string.IsNullOrWhiteSpace(args.preset) ? "all" : args.preset.ToLowerInvariant();
             ProfileCounterSpec[] specs = ResolvePreset(preset);
 

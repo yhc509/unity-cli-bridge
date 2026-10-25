@@ -404,6 +404,40 @@ public static partial class CliArgumentParser
             throw new CliUsageException("profile capture start cannot take both --frames and --duration.");
         }
 
+        if (parsed.Kind == CommandKind.ProfileCaptureStart)
+        {
+            if (parsed.ProfileWait && !parsed.ProfileFrames.HasValue && !parsed.ProfileDuration.HasValue)
+            {
+                throw new CliUsageException("profile capture start --wait needs --frames <n> or --duration <seconds>, so the capture can finish on its own.");
+            }
+
+            if (parsed.ProfileWaitTimeoutSeconds.HasValue && !parsed.ProfileWait)
+            {
+                throw new CliUsageException("profile capture start --timeout only applies with --wait.");
+            }
+
+            if (parsed.ProfileWaitTimeoutSeconds is int waitTimeout
+                && waitTimeout > ProtocolConstants.MaxProfileCaptureWaitSeconds)
+            {
+                throw new CliUsageException(
+                    $"--timeout must be an integer from 1 to {ProtocolConstants.MaxProfileCaptureWaitSeconds} seconds.");
+            }
+        }
+
+        if (parsed.Kind == CommandKind.ProfileStats && parsed.ProfileStatsMarkers.Count > 0)
+        {
+            if (!string.IsNullOrEmpty(parsed.ProfilePreset))
+            {
+                throw new CliUsageException("profile stats takes either --marker or --preset, not both.");
+            }
+
+            if (parsed.ProfileStatsMarkers.Count > ProtocolConstants.MaxProfileStatsMarkers)
+            {
+                throw new CliUsageException(
+                    $"profile stats accepts at most {ProtocolConstants.MaxProfileStatsMarkers} --marker options.");
+            }
+        }
+
         if (parsed.Kind == CommandKind.ProfileAnalyze)
         {
             int queryCount = (string.IsNullOrEmpty(parsed.ProfileAnalyzeMarker) ? 0 : 1)

@@ -33,6 +33,80 @@ public class ProfileParserTests
     }
 
     [Fact]
+    public void Parse_ProfileCaptureStart_WaitAndTimeout()
+    {
+        var parsed = CliArgumentParser.Parse(["profile", "capture", "start", "--frames", "120", "--wait", "--timeout", "90"]);
+        Assert.Equal(CommandKind.ProfileCaptureStart, parsed.Kind);
+        Assert.True(parsed.ProfileWait);
+        Assert.Equal(90, parsed.ProfileWaitTimeoutSeconds);
+        Assert.Equal(120, parsed.ProfileFrames);
+        Assert.DoesNotContain("wait", parsed.ToEnvelope().argumentsJson, StringComparison.OrdinalIgnoreCase);
+
+        var withDuration = CliArgumentParser.Parse(["profile", "capture", "start", "--duration", "5", "--wait"]);
+        Assert.True(withDuration.ProfileWait);
+        Assert.Null(withDuration.ProfileWaitTimeoutSeconds);
+    }
+
+    [Fact]
+    public void Parse_ProfileCaptureStart_WaitNeedsFramesOrDuration()
+    {
+        var error = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["profile", "capture", "start", "--wait"]));
+        Assert.Contains("--frames", error.Message);
+    }
+
+    [Fact]
+    public void Parse_ProfileCaptureStart_TimeoutNeedsWaitAndAPositiveBoundedValue()
+    {
+        Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["profile", "capture", "start", "--frames", "10", "--timeout", "30"]));
+        Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["profile", "capture", "start", "--frames", "10", "--wait", "--timeout", "0"]));
+        Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["profile", "capture", "start", "--frames", "10", "--wait", "--timeout", "3601"]));
+    }
+
+    [Fact]
+    public void Parse_ProfileStats_RepeatableMarker()
+    {
+        var parsed = CliArgumentParser.Parse(
+            ["profile", "stats", "--marker", "ThreatField.Update", "--marker", "MinimapView.Update", "--frames", "90"]);
+        Assert.Equal(new[] { "ThreatField.Update", "MinimapView.Update" }, parsed.ProfileStatsMarkers);
+        Assert.Equal(90, parsed.ProfileFrames);
+        var args = System.Text.Json.JsonSerializer.Deserialize<ProfileStatsArgs>(parsed.ToEnvelope().argumentsJson, ProtocolJson.Default)!;
+        Assert.Equal(new[] { "ThreatField.Update", "MinimapView.Update" }, args.markers);
+        Assert.Equal(90, args.frames);
+    }
+
+    [Fact]
+    public void Parse_ProfileStats_MarkerAndPresetAreExclusive()
+    {
+        Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["profile", "stats", "--marker", "ThreatField.Update", "--preset", "gc"]));
+    }
+
+    [Fact]
+    public void Parse_ProfileStats_RejectsTooManyMarkers()
+    {
+        var tokens = new List<string> { "profile", "stats" };
+        for (int index = 0; index <= ProtocolConstants.MaxProfileStatsMarkers; index++)
+        {
+            tokens.Add("--marker");
+            tokens.Add("M" + index);
+        }
+
+        Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(tokens.ToArray()));
+    }
+
+    [Fact]
+    public void Parse_ProfileStats_NoMarker_SendsEmptyMarkers()
+    {
+        var parsed = CliArgumentParser.Parse(["profile", "stats"]);
+        var args = System.Text.Json.JsonSerializer.Deserialize<ProfileStatsArgs>(parsed.ToEnvelope().argumentsJson, ProtocolJson.Default)!;
+        Assert.Empty(args.markers);
+    }
+
+    [Fact]
     public void Parse_ProfileCaptureStop_Wait()
     {
         var parsed = CliArgumentParser.Parse(["profile", "capture", "stop", "--wait"]);

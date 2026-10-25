@@ -917,6 +917,17 @@ public static partial class CliArgumentParser
                 case CommandKind.ProfileStats when token == "--frames":
                     parsed.ProfileFrames = RequireInt(RequireValue(tokens, "--frames"), "--frames");
                     break;
+                case CommandKind.ProfileStats when token == "--marker":
+                {
+                    string marker = RequireValue(tokens, "--marker");
+                    if (string.IsNullOrWhiteSpace(marker))
+                    {
+                        throw new CliUsageException("--marker requires a marker name.");
+                    }
+
+                    parsed.ProfileStatsMarkers.Add(marker.Trim());
+                    break;
+                }
                 case CommandKind.ProfileStats when token == "--preset":
                 {
                     string preset = RequireValue(tokens, "--preset").ToLowerInvariant();
@@ -945,8 +956,12 @@ public static partial class CliArgumentParser
                     parsed.ProfileBudgetMs = budget;
                     break;
                 }
+                case CommandKind.ProfileCaptureStart when token == "--wait":
                 case CommandKind.ProfileCaptureStop when token == "--wait":
                     parsed.ProfileWait = true;
+                    break;
+                case CommandKind.ProfileCaptureStart when token == "--timeout":
+                    parsed.ProfileWaitTimeoutSeconds = RequireInt(RequireValue(tokens, "--timeout"), "--timeout");
                     break;
                 case CommandKind.ProfileAnalyze when token == "--marker":
                     parsed.ProfileAnalyzeMarker = RequireValue(tokens, "--marker");

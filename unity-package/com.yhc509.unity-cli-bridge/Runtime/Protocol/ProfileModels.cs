@@ -90,6 +90,36 @@ namespace UnityCli.Protocol
     {
         public int frames;
         public string preset = string.Empty;
+
+        /// <summary>Marker names for per-marker timing. Empty = counter presets only.</summary>
+        public string[] markers = Array.Empty<string>();
+    }
+
+    /// <summary>One `profile stats --marker` result: per-frame time and GC for a resolved profiler marker.</summary>
+    [Serializable]
+    public sealed class ProfileMarkerStat
+    {
+        public string query = string.Empty;
+        public string marker = string.Empty;
+
+        /// <summary>The full marker name when <see cref="query"/> was a short name; empty on an exact match.</summary>
+        public string resolvedMarker = string.Empty;
+
+        /// <summary>Where the time came from: "recorder" (ProfilerRecorder) or "capture" (profiler frame hierarchy).</summary>
+        public string path = string.Empty;
+        public string unit = "ms";
+        public int frames;
+        public int framesWithCalls;
+        public double min;
+        public double median;
+        public double p95;
+        public double max;
+        public double callsPerFrame;
+
+        /// <summary>GC.Alloc bytes below this marker, mean per frame. Always from the frame hierarchy.</summary>
+        public double gcBytesPerFrame;
+        public long gcBytesTotal;
+        public string note = string.Empty;
     }
 
     [Serializable]
@@ -112,6 +142,9 @@ namespace UnityCli.Protocol
         public string mode = string.Empty;
         public ProfileCounterStat[] counters = Array.Empty<ProfileCounterStat>();
         public string[] unavailable = Array.Empty<string>();
+
+        /// <summary>Per-marker results for --marker. A bridge that predates --marker omits the field entirely.</summary>
+        public ProfileMarkerStat[] markerStats = Array.Empty<ProfileMarkerStat>();
     }
 
     [Serializable]
@@ -184,6 +217,17 @@ namespace UnityCli.Protocol
         public int framesWithAlloc;
     }
 
+    /// <summary>GC.Alloc bytes attributed to the nearest script marker above the allocation.</summary>
+    [Serializable]
+    public sealed class ProfileGcScriptEntry
+    {
+        public string marker = string.Empty;
+        public long bytesTotal;
+        public double bytesPerFrame;
+        public long allocations;
+        public int framesWithAlloc;
+    }
+
     [Serializable]
     public sealed class ProfileSummaryPayload
     {
@@ -200,7 +244,27 @@ namespace UnityCli.Protocol
         public ProfileSpike[] spikes = Array.Empty<ProfileSpike>();
         public ProfileHotspot[] hotspots = Array.Empty<ProfileHotspot>();
         public ProfileGcEntry[] gcTop = Array.Empty<ProfileGcEntry>();
+        public ProfileGcScriptEntry[] gcByScript = Array.Empty<ProfileGcScriptEntry>();
+
+        /// <summary>GC.Alloc bytes with no script marker above them (engine or Editor allocations).</summary>
+        public long gcUnattributedBytes;
         public string sidecarPath = string.Empty;
+    }
+
+    /// <summary>
+    /// A finished capture: `profile capture start --wait`, and `profile capture stop` after the capture already
+    /// finished on its own (then <see cref="notice"/> is PROFILE_ALREADY_COMPLETED).
+    /// </summary>
+    [Serializable]
+    public sealed class ProfileCaptureResultPayload
+    {
+        public string captureId = string.Empty;
+        public string status = string.Empty;
+        public int capturedFrames;
+        public int requestedFrames;
+        public string? notice;
+        public string? message;
+        public ProfileSummaryPayload summary = new ProfileSummaryPayload();
     }
 
     [Serializable]
@@ -242,6 +306,10 @@ namespace UnityCli.Protocol
         public ProfileSummaryPayload summary = new ProfileSummaryPayload();
         public ProfileFrameEntry[] frames = Array.Empty<ProfileFrameEntry>();
         public ProfileMarkerEntry[] markers = Array.Empty<ProfileMarkerEntry>();
+
+        /// <summary>Schema 2+. Every script that allocated, largest first. Absent (empty) in schema 1 sidecars.</summary>
+        public ProfileGcScriptEntry[] gcByScript = Array.Empty<ProfileGcScriptEntry>();
+        public long gcUnattributedBytes;
     }
 
     [Serializable]
@@ -273,6 +341,7 @@ namespace UnityCli.Protocol
     {
         public string captureId = string.Empty;
         public ProfileSummaryPayload summary = new ProfileSummaryPayload();
+        public string[]? notes;
     }
 
     [Serializable]
@@ -288,8 +357,14 @@ namespace UnityCli.Protocol
     public sealed class ProfileAnalyzeGcPayload
     {
         public string captureId = string.Empty;
+
+        /// <summary>Markers by inclusive GC bytes, with the player-loop containers and GC.Alloc left out.</summary>
         public ProfileGcEntry[] entries = Array.Empty<ProfileGcEntry>();
         public bool truncated;
+        public ProfileGcScriptEntry[] gcByScript = Array.Empty<ProfileGcScriptEntry>();
+        public bool gcByScriptTruncated;
+        public long gcUnattributedBytes;
+        public string[]? notes;
     }
 
     [Serializable]

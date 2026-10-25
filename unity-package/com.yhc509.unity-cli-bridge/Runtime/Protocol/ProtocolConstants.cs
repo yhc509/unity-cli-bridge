@@ -59,6 +59,11 @@ namespace UnityCli.Protocol
         public const string ErrorProfileFailed = "PROFILE_FAILED";
         public const string ErrorProfileInterrupted = "PROFILE_INTERRUPTED";
         public const string ErrorProfileTimeout = "PROFILE_TIMEOUT";
+        public const string ErrorProfileEmpty = "PROFILE_EMPTY";
+        public const string ErrorProfileWaitTimeout = "PROFILE_WAIT_TIMEOUT";
+
+        /// <summary>Success notice on `profile capture stop` when the capture already finished on its own.</summary>
+        public const string NoticeProfileAlreadyCompleted = "PROFILE_ALREADY_COMPLETED";
         public const string ErrorEditorDirty = "EDITOR_DIRTY";
         public const string ErrorHeadlessNoGraphics = "HEADLESS_NO_GRAPHICS";
         public const string ErrorEditorLaunchFailed = "EDITOR_LAUNCH_FAILED";
@@ -196,7 +201,17 @@ namespace UnityCli.Protocol
         public const int ProfileFrameTopMarkerCount = 10;
         public const int DefaultProfileListLimit = 5;
         public const int ProfileStopWaitTimeoutSeconds = 120;
+        public const int MaxProfileCaptureWaitSeconds = 3600;
+        public const int ProfileCaptureWaitPollMs = 500;
+        public const int MaxProfileStatsMarkers = 10;
+        public const int ProfileMarkerStatsWarmupFrames = 2;
+
+        /// <summary>Schema 2 adds gcByScript and gcUnattributedBytes. Schema 1 sidecars are still read.</summary>
+        public const int ProfileSidecarSchemaVersion = 2;
         public const string ProfileSessionKeyActiveId = "UCB.Profile.activeId";
+        public const string ProfileSessionKeyLastId = "UCB.Profile.lastId";
+        public const string ProfileEmptyHint =
+            "No profiler frames were recorded. This happens when stop follows start right after entering Play Mode, or when the Editor is not ticking (minimized or in the background). Retry with `profile capture start --frames <n> --wait`.";
         public const string GpuWaitMarkerName = "Gfx.WaitForPresentOnGfxThread";
         public static readonly string[] SupportedScenePrimitiveNames =
         {
