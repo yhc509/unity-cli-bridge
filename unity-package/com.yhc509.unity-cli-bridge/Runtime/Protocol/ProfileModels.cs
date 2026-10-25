@@ -258,8 +258,21 @@ namespace UnityCli.Protocol
     {
         public string captureId = string.Empty;
         public ProfileMarkerEntry marker = new ProfileMarkerEntry();
+        /// <summary>
+        /// Set when <c>--marker</c> did not match a name exactly and resolved to one normalized candidate.
+        /// Null on an exact match so the field stays off the response.
+        /// </summary>
+        public string? resolvedMarker;
         public ProfileFrameAppearance[] appearances = Array.Empty<ProfileFrameAppearance>();
         public bool appearancesFromTopOnly = true;
+    }
+
+    /// <summary>Default <c>profile analyze</c> payload: the capture summary, with hotspots under <c>summary</c>.</summary>
+    [Serializable]
+    public sealed class ProfileAnalyzeSummaryPayload
+    {
+        public string captureId = string.Empty;
+        public ProfileSummaryPayload summary = new ProfileSummaryPayload();
     }
 
     [Serializable]

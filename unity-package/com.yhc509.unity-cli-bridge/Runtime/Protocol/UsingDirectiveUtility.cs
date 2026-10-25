@@ -10,9 +10,18 @@ namespace UnityCli.Protocol
     {
         // Note: generic type aliases (e.g. using Dict = Dictionary<string, int>) are not matched.
         // The directive group excludes a trailing // comment so it still dedupes against the wrapper usings.
+        private const string UsingDirectivePattern =
+            @"(?<directive>(?:global[ \t]+)?using[ \t]+(?:(?:[A-Za-z_][\w]*[ \t]*=[ \t]*(?:global::)?[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)|(?:(?:static[ \t]+)?(?:global::)?[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*))[ \t]*;)";
+
         private static readonly Regex UsingDirectiveLineRegex = new Regex(
-            @"^[ \t]*(?<directive>(?:global[ \t]+)?using[ \t]+(?:(?:[A-Za-z_][\w]*[ \t]*=[ \t]*(?:global::)?[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)|(?:(?:static[ \t]+)?(?:global::)?[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*))[ \t]*;)[ \t]*(?://[^\r\n]*)?(?:\r?\n|$)",
+            @"^[ \t]*" + UsingDirectivePattern + @"[ \t]*(?://[^\r\n]*)?(?:\r?\n|$)",
             RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+        // A leading using may share the line with the statement (`using UnityEngine; return 1;`).
+        // Only the start of the remaining source is considered, so a using later in the body stays put.
+        private static readonly Regex LeadingInlineUsingRegex = new Regex(
+            @"^[ \t]*" + UsingDirectivePattern + @"[ \t]*(?://[^\r\n]*)?",
+            RegexOptions.CultureInvariant);
 
         public static string StripUsingDirectives(string source, out string[] usings)
         {
@@ -28,6 +37,7 @@ namespace UnityCli.Protocol
             }
 
             var extractedUsings = new List<string>();
+            source = StripLeadingInlineUsings(source, extractedUsings);
             string stripped = UsingDirectiveLineRegex.Replace(source, delegate(Match match)
             {
                 extractedUsings.Add(match.Groups["directive"].Value.Trim());
@@ -36,6 +46,23 @@ namespace UnityCli.Protocol
 
             usings = extractedUsings.ToArray();
             return stripped.TrimStart('\r', '\n');
+        }
+
+        private static string StripLeadingInlineUsings(string source, List<string> extractedUsings)
+        {
+            while (source.Length > 0)
+            {
+                Match match = LeadingInlineUsingRegex.Match(source);
+                if (!match.Success || match.Index != 0)
+                {
+                    break;
+                }
+
+                extractedUsings.Add(match.Groups["directive"].Value.Trim());
+                source = source.Substring(match.Length);
+            }
+
+            return source;
         }
 
         private static readonly Regex AliasNameRegex = new Regex(

@@ -65,12 +65,25 @@ public class ProfileParserTests
     }
 
     [Fact]
-    public void Parse_ProfileAnalyze_RequiresExactlyOneQuery()
+    public void Parse_ProfileAnalyze_NoMode_IsTheSummary()
     {
-        Assert.Throws<CliUsageException>(() =>
-            CliArgumentParser.Parse(["profile", "analyze", "0123456789abcdef0123456789abcdef"]));
-        Assert.Throws<CliUsageException>(() =>
+        ParsedCommand parsed = CliArgumentParser.Parse(["profile", "analyze", "0123456789abcdef0123456789abcdef"]);
+
+        Assert.Equal(CommandKind.ProfileAnalyze, parsed.Kind);
+        Assert.Equal("0123456789abcdef0123456789abcdef", parsed.ProfileCaptureId);
+        Assert.True(string.IsNullOrEmpty(parsed.ProfileAnalyzeMarker));
+        Assert.False(parsed.ProfileAnalyzeGc);
+        Assert.False(parsed.ProfileAnalyzeSpikes);
+        Assert.False(parsed.ProfileAnalyzeFrame.HasValue);
+    }
+
+    [Fact]
+    public void Parse_ProfileAnalyze_RejectsMoreThanOneMode()
+    {
+        CliUsageException ex = Assert.Throws<CliUsageException>(() =>
             CliArgumentParser.Parse(["profile", "analyze", "0123456789abcdef0123456789abcdef", "--gc", "--spikes"]));
+
+        Assert.Contains("at most one", ex.Message);
     }
 
     [Fact]

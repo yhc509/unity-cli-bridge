@@ -410,9 +410,9 @@ public static partial class CliArgumentParser
                 + (parsed.ProfileAnalyzeFrame.HasValue ? 1 : 0)
                 + (parsed.ProfileAnalyzeGc ? 1 : 0)
                 + (parsed.ProfileAnalyzeSpikes ? 1 : 0);
-            if (queryCount != 1)
+            if (queryCount > 1)
             {
-                throw new CliUsageException("profile analyze requires exactly one of --marker, --frame, --gc, or --spikes.");
+                throw new CliUsageException("profile analyze accepts at most one of --marker, --frame, --gc, or --spikes.");
             }
         }
 
@@ -639,6 +639,7 @@ public static partial class CliArgumentParser
     {
         string commandPath = kind switch
         {
+            CommandKind.Version => "version",
             CommandKind.Status => "status",
             CommandKind.Compile => "compile",
             CommandKind.Refresh => "refresh",

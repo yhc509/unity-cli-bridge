@@ -28,12 +28,54 @@ public static class ResponseFormatter
             return ProtocolJson.Serialize(response);
         }
 
+        response = PresentForText(outputMode, response);
         if (outputMode == OutputMode.Compact)
         {
             return FormatCompact(response);
         }
 
         return FormatDefault(response);
+    }
+
+    /// <summary>
+    /// Default and compact text drop repeated execute log lines, the compile-error define and
+    /// reference lists, and (compact only) internal status fields. The caller's envelope is unchanged.
+    /// </summary>
+    private static ResponseEnvelope PresentForText(OutputMode outputMode, ResponseEnvelope response)
+    {
+        JsonElement? data = response.data;
+        if (data.HasValue)
+        {
+            data = TextOutputTrim.PresentData(data.Value, outputMode);
+        }
+
+        ProtocolError? error = response.error;
+        if (error != null && !string.IsNullOrEmpty(error.message))
+        {
+            string trimmed = TextOutputTrim.TrimCompileErrorMessage(error.message);
+            if (!string.Equals(trimmed, error.message, StringComparison.Ordinal))
+            {
+                error = new ProtocolError
+                {
+                    code = error.code,
+                    message = trimmed,
+                    details = error.details,
+                };
+            }
+        }
+
+        return new ResponseEnvelope
+        {
+            requestId = response.requestId,
+            protocolVersion = response.protocolVersion,
+            target = response.target,
+            status = response.status,
+            durationMs = response.durationMs,
+            data = data,
+            error = error,
+            retryable = response.retryable,
+            transport = response.transport,
+        };
     }
 
     private static string FormatDefault(ResponseEnvelope response)

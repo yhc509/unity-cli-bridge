@@ -85,6 +85,15 @@ namespace UnityCli.Protocol
         private static readonly CliCommandDescriptor[] _commands =
         {
             new CliCommandDescriptor(
+                "version",
+                "version",
+                "Prints this CLI's version. `unity-cli --version` prints the same text. The version is the Unity package version, plus the git revision when the binary was built from a checkout.",
+                CliCommandGroup.EditorControl,
+                protocolCommand: null,
+                canUseLocal: true,
+                canUseLive: false,
+                isAllowedWhileBusy: true),
+            new CliCommandDescriptor(
                 "status",
                 "status",
                 "Reports the selected project and live editor state when a running bridge is reachable, with a local fallback when it is not.",
@@ -304,8 +313,8 @@ namespace UnityCli.Protocol
                 isAllowedWhileBusy: true),
             new CliCommandDescriptor(
                 "profile analyze",
-                "profile analyze <captureId> (--marker <name> | --frame <n> | --gc | --spikes) [--limit <n> (default: 5)]",
-                "Drills into a finished capture by reading its sidecar JSON locally — no Editor round-trip. Works after the Editor exits as long as the sidecar file exists.",
+                "profile analyze <captureId> [--marker <name> | --frame <n> | --gc | --spikes] [--limit <n> (default: 5)]",
+                "Drills into a finished capture by reading its sidecar JSON locally — no Editor round-trip. With no mode, returns the capture summary (hotspots, gcTop, spikes). --marker accepts a full marker name or a short Type.Method name.",
                 CliCommandGroup.Diagnostics,
                 null,
                 canUseLocal: true,
@@ -314,6 +323,8 @@ namespace UnityCli.Protocol
                 notes: new[]
                 {
                     "Local-only. Resolves the project root the same way as other commands (--project, CWD).",
+                    "With no mode, the response is the capture summary. Hotspots, gcTop, and spikes are under summary.",
+                    "--marker tries an exact name first. Otherwise it strips an Assembly.dll!Namespace:: prefix, a trailing () [Invoke], and parentheses, then matches Type.Method. One match is used and the response includes resolvedMarker. Several matches return PROFILE_MARKER_AMBIGUOUS. A miss lists up to five similar names.",
                     "--marker frame appearances come from each frame's top-10 table, not the full hierarchy.",
                 }),
             new CliCommandDescriptor(
@@ -416,9 +427,9 @@ namespace UnityCli.Protocol
                     "--timeout (default 30 seconds, maximum 600) is a cooperative cancel. User code must check __pucToken (System.Threading.CancellationToken) to stop — otherwise it keeps the main thread, and that is the --force user's responsibility.",
                     "Do not declare the reserved wrapper prefix `__puc_internal_*`, or the `__pucToken` and `__pucResult` variables, in user code.",
                     "Do not put secrets or credentials in --args. CodeDOM compilation can briefly write a .cs file under the OS temp directory.",
-                    "Snippets compile with Unity's CodeDOM compiler (mcs). It accepts /langversion from 1 through 7.2, plus ISO-1, ISO-2, Default, and latest. The C# 9.0 project default, and any higher -langversion in Assets/csc.rsp, Assets/mcs.rsp, or Player Settings, is passed as /langversion:latest so default literals compile. A pin of 7.2 or below is passed through. Compile failures include the compiler error text.",
+                    "Snippets compile as C# 9 with the Roslyn host by default (the C# compiler shipped inside the Unity editor, on the editor's bundled .NET). Set UCB_EXECUTE_COMPILER=codedom and restart the editor to compile with Unity's bundled mcs instead. The host does not accept covariant returns, default interface methods, function pointers, or C# 10 or newer. On the mcs path, versions above 7.2, including the C# 9.0 project default, are passed as /langversion:latest so default literals compile; 7.2 and below are passed through. Compile failures include the compiler error text.",
                     "Snippets compile with the Editor's active scripting define symbols, and UNITY_ASSERTIONS is always defined, so Debug.Assert and Debug.LogAssertion log Assert entries instead of being compiled out.",
-                    "Top-of-file using directives in --code or --file are hoisted above the wrapper. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
+                    "Leading using directives in --code or --file are hoisted above the wrapper, including a one-line --code value. The compile cache is still keyed by the wrapped source, so a repeat reports cacheHit with compileMs 0.",
                 },
                 forceRule: ForceRule.Always),
             new CliCommandDescriptor(

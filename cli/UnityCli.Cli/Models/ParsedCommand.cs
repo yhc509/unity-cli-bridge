@@ -9,6 +9,7 @@ namespace UnityCli.Cli.Models;
 public enum CommandKind
 {
     Help,
+    Version,
     Status,
     Compile,
     Refresh,

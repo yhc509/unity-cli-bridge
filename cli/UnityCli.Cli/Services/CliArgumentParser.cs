@@ -92,6 +92,7 @@ public static partial class CliArgumentParser
             "doctor" => new ParsedCommand(CommandKind.Doctor),
             "raw" => new ParsedCommand(CommandKind.Raw),
             "help" or "--help" or "-h" => new ParsedCommand(CommandKind.Help),
+            "version" or "--version" => new ParsedCommand(CommandKind.Version),
             _ => throw new CliUsageException($"Unknown command: {command}"),
         };
 

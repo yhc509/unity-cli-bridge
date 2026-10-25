@@ -2,13 +2,23 @@
 
 How to **read** `profile` output. Command usage lives in SKILL.md's Profile Workflow. This page only answers "can I trust this number?"
 
+## Which script is expensive
+
+1. `unity-cli play`
+2. `unity-cli profile capture start --frames 300`, then `unity-cli profile capture stop` after those frames have been recorded.
+3. `unity-cli profile analyze <captureId>` returns the summary: `hotspots`, `gcTop`, and `spikes` (under `summary`).
+4. Script markers look like `Assembly-CSharp.dll!::Type.Update() [Invoke]`. `unity-cli profile analyze <captureId> --marker Type.Update` resolves that short name (also `Type.Update()`).
+5. Do not open the sidecar file. Hotspots live under `summary` there; `analyze` is the reader. One short name with several matches returns `PROFILE_MARKER_AMBIGUOUS` and the candidate names.
+
+In the Editor, `GC.GetAllocatedBytesForCurrentThread()` returns 0. Read `ProfilerRecorder` `"GC Allocated In Frame"`, `GC.GetTotalAllocatedBytes(true)`, or `unity-cli profile stats --preset memory` instead. `GarbageCollector.GCMode` cannot be set in the Editor.
+
 ## Workflow loop
 
 Diagnose performance with this loop:
 
 1. Run `unity-cli qa run-sequence --spec-json <spec> --profile` to play the sequence and capture at the same time. The response `profileSummary` already contains frame-time percentiles, spike frames, hotspots, GC, and a CPU/GPU-bound verdict.
 2. When you only need a capture, start with `unity-cli profile capture start --frames <n>` and wait for the summary with `unity-cli profile capture stop --wait`.
-3. After the summary shows a problem (overBudget count, spike, verdict), drill into the local sidecar with `unity-cli profile analyze <captureId> --gc` / `--frame <n>` / `--marker <name>` / `--spikes`. There is no Editor round trip, so repeated reads are safe.
+3. After the summary shows a problem (overBudget count, spike, verdict), drill in with `unity-cli profile analyze <captureId>` (the summary) or `--gc` / `--frame <n>` / `--marker <name>` / `--spikes`. A short `--marker` name such as `Type.Update` is resolved. There is no Editor round trip, so repeated reads are safe. Do not open the sidecar JSON; hotspots are under `summary`.
 4. Fix the cause in code or assets, then run the same sequence with `--profile` again to make a new capture.
 5. Compare before and after with `unity-cli profile compare <baseCaptureId> <headCaptureId>`. One response has the verdict (`regression` / `improvement` / `unchanged`), frame-time / overBudget / GC deltas, and per-marker regressions and improvements. Sensitivity is `--threshold <percent>` (default 5). List length is `--limit <n>`. This also reads local sidecars only, so it works with the Editor closed. When you read it:
    - An unfinished capture (stopped by a script recompile, for example) is not compared. It is rejected with `PROFILE_FAILED`. Recapture that side.
