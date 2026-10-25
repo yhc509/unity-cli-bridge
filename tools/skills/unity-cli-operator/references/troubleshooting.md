@@ -29,6 +29,15 @@
 - Narrow with `--type error` or `--type warning` only when you need that type alone.
 - If a new error or warning appears, explain that cause first. Do not report success.
 
+## Profile error codes
+
+- `PROFILE_EMPTY` — a capture ended with 0 frames (`stop` right after `play` or `start`, or the Editor was not ticking). The message names the `captureId`. Retry with `profile capture start --frames <n> --wait`. Returned by `profile capture stop`, `stop --wait`, and `start --wait`.
+- `PROFILE_WAIT_TIMEOUT` — `profile capture start --wait` reached `--timeout` before the capture finished. `error.details` has `captureId`, `status`, `capturedFrames`, and `requestedFrames`. The capture keeps running: `profile capture stop --wait` returns what it has. Raise `--timeout` when the Editor runs Play Mode slowly in the background.
+- `PROFILE_ALREADY_COMPLETED` — not an error. `profile capture stop` found no running capture, but the last one in this Editor session already finished on its own. The response is that capture (`captureId`, `capturedFrames`, `summary`) with this `notice`.
+- `PROFILE_NOT_RUNNING` — `profile capture stop` with no running capture and no finished capture in this Editor session, or the last one ended as `Interrupted` / `Failed` (the message names it).
+- `PROFILE_IN_PROGRESS` — a capture, a memory snapshot, or `profile stats --marker` is already using the profiler. Wait for it to finish.
+- `PROFILE_MARKER_AMBIGUOUS` / `PROFILE_NOT_FOUND` — a `--marker` name matched several markers (pass one of the listed full names) or none (similar names are listed). For `profile stats --marker`, a script marker exists only after its method ran while the profiler was recording, so enter Play Mode first.
+
 ## Test Runner error codes
 
 - `TEST_RUN_IN_PROGRESS` — the editor is busy with a test run. A second `test run` is refused while one is already in progress; the response includes that `runId`. `play`, `pause`, `stop`, and scene commands also get this error while Unity is restoring the scene after a test run finishes. Wait briefly and retry, or use `test run --wait`, which returns only after that restore. If a missing callback leaves the lock held, clear it with `test cancel`.
