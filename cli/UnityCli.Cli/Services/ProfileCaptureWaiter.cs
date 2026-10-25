@@ -108,7 +108,7 @@ internal static class ProfileCaptureWaiter
                     poll.requestId,
                     poll.target,
                     ProtocolConstants.ErrorProfileWaitTimeout,
-                    $"profile capture `{captureId}` did not finish within {timeoutSeconds} seconds ({last.status}, {last.capturedFrames} of {last.requestedFrames} frames captured). "
+                    $"profile capture `{captureId}` did not finish within {timeoutSeconds} seconds ({last.status}, {DescribeFrames(last)} captured). "
                         + "The capture is still running: `profile capture stop --wait` ends it and returns what was captured, or read it later with `profile status " + captureId + "`. "
                         + "Raise --timeout when the Editor runs Play Mode slowly (for example when it is in the background).",
                     true,
@@ -150,6 +150,13 @@ internal static class ProfileCaptureWaiter
             poll.durationMs,
             poll.transport,
             Details(captureId, summary.status, summary.capturedFrames, summary.requestedFrames, null));
+    }
+
+    private static string DescribeFrames(ProfileSummaryPayload summary)
+    {
+        return summary.requestedFrames > 0
+            ? $"{summary.capturedFrames} of {summary.requestedFrames} frames"
+            : $"{summary.capturedFrames} frames";
     }
 
     private static ResponseEnvelope KeepCaptureId(ResponseEnvelope failure, string captureId)

@@ -105,6 +105,25 @@ public sealed class ProfileCaptureWaitTests
         Assert.Equal("Capturing", details.GetProperty("status").GetString());
     }
 
+    [Fact]
+    public async Task Wait_DurationCaptureTimeout_ReportsFramesWithoutARequestedCount()
+    {
+        DateTime now = new(2026, 10, 25, 0, 0, 0, DateTimeKind.Utc);
+        Task<ResponseEnvelope> Send(InstanceRecord _, CommandEnvelope __, int ___, CancellationToken ____)
+            => Task.FromResult(Success(new ProfileSummaryPayload { captureId = "cap1", status = "Capturing", capturedFrames = 512 }));
+        Task Delay(TimeSpan interval, CancellationToken _)
+        {
+            now = now.AddSeconds(3);
+            return Task.CompletedTask;
+        }
+
+        ResponseEnvelope result = await ProfileCaptureWaiter.WaitAsync(
+            Target, Send, Started("cap1", 0), 5, CancellationToken.None, Delay, () => now);
+
+        Assert.Equal(ProtocolConstants.ErrorProfileWaitTimeout, result.error!.code);
+        Assert.Contains("(Capturing, 512 frames captured)", result.error.message);
+    }
+
     [Theory]
     [InlineData("Interrupted", ProtocolConstants.ErrorProfileInterrupted)]
     [InlineData("Failed", ProtocolConstants.ErrorProfileFailed)]

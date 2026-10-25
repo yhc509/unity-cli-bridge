@@ -90,6 +90,7 @@ namespace UnityCliBridge.Bridge.Editor
             private int _measureStart;
             private int _walkFrame;
             private int _walkLast = -1;
+            private double _framesReachedSeconds = -1;
             private bool _restored;
 
             public MarkerStatsSession(
@@ -124,6 +125,21 @@ namespace UnityCliBridge.Bridge.Editor
                     Restore();
                     _completion.TrySetResult(CreateFailureResponse(_requestId, _projectHash, exception, _stopwatch.ElapsedMilliseconds));
                 }
+            }
+
+            private const double RecorderFillGraceSeconds = 2.0;
+
+            private bool RecordersFull()
+            {
+                foreach (MarkerStatsTarget target in _targets)
+                {
+                    if (target.HasRecorder && target.Recorder.Count < _frames)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
 
             private void Restore()
@@ -216,6 +232,19 @@ namespace UnityCliBridge.Bridge.Editor
                 if (_phase == 1)
                 {
                     if (last - _measureStart + 1 < _frames)
+                    {
+                        return;
+                    }
+
+                    // Recorder samples arrive a few frames after the profiler frame index moves on, so give the
+                    // recorders a bounded moment to fill before reading them.
+                    double now = _stopwatch.Elapsed.TotalSeconds;
+                    if (_framesReachedSeconds < 0)
+                    {
+                        _framesReachedSeconds = now;
+                    }
+
+                    if (!RecordersFull() && now - _framesReachedSeconds < RecorderFillGraceSeconds)
                     {
                         return;
                     }
