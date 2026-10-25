@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using UnityCli.Cli.Services;
+using UnityCli.DocGen;
 using UnityCli.Protocol;
 
 namespace UnityCli.Cli.Tests;
@@ -13,6 +14,48 @@ public sealed class CliAppTests
 {
     private static readonly SemaphoreSlim ConsoleLock = new(1, 1);
     private const string GlobalUsage = "usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] <command> [options]";
+
+    [Theory]
+    [InlineData("--version")]
+    [InlineData("version")]
+    public async Task RunAsync_Version_PrintsPackageVersion(string command)
+    {
+        var result = await InvokeAsync([command]);
+
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(string.Empty, result.Stderr);
+        string packageVersion = ReadPackageVersion();
+        string printed = result.Stdout.Trim();
+        Assert.Equal("0.6.1", packageVersion);
+        Assert.True(
+            printed == packageVersion || printed.StartsWith(packageVersion + "+", StringComparison.Ordinal),
+            "stdout was: " + printed);
+    }
+
+    private static string ReadPackageVersion()
+    {
+        string repoRoot = RepositoryPaths.FindRepoRoot(AppContext.BaseDirectory);
+        string json = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "unity-package",
+            "com.yhc509.unity-cli-bridge",
+            "package.json"));
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("version").GetString() ?? string.Empty;
+    }
+
+    [Fact]
+    public void ExecuteHelp_DescribesRoslynHostNotCodeDomRange()
+    {
+        string? help = CliCommandMetadata.BuildTopicHelpText("execute");
+
+        Assert.NotNull(help);
+        Assert.Contains("Roslyn host", help);
+        Assert.Contains("C# 9", help);
+        Assert.Contains("UCB_EXECUTE_COMPILER=codedom", help);
+        Assert.DoesNotContain("CodeDOM compiler (mcs)", help);
+        Assert.DoesNotContain("1 through 7.2", help);
+    }
 
     [Fact]
     public async Task RunAsync_JsonUnknownCommand_WritesStructuredErrorToStdoutOnly()

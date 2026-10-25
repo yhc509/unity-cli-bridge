@@ -55,6 +55,7 @@ namespace UnityCli.Protocol
         public const string ErrorProfileInProgress = "PROFILE_IN_PROGRESS";
         public const string ErrorProfileNotRunning = "PROFILE_NOT_RUNNING";
         public const string ErrorProfileNotFound = "PROFILE_NOT_FOUND";
+        public const string ErrorProfileMarkerAmbiguous = "PROFILE_MARKER_AMBIGUOUS";
         public const string ErrorProfileFailed = "PROFILE_FAILED";
         public const string ErrorProfileInterrupted = "PROFILE_INTERRUPTED";
         public const string ErrorProfileTimeout = "PROFILE_TIMEOUT";

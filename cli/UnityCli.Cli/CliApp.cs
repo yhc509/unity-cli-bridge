@@ -43,6 +43,12 @@ public static class CliApp
                 return 0;
             }
 
+            if (parsed.Kind == CommandKind.Version)
+            {
+                Console.WriteLine(CliVersion.InformationalVersion);
+                return 0;
+            }
+
             var registryStore = new InstanceRegistryStore();
             var locator = new UnityProjectLocator();
             var projectRoot = ResolveProjectRoot(parsed, locator, registryStore);

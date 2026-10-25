@@ -407,6 +407,7 @@ internal static class CliUsageHelp
         {
             return kind switch
             {
+                CommandKind.Version => "version",
                 CommandKind.Status => "status",
                 CommandKind.Compile => "compile",
                 CommandKind.Refresh => "refresh",

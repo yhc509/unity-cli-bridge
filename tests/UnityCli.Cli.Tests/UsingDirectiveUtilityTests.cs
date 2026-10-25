@@ -62,6 +62,39 @@ Debug.Log(Vec3.one);
     }
 
     [Fact]
+    public void StripUsingDirectives_HoistsLeadingUsingOnTheSameLineAsCode()
+    {
+        const string source = "using UnityEngine; return Application.unityVersion;";
+
+        string stripped = UsingDirectiveUtility.StripUsingDirectives(source, out string[] usings);
+
+        Assert.Equal(["using UnityEngine;"], usings);
+        Assert.Equal("return Application.unityVersion;", stripped);
+    }
+
+    [Fact]
+    public void StripUsingDirectives_HoistsSeveralLeadingUsingsOnOneLine()
+    {
+        const string source = "using UnityEngine; using UnityEditor; return Application.unityVersion;";
+
+        string stripped = UsingDirectiveUtility.StripUsingDirectives(source, out string[] usings);
+
+        Assert.Equal(["using UnityEngine;", "using UnityEditor;"], usings);
+        Assert.Equal("return Application.unityVersion;", stripped);
+    }
+
+    [Fact]
+    public void StripUsingDirectives_LeavesAUsingDirectiveAfterCodeOnTheSameLine()
+    {
+        const string source = "var x = 1; using UnityEngine; return x;";
+
+        string stripped = UsingDirectiveUtility.StripUsingDirectives(source, out string[] usings);
+
+        Assert.Empty(usings);
+        Assert.Equal(source, stripped);
+    }
+
+    [Fact]
     public void StripUsingDirectives_LeavesUsingStatementsInTheBody()
     {
         const string source = "using var reader = new System.IO.StringReader(\"x\");";

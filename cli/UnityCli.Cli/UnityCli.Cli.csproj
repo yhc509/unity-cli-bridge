@@ -10,7 +10,10 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <PropertyGroup>
+    <PropertyGroup>
+    <!-- package.json is the only version. The SDK appends +sha from git. -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\..\unity-package\com.yhc509.unity-cli-bridge\package.json')), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</Version>
+    <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
     <OutputType>Exe</OutputType>
     <AssemblyName>unity-cli</AssemblyName>
     <TargetFramework>net9.0</TargetFramework>

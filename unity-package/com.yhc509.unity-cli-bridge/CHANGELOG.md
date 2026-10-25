@@ -4,11 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - Unreleased
+
+### Added
+- `profile analyze <captureId>` with no mode returns the capture summary. `hotspots`, `gcTop`, and `spikes` are under `summary`.
+- `profile analyze --marker` accepts a short script name. An exact marker name still wins. Otherwise the name is matched after an `Assembly.dll!Namespace::` prefix, a trailing `() [Invoke]`, and parentheses are removed, so `ThreatField.Update` and `ThreatField.Update()` resolve `Assembly-CSharp.dll!::ThreatField.Update() [Invoke]`. One match is used and the response includes `resolvedMarker`. Several matches return `PROFILE_MARKER_AMBIGUOUS` with the candidate names. A name that matches nothing includes up to five similar marker names.
+- `unity-cli version` and `unity-cli --version` print this CLI's version. It is the Unity package version plus the git revision (`0.6.1+<sha>`), taken from the package `version` at build time.
+- Leading `using` directives in `execute --code` are hoisted above the wrapper, including a one-line snippet such as `using UnityEngine; return Application.unityVersion;`. `--file` already hoisted usings that were on their own lines. The compile cache key is still the wrapped source.
+
+### Changed
+- Default and compact text output shows identical lines that repeat back-to-back in an `execute` log once, as `line (×N)`. `--json` keeps every line.
+- Default and compact text output of a compile failure keeps the diagnostic lines and drops the `/define:` list and reference list. `--json` still includes the full message.
+- Compact `status` omits `pipeName` and `domainId`. `--json` and the default text output still include them.
+- `execute --help` describes the default Roslyn host (C# 9). mcs is used only when `UCB_EXECUTE_COMPILER=codedom`.
+
 ## [0.6.0] - 2026-10-24
 
 ### Changed
 - **Breaking-ish:** `execute` compiles snippets with the resident Roslyn host by default, and those snippets can use C# 9. Unset, `auto`, an invalid value, and `UCB_EXECUTE_COMPILER=roslyn-host` all use the host, then `csc /shared`, then mcs. Set `UCB_EXECUTE_COMPILER=codedom` and restart the editor to turn the host and `csc /shared` off and compile with mcs only. The first call on a new project, after a Unity version change, or when the host image is not cached yet builds the host once in the background; `csc /shared` or mcs compiles that call while the build runs, and later calls use the host. On Windows the `csc /shared` fallback measures about 183–192 ms warm, and the host about 6–7 ms warm. Linux was not live-tested. An editor with no bundled Roslyn uses mcs.
 - `doctor` labels a Roslyn host or `csc /shared` status file from another editor session as an old-session record and leaves `activeBackend` empty. It compares the file's write time and `editorPid` with the running editor. In `codedom` mode the editor writes a short off status when the domain loads. While the compiler-server pid lookup is still running, the status file has `serverPid` null and `serverPidPending` true, and `doctor` shows that as pending. The real pid replaces it once known, including after the server restarts.
+- Internal: `execute` now compiles snippets through a compiler-backend interface. The Roslyn host is the default compiler; `UCB_EXECUTE_COMPILER=codedom` keeps mcs. References, caching, error codes, and messages are unchanged.
+- Internal: groundwork for a resident Roslyn compiler for `execute`. The package now carries the source of a small compile host (`RoslynHost~/`, which Unity does not import) and Editor-only helpers that build it with the C# compiler bundled in the Unity editor install, run it on the editor's bundled .NET runtime only, and talk to it over a length-prefixed stdin/stdout pipe. The host is what `execute` uses by default. `UCB_EXECUTE_COMPILER=codedom` keeps the mcs path.
 
 ### Added
 - `execute` can compile through a resident Roslyn compiler (C# 9) instead of mcs. This is the default compiler. A small compile host is built once per Unity version under `Library/com.yhc509.unity-cli-bridge/roslyn-host/` with the C# compiler that ships inside the editor, runs on the editor's own bundled .NET runtime (never a system .NET), and stays resident, so a cache-miss compile takes a few milliseconds instead of several hundred. Snippets can use C# 9 (target-typed `new`, `is not`/relational/logical patterns, static local functions, `??=`, lambda discards; records, `init`, and `with` in code that declares types). Error messages keep the `Line N: CSxxxx: message` shape and user line numbers. Anything wrong with the host itself (missing toolchain, failed build or start, crash, 10 s compile timeout, protocol error, foreign runtime) makes that call compile with mcs instead; three host failures within 60 s turn the host off for the editor session. Your own compile errors are never retried on mcs. Tuning: `UCB_ROSLYN_PREWARM` (`auto`, `eager`, `lazy`, `off`), `UCB_ROSLYN_HOST_WAIT_MS` (1500), `UCB_ROSLYN_COMPILE_TIMEOUT_MS` (10000), `UCB_ROSLYN_IDLE_EXIT_MINUTES` (0 = never). Set `UCB_EXECUTE_COMPILER=codedom` and restart the editor to compile with mcs only.
@@ -17,10 +33,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `doctor` reports the `csc /shared` fallback in a new `cscShared` object (pipe name, whether its server is running, state, last error), read locally from the status file the editor writes.
 - `doctor` reports the Roslyn host in a new `roslynHost` object (state, pid, uptime, prewarm time, last error, the last 64 lines the host wrote to stderr, the active backend, and why it was turned off for the session, if it was), read locally from the status file the editor writes.
 - `doctor` reports the .NET runtime, Roslyn compiler, and mcs that ship inside the project's Unity editor install, in a new `bundledToolchain` object: the matched install layout, the `dotnet` path and Microsoft.NETCore.App version, the Roslyn directory, `csc.dll` path and version, the `mcs.exe` path and version, and a reason for any part that is missing. It reads only the editor install (never a system .NET or PATH) and starts no process. When the Unity path is unknown, `bundledToolchain.error` says so and `doctor` still succeeds. `execute` behavior is unchanged.
-
-### Changed
-- Internal: `execute` now compiles snippets through a compiler-backend interface. The Roslyn host is the default compiler; `UCB_EXECUTE_COMPILER=codedom` keeps mcs. References, caching, error codes, and messages are unchanged.
-- Internal: groundwork for a resident Roslyn compiler for `execute`. The package now carries the source of a small compile host (`RoslynHost~/`, which Unity does not import) and Editor-only helpers that build it with the C# compiler bundled in the Unity editor install, run it on the editor's bundled .NET runtime only, and talk to it over a length-prefixed stdin/stdout pipe. The host is what `execute` uses by default. `UCB_EXECUTE_COMPILER=codedom` keeps the mcs path.
 
 ### Fixed
 - A host crash no longer drops its restart when the start thread is still writing the status file. The compile can take the host as soon as it is ready, and the restart used to find that thread still closing out and do nothing, so the next `execute` reported the old failure and did not launch again. The restart now waits for that close-out, then starts.
