@@ -334,6 +334,58 @@ public sealed class ProfileAnalyzerTests : IDisposable
         Assert.True(summaryData.TryGetProperty("notes", out _));
     }
 
+    [Fact]
+    public void Analyze_Gc_DropsEnginePhaseMarkersAndCountsThemUnattributed()
+    {
+        const string threat = "Assembly-CSharp.dll!::ThreatField.Update() [Invoke]";
+        WriteSidecar(new ProfileSidecarFile
+        {
+            schemaVersion = ProtocolConstants.ProfileSidecarSchemaVersion,
+            captureId = "cap-phase",
+            summary = new ProfileSummaryPayload
+            {
+                captureId = "cap-phase",
+                status = "Completed",
+                capturedFrames = 10,
+                gcTop = new[] { new ProfileGcEntry { marker = "PlayerEndOfFrame", bytesTotal = 440 } },
+                gcByScript = new[]
+                {
+                    new ProfileGcScriptEntry { marker = "PlayerEndOfFrame", bytesTotal = 440, bytesPerFrame = 44 },
+                    new ProfileGcScriptEntry { marker = threat, bytesTotal = 17000, bytesPerFrame = 1700 },
+                },
+                gcUnattributedBytes = 10,
+            },
+            markers = new[]
+            {
+                new ProfileMarkerEntry { m = "PlayerEndOfFrame", gcBytes = 440, frames = 10 },
+                new ProfileMarkerEntry { m = "PostLateUpdate.FinishFrameRendering", gcBytes = 16, frames = 10 },
+                new ProfileMarkerEntry { m = threat, gcBytes = 17000, frames = 10 },
+            },
+            gcByScript = new[]
+            {
+                new ProfileGcScriptEntry { marker = "PlayerEndOfFrame", bytesTotal = 440, bytesPerFrame = 44 },
+                new ProfileGcScriptEntry { marker = "PostLateUpdate", bytesTotal = 12, bytesPerFrame = 1.2 },
+                new ProfileGcScriptEntry { marker = threat, bytesTotal = 17000, bytesPerFrame = 1700 },
+            },
+            gcUnattributedBytes = 10,
+        });
+
+        JsonElement gc = ProfileAnalyzer.Run(
+            new ParsedCommand(CommandKind.ProfileAnalyze) { ProfileCaptureId = "cap-phase", ProfileAnalyzeGc = true },
+            _root).data!.Value;
+
+        Assert.Equal(new[] { threat }, gc.GetProperty("entries").EnumerateArray().Select(entry => entry.GetProperty("marker").GetString()));
+        Assert.Equal(new[] { threat }, gc.GetProperty("gcByScript").EnumerateArray().Select(entry => entry.GetProperty("marker").GetString()));
+        Assert.Equal(10 + 440 + 12, gc.GetProperty("gcUnattributedBytes").GetInt64());
+
+        JsonElement summary = ProfileAnalyzer.Run(
+            new ParsedCommand(CommandKind.ProfileAnalyze) { ProfileCaptureId = "cap-phase" },
+            _root).data!.Value.GetProperty("summary");
+        Assert.Equal(threat, summary.GetProperty("gcTop")[0].GetProperty("marker").GetString());
+        Assert.Equal(new[] { threat }, summary.GetProperty("gcByScript").EnumerateArray().Select(entry => entry.GetProperty("marker").GetString()));
+        Assert.Equal(10 + 440, summary.GetProperty("gcUnattributedBytes").GetInt64());
+    }
+
     private const string ThreatMarker = "Assembly-CSharp.dll!::ThreatField.Update() [Invoke]";
     private const string HudMarker = "Assembly-CSharp.dll!::SkirmishHud.LateUpdate() [Invoke]";
 

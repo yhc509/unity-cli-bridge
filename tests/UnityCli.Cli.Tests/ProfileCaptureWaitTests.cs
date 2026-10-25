@@ -57,6 +57,132 @@ public sealed class ProfileCaptureWaitTests
         Assert.Equal("Completed", data.GetProperty("status").GetString());
         Assert.Equal("ThreatField.Update", data.GetProperty("summary").GetProperty("hotspots")[0].GetProperty("marker").GetString());
         Assert.False(data.TryGetProperty("notice", out _));
+        Assert.False(data.TryGetProperty("warning", out _));
+    }
+
+    [Fact]
+    public async Task Wait_CompletedAfterClamp_CopiesWarningOntoTheResultAndTheSummary()
+    {
+        ProfileFrameClamp? clamp = ProfileFrameClamp.TryCreate(100000, 300);
+        Assert.NotNull(clamp);
+        string warning = clamp!.WarningText();
+        Task<ResponseEnvelope> Send(InstanceRecord _, CommandEnvelope __, int ___, CancellationToken ____)
+            => Task.FromResult(Success(new ProfileSummaryPayload
+            {
+                captureId = "cap1",
+                status = "Completed",
+                capturedFrames = 297,
+                requestedFrames = 300,
+                warning = warning,
+                frameClamp = clamp,
+            }));
+
+        ResponseEnvelope result = await ProfileCaptureWaiter.WaitAsync(
+            Target, Send, Started("cap1", 300), 60, CancellationToken.None, NoDelay);
+
+        JsonElement data = result.data!.Value;
+        Assert.Equal("cap1", data.GetProperty("captureId").GetString());
+        Assert.Equal("Completed", data.GetProperty("status").GetString());
+        Assert.Equal(297, data.GetProperty("capturedFrames").GetInt32());
+        Assert.Equal(300, data.GetProperty("requestedFrames").GetInt32());
+        Assert.Equal(warning, data.GetProperty("warning").GetString());
+        Assert.Equal(100000, data.GetProperty("frameClamp").GetProperty("requested").GetInt32());
+        Assert.Equal(300, data.GetProperty("frameClamp").GetProperty("clamped").GetInt32());
+        Assert.Equal(300, data.GetProperty("frameClamp").GetProperty("bufferLimit").GetInt32());
+        Assert.Contains("Requested 100000 frames, clamped to 300 (profiler buffer limit 300).", warning);
+        JsonElement summary = data.GetProperty("summary");
+        Assert.Equal(warning, summary.GetProperty("warning").GetString());
+        Assert.Equal(297, summary.GetProperty("capturedFrames").GetInt32());
+        Assert.False(data.TryGetProperty("notice", out _));
+    }
+
+    [Theory]
+    [InlineData(100000, 300, true)]
+    [InlineData(100000, 2000, true)]
+    [InlineData(300, 300, false)]
+    [InlineData(120, 300, false)]
+    [InlineData(0, 300, false)]
+    public void FrameClamp_TryCreate_OnlyWhenTheRequestExceedsTheBuffer(int requested, int buffer, bool clamped)
+    {
+        ProfileFrameClamp? clamp = ProfileFrameClamp.TryCreate(requested, buffer);
+
+        if (!clamped)
+        {
+            Assert.Null(clamp);
+            return;
+        }
+
+        Assert.Equal(requested, clamp!.requested);
+        Assert.Equal(buffer, clamp.clamped);
+        Assert.Equal(buffer, clamp.bufferLimit);
+        Assert.Contains(requested.ToString(), clamp.WarningText());
+        Assert.Contains("clamped to " + buffer, clamp.WarningText());
+        Assert.Contains("profiler buffer limit " + buffer, clamp.WarningText());
+    }
+
+    [Fact]
+    public void PresentFinishedCapture_WrapsAFlatSummaryIntoTheStopShape()
+    {
+        ProfileFrameClamp clamp = ProfileFrameClamp.TryCreate(100000, 300)!;
+        ResponseEnvelope poll = Success(new ProfileSummaryPayload
+        {
+            captureId = "cap1",
+            status = "Completed",
+            capturedFrames = 297,
+            requestedFrames = 300,
+            warning = clamp.WarningText(),
+            frameClamp = clamp,
+            hotspots = new[] { new ProfileHotspot { marker = "ThreatField.Update" } },
+        });
+
+        ResponseEnvelope presented = CliApp.PresentFinishedCapture(poll);
+        JsonElement data = presented.data!.Value;
+
+        Assert.Equal("cap1", data.GetProperty("captureId").GetString());
+        Assert.Equal("Completed", data.GetProperty("status").GetString());
+        Assert.Equal(297, data.GetProperty("capturedFrames").GetInt32());
+        Assert.Equal(clamp.WarningText(), data.GetProperty("warning").GetString());
+        Assert.Equal("ThreatField.Update", data.GetProperty("summary").GetProperty("hotspots")[0].GetProperty("marker").GetString());
+        Assert.False(data.GetProperty("summary").TryGetProperty("summary", out _));
+        Assert.False(data.TryGetProperty("notice", out _));
+    }
+
+    [Fact]
+    public void PresentFinishedCapture_LeavesAnAlreadyWrappedResultAlone()
+    {
+        ResponseEnvelope already = Success(new ProfileCaptureResultPayload
+        {
+            captureId = "cap1",
+            status = "Completed",
+            capturedFrames = 30,
+            requestedFrames = 30,
+            notice = ProtocolConstants.NoticeProfileAlreadyCompleted,
+            summary = new ProfileSummaryPayload
+            {
+                captureId = "cap1",
+                status = "Completed",
+                capturedFrames = 30,
+                hotspots = new[] { new ProfileHotspot { marker = "ThreatField.Update" } },
+            },
+        });
+
+        ResponseEnvelope presented = CliApp.PresentFinishedCapture(already);
+        JsonElement data = presented.data!.Value;
+
+        Assert.Equal(ProtocolConstants.NoticeProfileAlreadyCompleted, data.GetProperty("notice").GetString());
+        Assert.Equal("ThreatField.Update", data.GetProperty("summary").GetProperty("hotspots")[0].GetProperty("marker").GetString());
+        Assert.False(data.GetProperty("summary").TryGetProperty("summary", out _));
+    }
+
+    [Fact]
+    public void PresentFinishedCapture_DoesNotWrapACaptureThatIsStillProcessing()
+    {
+        ResponseEnvelope poll = Success(new ProfileSummaryPayload { captureId = "cap1", status = "Processing", capturedFrames = 4 });
+
+        ResponseEnvelope presented = CliApp.PresentFinishedCapture(poll);
+
+        Assert.False(presented.data!.Value.TryGetProperty("summary", out _));
+        Assert.Equal("Processing", presented.data!.Value.GetProperty("status").GetString());
     }
 
     [Fact]

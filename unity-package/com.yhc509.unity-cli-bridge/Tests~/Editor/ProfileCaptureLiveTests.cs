@@ -124,6 +124,12 @@ namespace UnityCliBridge.Bridge.Editor.Tests
                 Assert.That(ProfileGcAttribution.IsExcludedFromGcTop(entry.marker), Is.False, entry.marker);
             }
 
+            foreach (ProfileGcScriptEntry entry in sidecar.gcByScript)
+            {
+                Assert.That(ProfileGcAttribution.IsEnginePlayerLoopMarker(entry.marker), Is.False, entry.marker);
+                Assert.That(ProfileGcAttribution.IsExcludedFromGcTop(entry.marker), Is.False, entry.marker);
+            }
+
             ProfileGcScriptEntry? probe = null;
             foreach (ProfileGcScriptEntry entry in sidecar.gcByScript)
             {
@@ -135,6 +141,43 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
             Assert.That(probe, Is.Not.Null, "gcByScript: " + string.Join(", ", System.Array.ConvertAll(sidecar.gcByScript, e => e.marker)));
             Assert.That(probe!.bytesTotal, Is.GreaterThan(0));
+        }
+
+        [UnityTest]
+        public IEnumerator Start_FramesAboveTheBuffer_WarnsWithRequestedClampedAndLimit()
+        {
+            var handler = new ProfileCommandHandler();
+            string json = handler.Handle(ProtocolConstants.CommandProfileCaptureStart, "{\"frames\":100000}");
+            ProfileCaptureStartedPayload started = JsonUtility.FromJson<ProfileCaptureStartedPayload>(json);
+
+            Assert.That(started.warning, Does.Contain("100000"));
+            Assert.That(started.warning, Does.Contain("clamped"));
+            Assert.That(started.frameClamp, Is.Not.Null);
+            Assert.That(started.frameClamp!.requested, Is.EqualTo(100000));
+            Assert.That(started.frameClamp.clamped, Is.EqualTo(started.requestedFrames));
+            Assert.That(started.frameClamp.bufferLimit, Is.EqualTo(started.requestedFrames));
+            Assert.That(started.requestedFrames, Is.GreaterThan(0).And.LessThan(100000));
+            Assert.That(started.warning, Does.Contain(started.requestedFrames.ToString()));
+
+            try
+            {
+                handler.Handle(ProtocolConstants.CommandProfileCaptureStop, "{}");
+            }
+            catch (CommandFailureException)
+            {
+                // 0 frames is PROFILE_EMPTY; the warning was already on the start response.
+            }
+
+            for (int frame = 0; frame < MaxWaitFrames; frame++)
+            {
+                string status = Status(handler, started.captureId).status;
+                if (status is "Completed" or "Empty" or "NotFound" or "Failed" or "Interrupted")
+                {
+                    break;
+                }
+
+                yield return null;
+            }
         }
 
         [UnityTest]

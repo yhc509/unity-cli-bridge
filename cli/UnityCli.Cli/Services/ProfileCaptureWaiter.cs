@@ -80,19 +80,12 @@ internal static class ProfileCaptureWaiter
             switch (summary.status)
             {
                 case "Completed":
+                    ProfileCaptureResultPayload finished = ProfileCaptureResultPayload.FromSummary(summary, null, null);
+                    finished.captureId = captureId;
                     return ResponseEnvelope.Success(
                         poll.requestId,
                         poll.target,
-                        JsonSerializer.SerializeToElement(
-                            new ProfileCaptureResultPayload
-                            {
-                                captureId = captureId,
-                                status = summary.status,
-                                capturedFrames = summary.capturedFrames,
-                                requestedFrames = summary.requestedFrames,
-                                summary = summary,
-                            },
-                            ProtocolJson.Default),
+                        JsonSerializer.SerializeToElement(finished, ProtocolJson.Default),
                         poll.durationMs,
                         poll.transport);
                 case "Capturing":

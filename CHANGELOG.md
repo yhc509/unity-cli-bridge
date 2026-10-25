@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `gcTop` in the capture summary, `profile analyze`, and `profile analyze --gc` leaves out the player-loop containers (`PlayerLoop`, `UpdateScene`, `BehaviourUpdate`, `Update.ScriptRunBehaviourUpdate`, and the LateUpdate and FixedUpdate equivalents) and `GC.Alloc` itself. Their GC column is the total of everything below them, so they used to fill the list.
 - Capture sidecars are `schemaVersion` 2, which adds `gcByScript` and `gcUnattributedBytes`. Version 1 sidecars still load. Their `gcByScript` is empty, and `notes` says the capture was recorded before GC attribution.
 
+### Fixed
+- `profile capture start` still clamps `--frames` to the profiler buffer (300 frames on Unity 2021.3, 2000 on Unity 6). When the request is clamped, the start response and the `--wait` summary include `warning` and `frameClamp` (`requested`, `clamped`, `bufferLimit`). `requestedFrames` is the clamped count. A `--wait` timeout check uses `--duration`, or a `--frames` count inside the buffer. A frame count above the buffer finishes when the buffer is full.
+- `gcTop` and `gcByScript` leave out engine end-of-frame and PlayerLoop phase markers such as `PlayerEndOfFrame`, `PostLateUpdate`, and `PostLateUpdate.*`. Allocation under those markers is attributed to the nearest script marker above them, or counted as unattributed. Script markers such as `ThreatField.Update()` stay ranked.
+- `profile capture stop --wait` returns the same shape as `stop` on a capture that already finished: `captureId`, `status`, `capturedFrames`, and `summary`. `notice: PROFILE_ALREADY_COMPLETED` is set only when the capture had already finished on its own.
+
 ## [0.6.0] - 2026-10-24
 
 ### Changed

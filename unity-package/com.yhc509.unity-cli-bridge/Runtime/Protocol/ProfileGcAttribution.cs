@@ -14,8 +14,9 @@ namespace UnityCli.Protocol
         public const string GcAllocMarker = "GC.Alloc";
 
         /// <summary>
-        /// The single list of markers left out of <c>gcTop</c>: script-dispatch containers whose GC is the sum
-        /// of their children, and the <c>GC.Alloc</c> leaf itself. They are also never a script ancestor.
+        /// Script-dispatch containers whose GC is the sum of their children, and the <c>GC.Alloc</c> leaf itself.
+        /// They are left out of <c>gcTop</c> and are never a script ancestor. Engine PlayerLoop phases and
+        /// end-of-frame markers are excluded by <see cref="IsEnginePlayerLoopMarker"/> as well.
         /// </summary>
         public static readonly string[] GcTopExcludedMarkers =
         {
@@ -28,6 +29,28 @@ namespace UnityCli.Protocol
             "FixedBehaviourUpdate",
             "FixedUpdate.ScriptRunBehaviourFixedUpdate",
             GcAllocMarker,
+        };
+
+        /// <summary>PlayerLoop phase roots. A marker named <c>Phase</c> or <c>Phase.Subsystem</c> is engine code.</summary>
+        public static readonly string[] PlayerLoopPhaseNames =
+        {
+            "TimeUpdate",
+            "Initialization",
+            "EarlyUpdate",
+            "FixedUpdate",
+            "PreUpdate",
+            "Update",
+            "PreLateUpdate",
+            "PostLateUpdate",
+        };
+
+        /// <summary>End-of-frame samples. Matched exactly and as a <c>.Name</c> suffix (for example <c>PlayerEndOfFrame</c>).</summary>
+        public static readonly string[] EndOfFrameMarkerNames =
+        {
+            "PlayerEndOfFrame",
+            "EndOfFrame",
+            "WaitForEndOfFrame",
+            "TriggerEndOfFrameCallbacks",
         };
 
         public static bool IsExcludedFromGcTop(string? marker)
@@ -45,12 +68,59 @@ namespace UnityCli.Protocol
                 }
             }
 
+            return IsEnginePlayerLoopMarker(marker);
+        }
+
+        /// <summary>
+        /// Engine PlayerLoop phase and end-of-frame markers, such as <c>PlayerEndOfFrame</c> and
+        /// <c>PostLateUpdate.FinishFrameRendering</c>. A script decoration (<c>.dll!</c>, <c>[Invoke]</c>,
+        /// <c>[Coroutine:</c>) keeps the marker, so <c>ThreatField.Update() [Invoke]</c> stays a script.
+        /// </summary>
+        public static bool IsEnginePlayerLoopMarker(string? marker)
+        {
+            if (string.IsNullOrEmpty(marker))
+            {
+                return false;
+            }
+
+            if (marker!.IndexOf(".dll!", StringComparison.Ordinal) >= 0
+                || marker.EndsWith(" [Invoke]", StringComparison.Ordinal)
+                || marker.IndexOf(" [Coroutine:", StringComparison.Ordinal) >= 0)
+            {
+                return false;
+            }
+
+            if (EqualsAny(marker, EndOfFrameMarkerNames) || EqualsAny(marker, PlayerLoopPhaseNames))
+            {
+                return true;
+            }
+
+            for (int index = 0; index < PlayerLoopPhaseNames.Length; index++)
+            {
+                string phase = PlayerLoopPhaseNames[index];
+                if (marker.Length > phase.Length
+                    && marker[phase.Length] == '.'
+                    && marker.StartsWith(phase, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            for (int index = 0; index < EndOfFrameMarkerNames.Length; index++)
+            {
+                if (marker.EndsWith("." + EndOfFrameMarkerNames[index], StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
         /// <summary>
         /// A script or user marker: the profiler flags it as script code, or its name carries the script
-        /// decoration (<c>Assembly.dll!</c> prefix or <c>[Invoke]</c> suffix). Containers never count.
+        /// decoration (<c>Assembly.dll!</c> prefix or <c>[Invoke]</c> suffix). Containers and engine
+        /// PlayerLoop markers never count, even when the profiler sets a script flag on them.
         /// </summary>
         public static bool IsScriptMarker(string? marker, bool scriptFlag)
         {
@@ -114,6 +184,62 @@ namespace UnityCli.Protocol
             var result = new ProfileGcScriptEntry[limit];
             Array.Copy(source, result, limit);
             return result;
+        }
+
+        /// <summary>
+        /// Drops engine containers and PlayerLoop markers from a stored <c>gcByScript</c> list and adds their
+        /// bytes to <paramref name="unattributedBytes"/>. A capture recorded before that exclusion still reads cleanly.
+        /// </summary>
+        public static ProfileGcScriptEntry[] OmitEngineMarkers(ProfileGcScriptEntry[]? entries, ref long unattributedBytes)
+        {
+            ProfileGcScriptEntry[] source = entries ?? Array.Empty<ProfileGcScriptEntry>();
+            int omitted = 0;
+            for (int index = 0; index < source.Length; index++)
+            {
+                ProfileGcScriptEntry? entry = source[index];
+                if (entry != null && IsExcludedFromGcTop(entry.marker))
+                {
+                    omitted++;
+                }
+            }
+
+            if (omitted == 0)
+            {
+                return source;
+            }
+
+            var kept = new List<ProfileGcScriptEntry>(source.Length - omitted);
+            for (int index = 0; index < source.Length; index++)
+            {
+                ProfileGcScriptEntry? entry = source[index];
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                if (IsExcludedFromGcTop(entry.marker))
+                {
+                    unattributedBytes += entry.bytesTotal;
+                    continue;
+                }
+
+                kept.Add(entry);
+            }
+
+            return kept.ToArray();
+        }
+
+        private static bool EqualsAny(string marker, string[] names)
+        {
+            for (int index = 0; index < names.Length; index++)
+            {
+                if (string.Equals(names[index], marker, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 

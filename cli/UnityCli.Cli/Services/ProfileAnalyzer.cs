@@ -54,14 +54,16 @@ internal static class ProfileAnalyzer
         else if (parsed.ProfileAnalyzeGc)
         {
             string? note = LegacyGcByScriptNote(sidecar);
+            long unattributed = sidecar.gcUnattributedBytes;
+            ProfileGcScriptEntry[] scripts = ProfileGcAttribution.OmitEngineMarkers(sidecar.gcByScript, ref unattributed);
             payload = new ProfileAnalyzeGcPayload
             {
                 captureId = sidecar.captureId,
                 entries = ProfileGcAttribution.BuildGcTop(sidecar.markers, limit, out bool truncated),
                 truncated = truncated,
-                gcByScript = ProfileGcAttribution.Take(sidecar.gcByScript, limit, out bool scriptsTruncated),
+                gcByScript = ProfileGcAttribution.Take(scripts, limit, out bool scriptsTruncated),
                 gcByScriptTruncated = scriptsTruncated,
-                gcUnattributedBytes = sidecar.gcUnattributedBytes,
+                gcUnattributedBytes = unattributed,
                 notes = note is null ? null : new[] { note },
             };
         }
@@ -78,9 +80,13 @@ internal static class ProfileAnalyzer
         else
         {
             // Older sidecars stored a gcTop that still ranked the player-loop containers; rebuild it.
+            // Engine phase markers stored in gcByScript are moved to gcUnattributedBytes.
             ProfileSummaryPayload summary = sidecar.summary;
             summary.gcTop = ProfileGcAttribution.BuildGcTop(
                 sidecar.markers, ProtocolConstants.DefaultProfileListLimit, out _);
+            long summaryUnattributed = summary.gcUnattributedBytes;
+            summary.gcByScript = ProfileGcAttribution.OmitEngineMarkers(summary.gcByScript, ref summaryUnattributed);
+            summary.gcUnattributedBytes = summaryUnattributed;
             string? note = LegacyGcByScriptNote(sidecar);
             payload = new ProfileAnalyzeSummaryPayload
             {

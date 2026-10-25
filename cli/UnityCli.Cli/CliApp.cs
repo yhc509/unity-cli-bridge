@@ -850,6 +850,7 @@ public static class CliApp
                         try
                         {
                             response = await PollProfileStatusAsync(target, sendCommandAsync, stopSummary.captureId, cts.Token);
+                            response = PresentFinishedCapture(response);
                         }
                         catch (Exception)
                         {
@@ -1179,6 +1180,40 @@ public static class CliApp
         return parsed.Kind == CommandKind.RecordStart
             && parsed.RecordWait
             && string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>profile status</c> returns the summary flat. <c>stop --wait</c> wraps a finished one so it matches
+    /// <c>stop</c> on a capture that already finished: captureId, status, capturedFrames, summary, and warning
+    /// when --frames was clamped. A payload that already has <c>summary</c> is left as-is.
+    /// </summary>
+    internal static ResponseEnvelope PresentFinishedCapture(ResponseEnvelope poll)
+    {
+        if (!string.Equals(poll.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal)
+            || !poll.data.HasValue
+            || poll.data.Value.ValueKind != JsonValueKind.Object)
+        {
+            return poll;
+        }
+
+        if (poll.data.Value.TryGetProperty("summary", out JsonElement nested)
+            && nested.ValueKind == JsonValueKind.Object)
+        {
+            return poll;
+        }
+
+        ProfileSummaryPayload? summary = DeserializeData<ProfileSummaryPayload>(poll);
+        if (summary is null || !string.Equals(summary.status, "Completed", StringComparison.Ordinal))
+        {
+            return poll;
+        }
+
+        return ResponseEnvelope.Success(
+            poll.requestId,
+            poll.target,
+            JsonSerializer.SerializeToElement(ProfileCaptureResultPayload.FromSummary(summary, null, null), ProtocolJson.Default),
+            poll.durationMs,
+            poll.transport);
     }
 
     /// <summary>

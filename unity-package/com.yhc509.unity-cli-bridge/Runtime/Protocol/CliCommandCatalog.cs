@@ -278,7 +278,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "profile capture start",
                 "profile capture start [--frames <n> | --duration <seconds>] [--budget-ms <ms> (default: 16.67)] [--wait [--timeout <seconds>]]",
-                "Starts a Play Mode profiler capture and returns immediately with a captureId. Auto-stops after --frames/--duration or the 600s safety cap. --wait blocks until the capture finishes and returns its summary.",
+                "Starts a Play Mode profiler capture and returns immediately with a captureId. Auto-stops after --frames/--duration or the 600s safety cap. --frames above the profiler buffer is clamped to that buffer, and the response then includes warning and frameClamp (requested, clamped, bufferLimit). --wait blocks until the capture finishes and returns captureId, status, capturedFrames, and summary, including that warning when the request was clamped.",
                 CliCommandGroup.Diagnostics,
                 ProtocolConstants.CommandProfileCaptureStart,
                 canUseLocal: false,
@@ -289,13 +289,14 @@ namespace UnityCli.Protocol
                     "Live-only. Requires Play Mode.",
                     "Only one capture can run at a time (PROFILE_IN_PROGRESS otherwise).",
                     "--budget-ms sets the frame budget used for spike detection and the verdict.",
-                    "--wait needs --frames or --duration. It returns captureId, capturedFrames, and summary (the `profile analyze` summary shape). The default --timeout is 60 s plus 0.25 s per frame (or the duration). On timeout it fails with PROFILE_WAIT_TIMEOUT, naming the captureId and the frames captured so far; the capture keeps running.",
+                    "--wait needs --frames or --duration. It returns captureId, status, capturedFrames, and summary (the `profile analyze` summary shape). The default --timeout is 60 s plus 0.25 s per frame (or the duration). On timeout it fails with PROFILE_WAIT_TIMEOUT, naming the captureId and the frames captured so far; the capture keeps running.",
+                    "--frames above the profiler buffer is clamped to that buffer (300 on Unity 2021.3, 2000 on Unity 6; the editor reports its own limit). The capture still records the clamped count, and requestedFrames is that count. The start response and the finished summary then include warning and frameClamp (requested, clamped, bufferLimit). A --wait timeout check uses --duration, or a --frames count inside the buffer; a frame count above the buffer finishes when the buffer is full.",
                     "A capture that ends with 0 frames fails with PROFILE_EMPTY and a retry hint.",
                 }),
             new CliCommandDescriptor(
                 "profile capture stop",
                 "profile capture stop [--wait]",
-                "Stops the active capture and starts summary processing (chunked frame walk). --wait polls `profile status` until the summary is ready and prints it. A capture that already finished on its own is returned instead of an error.",
+                "Stops the active capture and starts summary processing (chunked frame walk). --wait polls `profile status` until the summary is ready and returns captureId, status, capturedFrames, and summary — the same shape as stop on a capture that already finished. That already-finished case adds notice PROFILE_ALREADY_COMPLETED.",
                 CliCommandGroup.Diagnostics,
                 ProtocolConstants.CommandProfileCaptureStop,
                 canUseLocal: false,
@@ -303,8 +304,9 @@ namespace UnityCli.Protocol
                 isAllowedWhileBusy: true,
                 notes: new[]
                 {
-                    "Live-only. When the last capture already finished (--frames/--duration reached, the safety cap, or Play Mode ended), returns captureId, capturedFrames, and summary with notice PROFILE_ALREADY_COMPLETED. PROFILE_NOT_RUNNING only when no capture is active and none finished in this Editor session.",
+                    "Live-only. When the last capture already finished (--frames/--duration reached, the safety cap, or Play Mode ended), returns captureId, status, capturedFrames, and summary with notice PROFILE_ALREADY_COMPLETED. stop --wait returns that same shape, without the notice, once the summary is ready. PROFILE_NOT_RUNNING only when no capture is active and none finished in this Editor session.",
                     "Without --wait the response status is `Processing`; poll with `profile status <captureId>`.",
+                    "warning and frameClamp are included, on the payload and inside summary, when --frames was clamped to the profiler buffer.",
                     "A capture with 0 frames fails with PROFILE_EMPTY (captureId in the message) and a retry hint.",
                 }),
             new CliCommandDescriptor(
@@ -331,7 +333,7 @@ namespace UnityCli.Protocol
                     "With no mode, the response is the capture summary. Hotspots, gcTop, and spikes are under summary.",
                     "--marker tries an exact name first. Otherwise it strips an Assembly.dll!Namespace:: prefix, a trailing () [Invoke], and parentheses, then matches Type.Method. One match is used and the response includes resolvedMarker. Several matches return PROFILE_MARKER_AMBIGUOUS. A miss lists up to five similar names.",
                     "--marker frame appearances come from each frame's top-10 table, not the full hierarchy.",
-                    "--gc ranks markers by GC bytes without the player-loop containers (PlayerLoop, UpdateScene, BehaviourUpdate, Update.ScriptRunBehaviourUpdate, and similar) and GC.Alloc itself, and adds gcByScript: GC.Alloc bytes attributed to the nearest script marker above each allocation. Captures recorded before 0.6.1 have no gcByScript; the response says so in notes.",
+                    "--gc ranks markers by GC bytes without the player-loop containers (PlayerLoop, UpdateScene, BehaviourUpdate, Update.ScriptRunBehaviourUpdate, and similar), engine end-of-frame and PlayerLoop phase markers (PlayerEndOfFrame, PostLateUpdate, and Phase.Subsystem), and GC.Alloc itself, and adds gcByScript: GC.Alloc bytes attributed to the nearest script marker above each allocation. Those engine markers are not script ancestors. Captures recorded before 0.6.1 have no gcByScript; the response says so in notes.",
                 }),
             new CliCommandDescriptor(
                 "profile compare",

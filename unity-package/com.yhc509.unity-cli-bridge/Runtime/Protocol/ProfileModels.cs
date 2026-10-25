@@ -161,6 +161,40 @@ namespace UnityCli.Protocol
         public string? captureId;
     }
 
+    /// <summary>
+    /// Set when <c>--frames</c> was above the profiler buffer. <c>requestedFrames</c> on the payload stays the
+    /// clamped count the capture actually records.
+    /// </summary>
+    [Serializable]
+    public sealed class ProfileFrameClamp
+    {
+        public int requested;
+        public int clamped;
+        public int bufferLimit;
+
+        /// <summary>Null when <paramref name="requested"/> fits in the buffer, or no frame count was asked for.</summary>
+        public static ProfileFrameClamp? TryCreate(int requested, int bufferLimit)
+        {
+            if (requested <= 0 || bufferLimit <= 0 || requested <= bufferLimit)
+            {
+                return null;
+            }
+
+            return new ProfileFrameClamp
+            {
+                requested = requested,
+                clamped = bufferLimit,
+                bufferLimit = bufferLimit,
+            };
+        }
+
+        public string WarningText()
+        {
+            return "Requested " + requested + " frames, clamped to " + clamped
+                + " (profiler buffer limit " + bufferLimit + ").";
+        }
+    }
+
     [Serializable]
     public sealed class ProfileCaptureStartedPayload
     {
@@ -170,6 +204,11 @@ namespace UnityCli.Protocol
         public int requestedFrames;
         public int durationSeconds;
         public float budgetMs;
+
+        /// <summary>Set when --frames was clamped to the profiler buffer. States requested, clamped, and the limit.</summary>
+        public string? warning;
+
+        public ProfileFrameClamp? frameClamp;
     }
 
     [Serializable]
@@ -249,11 +288,18 @@ namespace UnityCli.Protocol
         /// <summary>GC.Alloc bytes with no script marker above them (engine or Editor allocations).</summary>
         public long gcUnattributedBytes;
         public string sidecarPath = string.Empty;
+
+        /// <summary>Set when --frames was clamped to the profiler buffer. Same text as the start response.</summary>
+        public string? warning;
+
+        public ProfileFrameClamp? frameClamp;
     }
 
     /// <summary>
-    /// A finished capture: `profile capture start --wait`, and `profile capture stop` after the capture already
-    /// finished on its own (then <see cref="notice"/> is PROFILE_ALREADY_COMPLETED).
+    /// A finished capture. <c>profile capture start --wait</c>, <c>profile capture stop --wait</c>, and
+    /// <c>profile capture stop</c> after the capture already finished on its own all return this shape.
+    /// <see cref="notice"/> is PROFILE_ALREADY_COMPLETED only for that last case.
+    /// <see cref="warning"/> is set when --frames was clamped to the profiler buffer.
     /// </summary>
     [Serializable]
     public sealed class ProfileCaptureResultPayload
@@ -264,7 +310,25 @@ namespace UnityCli.Protocol
         public int requestedFrames;
         public string? notice;
         public string? message;
+        public string? warning;
+        public ProfileFrameClamp? frameClamp;
         public ProfileSummaryPayload summary = new ProfileSummaryPayload();
+
+        public static ProfileCaptureResultPayload FromSummary(ProfileSummaryPayload summary, string? notice, string? message)
+        {
+            return new ProfileCaptureResultPayload
+            {
+                captureId = summary.captureId,
+                status = summary.status,
+                capturedFrames = summary.capturedFrames,
+                requestedFrames = summary.requestedFrames,
+                notice = notice,
+                message = message,
+                warning = summary.warning,
+                frameClamp = summary.frameClamp,
+                summary = summary,
+            };
+        }
     }
 
     [Serializable]

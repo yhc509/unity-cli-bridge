@@ -13,6 +13,10 @@ public sealed class ProfileGcAttributionTests
     [InlineData("BehaviourUpdate")]
     [InlineData("Update.ScriptRunBehaviourUpdate")]
     [InlineData("GC.Alloc")]
+    [InlineData("PlayerEndOfFrame")]
+    [InlineData("PostLateUpdate")]
+    [InlineData("PostLateUpdate.FinishFrameRendering")]
+    [InlineData("EarlyUpdate.PlayerCleanupCachedData")]
     public void BuildGcTop_ExcludesContainersAndGcAlloc(string container)
     {
         var markers = new[]
@@ -54,6 +58,31 @@ public sealed class ProfileGcAttributionTests
             Assert.True(ProfileGcAttribution.IsExcludedFromGcTop(marker));
             Assert.False(ProfileGcAttribution.IsScriptMarker(marker, scriptFlag: true));
         }
+
+        foreach (string phase in ProfileGcAttribution.PlayerLoopPhaseNames)
+        {
+            Assert.True(ProfileGcAttribution.IsEnginePlayerLoopMarker(phase));
+            Assert.True(ProfileGcAttribution.IsEnginePlayerLoopMarker(phase + ".Subsystem"));
+            Assert.False(ProfileGcAttribution.IsScriptMarker(phase, scriptFlag: true));
+        }
+
+        foreach (string endOfFrame in ProfileGcAttribution.EndOfFrameMarkerNames)
+        {
+            Assert.True(ProfileGcAttribution.IsEnginePlayerLoopMarker(endOfFrame));
+            Assert.False(ProfileGcAttribution.IsScriptMarker(endOfFrame, scriptFlag: true));
+        }
+    }
+
+    [Theory]
+    [InlineData(Threat, false)]
+    [InlineData("ThreatField.Update() [Invoke]", false)]
+    [InlineData("Assembly-CSharp.dll!::ThreatField.Update() [Coroutine: MoveNext]", false)]
+    [InlineData("Camera.Render", false)]
+    [InlineData("PlayerController.Update", false)]
+    public void IsEnginePlayerLoopMarker_KeepsScriptNames(string name, bool expected)
+    {
+        Assert.Equal(expected, ProfileGcAttribution.IsEnginePlayerLoopMarker(name));
+        Assert.False(ProfileGcAttribution.IsExcludedFromGcTop(name));
     }
 
     [Theory]
@@ -112,6 +141,81 @@ public sealed class ProfileGcAttributionTests
         Assert.Equal(200, entries[1].bytesTotal);
         Assert.Equal(100, entries[2].bytesTotal);
         Assert.Equal(140, accumulator.UnattributedBytes);
+    }
+
+    [Fact]
+    public void Walker_EndOfFrameAndPhaseMarkers_AreNotScriptAncestors()
+    {
+        // PlayerLoop
+        //   PostLateUpdate (script flag, as 6000.3 can flag engine phases)
+        //     PlayerEndOfFrame (script flag, 440 B on its own)
+        //       GC.Alloc 440
+        //     ThreatField.Update [Invoke]
+        //       GC.Alloc 17000
+        //   PostLateUpdate.FinishFrameRendering
+        //     GC.Alloc 16
+        var tree = new FakeHierarchy();
+        int player = tree.Add(0, "PlayerLoop");
+        int post = tree.Add(player, "PostLateUpdate", scriptFlag: true);
+        int end = tree.Add(post, "PlayerEndOfFrame", scriptFlag: true);
+        tree.Add(end, "GC.Alloc", gc: 440, calls: 1);
+        int threat = tree.Add(post, Threat, scriptFlag: true);
+        tree.Add(threat, "GC.Alloc", gc: 17000, calls: 1);
+        int finish = tree.Add(player, "PostLateUpdate.FinishFrameRendering");
+        tree.Add(finish, "GC.Alloc", gc: 16, calls: 1);
+
+        var accumulator = new ProfileGcByScriptAccumulator();
+        accumulator.BeginFrame();
+        Walk(tree, accumulator);
+
+        ProfileGcScriptEntry[] entries = accumulator.Build(capturedFrames: 1);
+
+        Assert.Equal(new[] { Threat }, entries.Select(entry => entry.marker));
+        Assert.Equal(17000, entries[0].bytesTotal);
+        Assert.Equal(456, accumulator.UnattributedBytes);
+    }
+
+    [Fact]
+    public void Walker_EndOfFrameUnderAScript_AttributesToThatScript()
+    {
+        // PlayerLoop
+        //   Update.ScriptRunBehaviourUpdate
+        //     ThreatField.Update
+        //       PlayerEndOfFrame
+        //         GC.Alloc 440
+        var tree = new FakeHierarchy();
+        int player = tree.Add(0, "PlayerLoop");
+        int scriptRun = tree.Add(player, "Update.ScriptRunBehaviourUpdate");
+        int threat = tree.Add(scriptRun, Threat, scriptFlag: true);
+        int end = tree.Add(threat, "PlayerEndOfFrame", scriptFlag: true);
+        tree.Add(end, "GC.Alloc", gc: 440, calls: 1);
+
+        var accumulator = new ProfileGcByScriptAccumulator();
+        accumulator.BeginFrame();
+        Walk(tree, accumulator);
+
+        ProfileGcScriptEntry[] entries = accumulator.Build(capturedFrames: 1);
+
+        Assert.Equal(new[] { Threat }, entries.Select(entry => entry.marker));
+        Assert.Equal(440, entries[0].bytesTotal);
+        Assert.Equal(0, accumulator.UnattributedBytes);
+    }
+
+    [Fact]
+    public void OmitEngineMarkers_MovesPhaseBytesToUnattributedAndKeepsScripts()
+    {
+        var entries = new[]
+        {
+            new ProfileGcScriptEntry { marker = "PlayerEndOfFrame", bytesTotal = 440 },
+            new ProfileGcScriptEntry { marker = Threat, bytesTotal = 17000 },
+            new ProfileGcScriptEntry { marker = "PostLateUpdate", bytesTotal = 12 },
+        };
+        long unattributed = 100;
+
+        ProfileGcScriptEntry[] kept = ProfileGcAttribution.OmitEngineMarkers(entries, ref unattributed);
+
+        Assert.Equal(new[] { Threat }, kept.Select(entry => entry.marker));
+        Assert.Equal(552, unattributed);
     }
 
     [Fact]

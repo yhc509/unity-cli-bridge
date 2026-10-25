@@ -77,6 +77,8 @@ namespace UnityCliBridge.Bridge.Editor
         private static int _durationSeconds;
         private static float _budgetMs;
         private static bool _requestClamped;
+        private static ProfileFrameClamp? _frameClamp;
+        private static string? _frameClampWarning;
         private static int _startFrameIndex;
 
         // walk state (Processing phase)
@@ -150,8 +152,12 @@ namespace UnityCliBridge.Bridge.Editor
                 int ringBufferFrames = ReadRingBufferFrameCount();
                 _captureId = Guid.NewGuid().ToString("N");
                 _budgetMs = args.budgetMs > 0 ? args.budgetMs : ProtocolConstants.DefaultProfileBudgetMs;
-                _requestClamped = args.frames > ringBufferFrames;
-                _requestedFrames = args.frames > 0 ? Math.Min(args.frames, ringBufferFrames) : 0;
+                // Clamping itself is unchanged: a request above the buffer records the buffer size.
+                ProfileFrameClamp? clamp = ProfileFrameClamp.TryCreate(args.frames, ringBufferFrames);
+                _frameClamp = clamp;
+                _frameClampWarning = clamp?.WarningText();
+                _requestClamped = clamp != null;
+                _requestedFrames = clamp != null ? clamp.clamped : args.frames > 0 ? args.frames : 0;
                 _durationSeconds = args.durationSeconds > 0
                     ? Math.Min(args.durationSeconds, ProtocolConstants.MaxProfileCaptureSeconds)
                     : 0;
@@ -173,6 +179,8 @@ namespace UnityCliBridge.Bridge.Editor
                     requestedFrames = _requestedFrames,
                     durationSeconds = _durationSeconds,
                     budgetMs = _budgetMs,
+                    warning = _frameClampWarning,
+                    frameClamp = _frameClamp,
                 });
             }
             catch
@@ -260,16 +268,12 @@ namespace UnityCliBridge.Bridge.Editor
                     + ". Start a new one with `profile capture start`.");
             }
 
-            return ProtocolJson.Serialize(new ProfileCaptureResultPayload
-            {
-                captureId = lastId!,
-                status = summary.status,
-                capturedFrames = summary.capturedFrames,
-                requestedFrames = summary.requestedFrames,
-                notice = ProtocolConstants.NoticeProfileAlreadyCompleted,
-                message = "Capture `" + lastId + "` had already finished on its own (--frames/--duration reached, the 600 s cap, or Play Mode ended). This is its summary.",
-                summary = summary,
-            });
+            ProfileCaptureResultPayload finished = ProfileCaptureResultPayload.FromSummary(
+                summary,
+                ProtocolConstants.NoticeProfileAlreadyCompleted,
+                "Capture `" + lastId + "` had already finished on its own (--frames/--duration reached, the 600 s cap, or Play Mode ended). This is its summary.");
+            finished.captureId = lastId!;
+            return ProtocolJson.Serialize(finished);
         }
 
         private static CommandFailureException EmptyCaptureFailure(string captureId, int requestedFrames)
@@ -296,6 +300,8 @@ namespace UnityCliBridge.Bridge.Editor
                     capturedFrames = CountCapturedFrames(),
                     requestedFrames = _requestedFrames,
                     budgetMs = _budgetMs,
+                    warning = _frameClampWarning,
+                    frameClamp = _frameClamp,
                 });
             }
 
@@ -607,6 +613,8 @@ namespace UnityCliBridge.Bridge.Editor
                 gcByScript = ProfileGcAttribution.Take(gcByScript, ProtocolConstants.DefaultProfileListLimit, out _),
                 gcUnattributedBytes = gcAccumulator.UnattributedBytes,
                 sidecarPath = ProtocolConstants.ProfilesDirectoryRelative + "/" + captureId + ".json",
+                warning = _frameClampWarning,
+                frameClamp = _frameClamp,
             };
 
             var sidecar = new ProfileSidecarFile
@@ -639,6 +647,8 @@ namespace UnityCliBridge.Bridge.Editor
             _requestedFrames = 0;
             _durationSeconds = 0;
             _requestClamped = false;
+            _frameClamp = null;
+            _frameClampWarning = null;
             _walkFrames = null;
             _walkMarkers = null;
             _walkGpuMs = null;
