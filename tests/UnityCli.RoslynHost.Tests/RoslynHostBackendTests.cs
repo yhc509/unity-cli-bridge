@@ -371,36 +371,50 @@ public sealed class RoslynHostBackendTests : IDisposable
     {
         // The start thread keeps the starter slot through the status write. A compile can take the
         // host before that slot is cleared, and the crash restart used to no-op, so later compiles
-        // reported the old failure and never launched (CI: one launch instead of three).
+        // reported the old failure and never launched. BeginStart only starts the restart thread;
+        // Launch runs on that thread, so the launch count has to be waited on (a fixed sleep and an
+        // immediate read both race the scheduler — ubuntu CI: launches=1 at ~214 ms).
         var release = new ManualResetEventSlim(false);
         var entered = new ManualResetEventSlim(false);
+        var waitingForCloseOut = new ManualResetEventSlim(false);
         var launcher = new FakeLauncher(_ => new ScriptedHostInstance(ScriptedHostInstance.Replies(
             _ => throw new RoslynHostException(RoslynHostFailureCodes.Timeout, "no reply from the host within 10000 ms"))));
         using RoslynHostSupervisor supervisor = Supervisor(launcher, configure: options =>
         {
+            options.OnWaitingForCloseOut = () => waitingForCloseOut.Set();
             options.HoldStartCloseOut = () =>
             {
                 entered.Set();
-                release.Wait(TimeSpan.FromSeconds(3));
+                // Longer than BeginStart's 5s close-out wait, so a stalled runner cannot drop the
+                // slot on its own. The test releases this as soon as the restart is waiting.
+                release.Wait(TimeSpan.FromSeconds(30));
             };
         });
         var backend = new RoslynHostBackend(supervisor);
 
-        supervisor.BeginStart("preload");
-        Assert.True(entered.Wait(TimeSpan.FromSeconds(3)));
-        Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(3)));
+        try
+        {
+            supervisor.BeginStart("preload");
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(15)), "start thread did not reach close-out");
+            Assert.True(SpinWait.SpinUntil(() => supervisor.State == "ready", TimeSpan.FromSeconds(15)), "state=" + supervisor.State);
 
-        CompileResult? result = null;
-        var compile = new Thread(() => result = backend.TryCompile(Request("return 1;"))) { IsBackground = true };
-        compile.Start();
-        bool finishedWhileHeld = compile.Join(TimeSpan.FromMilliseconds(200));
-        release.Set();
+            CompileResult? result = null;
+            var compile = new Thread(() => result = backend.TryCompile(Request("return 1;"))) { IsBackground = true };
+            compile.Start();
 
-        Assert.False(finishedWhileHeld, "the restart returned while the start thread was still closing out");
-        Assert.True(compile.Join(TimeSpan.FromSeconds(5)));
-        Assert.NotNull(result);
-        Assert.StartsWith("timeout: ", result!.FailureDetail);
-        Assert.True(launcher.Launches >= 2, "launches=" + launcher.Launches);
+            Assert.True(waitingForCloseOut.Wait(TimeSpan.FromSeconds(15)), "restart did not wait for the start thread to finish closing out");
+            Assert.False(compile.Join(TimeSpan.Zero), "the restart returned while the start thread was still closing out");
+            release.Set();
+
+            Assert.True(compile.Join(TimeSpan.FromSeconds(15)), "compile did not finish after close-out");
+            Assert.NotNull(result);
+            Assert.StartsWith("timeout: ", result!.FailureDetail);
+            Assert.True(SpinWait.SpinUntil(() => launcher.Launches >= 2, TimeSpan.FromSeconds(15)), "launches=" + launcher.Launches);
+        }
+        finally
+        {
+            release.Set();
+        }
     }
 
     [Fact]

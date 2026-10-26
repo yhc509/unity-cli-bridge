@@ -242,6 +242,13 @@ namespace UnityCliBridge.Bridge.Editor
         /// Tests hold this to keep the "failed, but still closing out" window open. Production leaves it null.
         /// </summary>
         public Action? HoldStartCloseOut { get; set; }
+
+        /// <summary>
+        /// Runs on the caller of <see cref="RoslynHostSupervisor.BeginStart"/> when that call is about to
+        /// wait out a start that is still closing out. Tests wait on this instead of a fixed sleep.
+        /// Production leaves it null, and a null callback changes nothing.
+        /// </summary>
+        public Action? OnWaitingForCloseOut { get; set; }
     }
 
     /// <summary>
@@ -481,6 +488,7 @@ namespace UnityCliBridge.Bridge.Editor
             // that close-out, then start. A live start (building/starting) is not this case.
             if (FailedStartIsClosingOut())
             {
+                _options.OnWaitingForCloseOut?.Invoke();
                 _startIdle.WaitOne(5000);
             }
 
