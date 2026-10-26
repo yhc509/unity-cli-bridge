@@ -152,7 +152,8 @@ namespace UnityCliBridge.Bridge.Editor
                 int ringBufferFrames = ReadRingBufferFrameCount();
                 _captureId = Guid.NewGuid().ToString("N");
                 _budgetMs = args.budgetMs > 0 ? args.budgetMs : ProtocolConstants.DefaultProfileBudgetMs;
-                // Clamping itself is unchanged: a request above the buffer records the buffer size.
+                // Clamping itself is unchanged: a request above the buffer is capped at the buffer size.
+                // The walk can still keep slightly fewer frames, because the ring buffer rotates.
                 ProfileFrameClamp? clamp = ProfileFrameClamp.TryCreate(args.frames, ringBufferFrames);
                 _frameClamp = clamp;
                 _frameClampWarning = clamp?.WarningText();
@@ -171,7 +172,7 @@ namespace UnityCliBridge.Bridge.Editor
                 SessionState.SetString(ProtocolConstants.ProfileSessionKeyActiveId, _captureId);
                 RegisterAutoStopPoll();
 
-                return ProtocolJson.Serialize(new ProfileCaptureStartedPayload
+                return SerializeProfile(new ProfileCaptureStartedPayload
                 {
                     captureId = _captureId,
                     status = "STARTED",
@@ -218,7 +219,7 @@ namespace UnityCliBridge.Bridge.Editor
                 throw EmptyCaptureFailure(captureId, requestedFrames);
             }
 
-            return ProtocolJson.Serialize(new ProfileSummaryPayload
+            return SerializeProfile(new ProfileSummaryPayload
             {
                 captureId = captureId,
                 status = _phase == CapturePhase.Idle ? (_lastCaptureStatus ?? "Completed") : "Processing",
@@ -273,7 +274,7 @@ namespace UnityCliBridge.Bridge.Editor
                 ProtocolConstants.NoticeProfileAlreadyCompleted,
                 "Capture `" + lastId + "` had already finished on its own (--frames/--duration reached, the 600 s cap, or Play Mode ended). This is its summary.");
             finished.captureId = lastId!;
-            return ProtocolJson.Serialize(finished);
+            return SerializeProfile(finished);
         }
 
         private static CommandFailureException EmptyCaptureFailure(string captureId, int requestedFrames)
@@ -293,7 +294,7 @@ namespace UnityCliBridge.Bridge.Editor
                 && _captureId != null
                 && (string.IsNullOrWhiteSpace(args.captureId) || string.Equals(args.captureId, _captureId, StringComparison.Ordinal)))
             {
-                return ProtocolJson.Serialize(new ProfileSummaryPayload
+                return SerializeProfile(new ProfileSummaryPayload
                 {
                     captureId = _captureId,
                     status = _phase == CapturePhase.Capturing ? "Capturing" : "Processing",
@@ -313,12 +314,12 @@ namespace UnityCliBridge.Bridge.Editor
                     ProfileSidecarFile? file = ProtocolJson.Deserialize<ProfileSidecarFile>(File.ReadAllText(sidecar));
                     if (file != null)
                     {
-                        return ProtocolJson.Serialize(file.summary);
+                        return SerializeProfile(file.summary);
                     }
                 }
             }
 
-            return ProtocolJson.Serialize(new ProfileSummaryPayload
+            return SerializeProfile(new ProfileSummaryPayload
             {
                 captureId = id ?? string.Empty,
                 status = "NotFound",
@@ -656,6 +657,12 @@ namespace UnityCliBridge.Bridge.Editor
             SessionState.EraseString(ProtocolConstants.ProfileSessionKeyActiveId);
         }
 
+        /// <summary>JsonUtility cannot omit nulls. Drop empty warning and a zero frameClamp after it writes them.</summary>
+        private static string SerializeProfile<T>(T value)
+        {
+            return ProfileClampJson.OmitUnclamped(ProtocolJson.Serialize(value));
+        }
+
         private static string SidecarPath(string captureId)
         {
             string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
@@ -666,7 +673,7 @@ namespace UnityCliBridge.Bridge.Editor
         private static void WriteSidecar(string captureId, ProfileSidecarFile sidecar)
         {
             string path = SidecarPath(captureId);
-            AtomicFileUtility.WriteAllText(path, ProtocolJson.Serialize(sidecar));
+            AtomicFileUtility.WriteAllText(path, SerializeProfile(sidecar));
             AtomicFileUtility.CleanupTempFiles(Path.GetDirectoryName(path)!);
         }
 

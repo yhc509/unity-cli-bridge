@@ -150,6 +150,8 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             string json = handler.Handle(ProtocolConstants.CommandProfileCaptureStart, "{\"frames\":100000}");
             ProfileCaptureStartedPayload started = JsonUtility.FromJson<ProfileCaptureStartedPayload>(json);
 
+            Assert.That(ProfileClampJson.HasProperty(json, "warning"), Is.True, json);
+            Assert.That(ProfileClampJson.HasProperty(json, "frameClamp"), Is.True, json);
             Assert.That(started.warning, Does.Contain("100000"));
             Assert.That(started.warning, Does.Contain("clamped"));
             Assert.That(started.frameClamp, Is.Not.Null);
@@ -158,6 +160,7 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(started.frameClamp.bufferLimit, Is.EqualTo(started.requestedFrames));
             Assert.That(started.requestedFrames, Is.GreaterThan(0).And.LessThan(100000));
             Assert.That(started.warning, Does.Contain(started.requestedFrames.ToString()));
+            // capturedFrames is the walk's count and can be under this cap; this test does not require equality.
 
             try
             {
@@ -178,6 +181,49 @@ namespace UnityCliBridge.Bridge.Editor.Tests
 
                 yield return null;
             }
+        }
+
+        [UnityTest]
+        public IEnumerator UnclampedStartStatusAndStop_OmitWarningAndFrameClamp()
+        {
+            var handler = new ProfileCommandHandler();
+            string startJson = handler.Handle(ProtocolConstants.CommandProfileCaptureStart, "{\"frames\":5}");
+            AssertNoClampKeys(startJson);
+            ProfileCaptureStartedPayload started = JsonUtility.FromJson<ProfileCaptureStartedPayload>(startJson);
+            Assert.That(started.captureId, Is.Not.Empty);
+            Assert.That(started.requestedFrames, Is.EqualTo(5));
+
+            string capturingJson = handler.Handle(
+                ProtocolConstants.CommandProfileStatus,
+                "{\"captureId\":\"" + started.captureId + "\"}");
+            AssertNoClampKeys(capturingJson);
+
+            for (int frame = 0; frame < MaxWaitFrames && Status(handler, started.captureId).status != "Completed"; frame++)
+            {
+                yield return null;
+            }
+
+            string doneJson = handler.Handle(
+                ProtocolConstants.CommandProfileStatus,
+                "{\"captureId\":\"" + started.captureId + "\"}");
+            AssertNoClampKeys(doneJson);
+            Assert.That(doneJson, Does.Contain("\"capturedFrames\""));
+            ProfileSummaryPayload done = JsonUtility.FromJson<ProfileSummaryPayload>(doneJson);
+            Assert.That(done.status, Is.EqualTo("Completed"));
+            Assert.That(done.capturedFrames, Is.GreaterThan(0));
+
+            string stopJson = handler.Handle(ProtocolConstants.CommandProfileCaptureStop, "{}");
+            AssertNoClampKeys(stopJson);
+            Assert.That(stopJson, Does.Contain("\"capturedFrames\""));
+            ProfileCaptureResultPayload stopped = JsonUtility.FromJson<ProfileCaptureResultPayload>(stopJson);
+            Assert.That(stopped.capturedFrames, Is.EqualTo(done.capturedFrames));
+            Assert.That(stopped.summary.capturedFrames, Is.EqualTo(done.capturedFrames));
+
+            string sidecarPath = Path.Combine(
+                Path.GetFullPath(Path.Combine(Application.dataPath, "..")),
+                ProtocolConstants.ProfilesDirectoryRelative,
+                started.captureId + ".json");
+            AssertNoClampKeys(File.ReadAllText(sidecarPath));
         }
 
         [UnityTest]
@@ -229,6 +275,13 @@ namespace UnityCliBridge.Bridge.Editor.Tests
             Assert.That(response.error!.code, Is.EqualTo(ProtocolConstants.ErrorProfileNotFound));
             Assert.That(response.error.message, Does.Contain("Similar names:"));
             Assert.That(response.error.message, Does.Contain("ProfileCaptureProbe.Update"));
+        }
+
+        private static void AssertNoClampKeys(string json)
+        {
+            Assert.That(ProfileClampJson.OmitUnclamped(json), Is.EqualTo(json));
+            Assert.That(ProfileClampJson.HasProperty(json, "warning"), Is.False, json);
+            Assert.That(ProfileClampJson.HasProperty(json, "frameClamp"), Is.False, json);
         }
 
         private static string Start(ProfileCommandHandler handler, string argumentsJson)

@@ -82,6 +82,7 @@ internal static class ProfileAnalyzer
             // Older sidecars stored a gcTop that still ranked the player-loop containers; rebuild it.
             // Engine phase markers stored in gcByScript are moved to gcUnattributedBytes.
             ProfileSummaryPayload summary = sidecar.summary;
+            ProfileClampJson.Normalize(summary);
             summary.gcTop = ProfileGcAttribution.BuildGcTop(
                 sidecar.markers, ProtocolConstants.DefaultProfileListLimit, out _);
             long summaryUnattributed = summary.gcUnattributedBytes;

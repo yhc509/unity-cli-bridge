@@ -94,6 +94,85 @@ public sealed class ProfileCaptureWaitTests
         Assert.Equal(warning, summary.GetProperty("warning").GetString());
         Assert.Equal(297, summary.GetProperty("capturedFrames").GetInt32());
         Assert.False(data.TryGetProperty("notice", out _));
+        Assert.True(data.GetProperty("summary").TryGetProperty("capturedFrames", out _));
+    }
+
+    [Fact]
+    public async Task Wait_UnclampedJsonUtilitySummary_OmitsWarningAndFrameClamp()
+    {
+        const string summary =
+            "{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":120,\"requestedFrames\":120,"
+            + "\"warning\":\"\",\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0}}";
+        Task<ResponseEnvelope> Send(InstanceRecord _, CommandEnvelope __, int ___, CancellationToken ____)
+            => Task.FromResult(JsonSuccess(summary));
+
+        ResponseEnvelope result = await ProfileCaptureWaiter.WaitAsync(
+            Target, Send, Started("cap1", 120), 60, CancellationToken.None, NoDelay);
+
+        AssertNoClampKeys(result.data!.Value);
+        Assert.Equal(120, result.data.Value.GetProperty("capturedFrames").GetInt32());
+        Assert.Equal(120, result.data.Value.GetProperty("summary").GetProperty("capturedFrames").GetInt32());
+        AssertNoClampKeys(result.data.Value.GetProperty("summary"));
+    }
+
+    [Fact]
+    public void PresentFinishedCapture_UnclampedFlatSummary_OmitsWarningAndFrameClamp()
+    {
+        ResponseEnvelope poll = JsonSuccess(
+            "{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":254,\"requestedFrames\":300,"
+            + "\"warning\":\"\",\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0}}");
+
+        ResponseEnvelope presented = CliApp.PresentFinishedCapture(poll);
+
+        AssertNoClampKeys(presented.data!.Value);
+        Assert.Equal(254, presented.data.Value.GetProperty("capturedFrames").GetInt32());
+        Assert.Equal(254, presented.data.Value.GetProperty("summary").GetProperty("capturedFrames").GetInt32());
+        AssertNoClampKeys(presented.data.Value.GetProperty("summary"));
+    }
+
+    [Theory]
+    [InlineData(OutputMode.Json)]
+    [InlineData(OutputMode.Default)]
+    [InlineData(OutputMode.Compact)]
+    public void Format_UnclampedStartWaitAndStop_OmitWarningAndFrameClamp(OutputMode mode)
+    {
+        const string start =
+            "{\"captureId\":\"cap1\",\"status\":\"STARTED\",\"requestedFrames\":5,\"durationSeconds\":0,\"budgetMs\":16.67,"
+            + "\"warning\":\"\",\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0}}";
+        const string waited =
+            "{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":5,\"requestedFrames\":5,\"warning\":\"\","
+            + "\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0},\"summary\":{\"captureId\":\"cap1\","
+            + "\"status\":\"Completed\",\"capturedFrames\":5,\"requestedFrames\":5,\"warning\":\"\","
+            + "\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0},\"hotspots\":[{\"marker\":\"say \\\"warning\\\"\"}]}}";
+        const string stopped =
+            "{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":297,\"requestedFrames\":300,"
+            + "\"notice\":\"PROFILE_ALREADY_COMPLETED\",\"warning\":\"\",\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0},"
+            + "\"summary\":{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":297,\"requestedFrames\":300,\"warning\":\"\","
+            + "\"frameClamp\":{\"requested\":0,\"clamped\":0,\"bufferLimit\":0}}}";
+
+        foreach (string payload in new[] { start, waited, stopped })
+        {
+            string output = ResponseFormatter.Format(mode, JsonSuccess(payload));
+            string json = mode == OutputMode.Default
+                ? output[(output.IndexOf("data:", StringComparison.Ordinal) + "data:".Length)..].Trim()
+                : output;
+            using JsonDocument parsed = JsonDocument.Parse(json);
+            Assert.False(ProfileClampJson.HasProperty(json, "warning"), output);
+            Assert.False(ProfileClampJson.HasProperty(json, "frameClamp"), output);
+            Assert.Contains("cap1", output);
+            _ = parsed;
+        }
+
+        string clamped = ResponseFormatter.Format(OutputMode.Json, JsonSuccess(
+            "{\"captureId\":\"cap1\",\"status\":\"Completed\",\"capturedFrames\":1998,\"requestedFrames\":2000,"
+            + "\"warning\":\"Requested 100000 frames, clamped to 2000 (profiler buffer limit 2000).\","
+            + "\"frameClamp\":{\"requested\":100000,\"clamped\":2000,\"bufferLimit\":2000},"
+            + "\"summary\":{\"capturedFrames\":1998,\"warning\":\"Requested 100000 frames, clamped to 2000 (profiler buffer limit 2000).\","
+            + "\"frameClamp\":{\"requested\":100000,\"clamped\":2000,\"bufferLimit\":2000}}}"));
+        Assert.Contains("\"warning\"", clamped);
+        Assert.Contains("\"frameClamp\"", clamped);
+        Assert.Contains("\"capturedFrames\":1998", clamped);
+        Assert.Contains("\"clamped\":2000", clamped);
     }
 
     [Theory]
@@ -349,6 +428,22 @@ public sealed class ProfileCaptureWaitTests
         ResponseEnvelope countersOnly = ResponseEnvelope.Success(
             "r", "t", JsonDocument.Parse("{\"frames\":60}").RootElement.Clone(), 1);
         Assert.Same(countersOnly, CliApp.RequireMarkerStatsSupport(new ParsedCommand(CommandKind.ProfileStats), countersOnly));
+    }
+
+    private static void AssertNoClampKeys(JsonElement data)
+    {
+        Assert.False(data.TryGetProperty("warning", out _));
+        Assert.False(data.TryGetProperty("frameClamp", out _));
+    }
+
+    private static ResponseEnvelope JsonSuccess(string json)
+    {
+        return ResponseEnvelope.Success(
+            "req-1",
+            "target-1",
+            JsonDocument.Parse(json).RootElement.Clone(),
+            durationMs: 1,
+            transport: ProtocolConstants.TransportLive);
     }
 
     private static Task NoDelay(TimeSpan _, CancellationToken __) => Task.CompletedTask;

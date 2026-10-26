@@ -1,5 +1,7 @@
 #nullable enable
 using System;
+using System.Globalization;
+using System.Text;
 
 namespace UnityCli.Protocol
 {
@@ -163,7 +165,8 @@ namespace UnityCli.Protocol
 
     /// <summary>
     /// Set when <c>--frames</c> was above the profiler buffer. <c>requestedFrames</c> on the payload stays the
-    /// clamped count the capture actually records.
+    /// clamped cap. <c>capturedFrames</c> is how many frames the walk kept, which can be slightly under that cap
+    /// because the profiler ring buffer rotates. Omitted entirely when the request was not clamped.
     /// </summary>
     [Serializable]
     public sealed class ProfileFrameClamp
@@ -195,6 +198,737 @@ namespace UnityCli.Protocol
         }
     }
 
+    /// <summary>
+    /// JsonUtility writes a null string as <c>""</c> and a null object as zeros, so an unclamped capture would
+    /// otherwise always carry <c>warning</c> and <c>frameClamp</c>. Those fields are part of the response only
+    /// when the request was clamped.
+    /// </summary>
+    public static class ProfileClampJson
+    {
+        public static string? NormalizeWarning(string? warning)
+        {
+            return string.IsNullOrEmpty(warning) ? null : warning;
+        }
+
+        public static ProfileFrameClamp? NormalizeClamp(ProfileFrameClamp? frameClamp)
+        {
+            if (frameClamp == null
+                || (frameClamp.requested == 0 && frameClamp.clamped == 0 && frameClamp.bufferLimit == 0))
+            {
+                return null;
+            }
+
+            return frameClamp;
+        }
+
+        public static void Normalize(ProfileSummaryPayload? summary)
+        {
+            if (summary == null)
+            {
+                return;
+            }
+
+            summary.warning = NormalizeWarning(summary.warning);
+            summary.frameClamp = NormalizeClamp(summary.frameClamp);
+        }
+
+        public static void Normalize(ProfileCaptureStartedPayload? started)
+        {
+            if (started == null)
+            {
+                return;
+            }
+
+            started.warning = NormalizeWarning(started.warning);
+            started.frameClamp = NormalizeClamp(started.frameClamp);
+        }
+
+        public static void Normalize(ProfileCaptureResultPayload? result)
+        {
+            if (result == null)
+            {
+                return;
+            }
+
+            result.warning = NormalizeWarning(result.warning);
+            result.frameClamp = NormalizeClamp(result.frameClamp);
+            Normalize(result.summary);
+        }
+
+        /// <summary>True when <paramref name="json"/> has an object property with this name.</summary>
+        public static bool HasProperty(string json, string propertyName)
+        {
+            if (string.IsNullOrEmpty(json)
+                || json.IndexOf("\"" + propertyName + "\"", StringComparison.Ordinal) < 0)
+            {
+                return false;
+            }
+
+            int index = 0;
+            SkipWs(json, ref index);
+            return ValueHasProperty(json, ref index, propertyName);
+        }
+
+        /// <summary>
+        /// Drops empty <c>warning</c> strings (and JSON null) and all-zero or null <c>frameClamp</c> objects,
+        /// including inside a nested <c>summary</c>. A real clamp is left as written.
+        /// </summary>
+        public static string OmitUnclamped(string json)
+        {
+            if (string.IsNullOrEmpty(json)
+                || (json.IndexOf("warning", StringComparison.Ordinal) < 0
+                    && json.IndexOf("frameClamp", StringComparison.Ordinal) < 0))
+            {
+                return json;
+            }
+
+            try
+            {
+                var builder = new StringBuilder(json.Length);
+                int index = 0;
+                SkipWs(json, ref index);
+                builder.Append(json, 0, index);
+                CopyValue(json, ref index, builder);
+                int tail = index;
+                SkipWs(json, ref index);
+                if (index != json.Length)
+                {
+                    return json;
+                }
+
+                builder.Append(json, tail, index - tail);
+                return builder.ToString();
+            }
+            catch (FormatException)
+            {
+                return json;
+            }
+        }
+
+        private static bool ValueHasProperty(string json, ref int index, string propertyName)
+        {
+            if (index >= json.Length)
+            {
+                return false;
+            }
+
+            char kind = json[index];
+            if (kind == '{')
+            {
+                index++;
+                while (true)
+                {
+                    SkipWs(json, ref index);
+                    if (index >= json.Length)
+                    {
+                        throw new FormatException();
+                    }
+
+                    if (json[index] == '}')
+                    {
+                        index++;
+                        return false;
+                    }
+
+                    if (json[index] == ',')
+                    {
+                        index++;
+                        SkipWs(json, ref index);
+                    }
+
+                    string name = ReadString(json, ref index);
+                    SkipWs(json, ref index);
+                    if (index >= json.Length || json[index] != ':')
+                    {
+                        throw new FormatException();
+                    }
+
+                    index++;
+                    SkipWs(json, ref index);
+                    if (string.Equals(name, propertyName, StringComparison.Ordinal) || ValueHasProperty(json, ref index, propertyName))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            if (kind == '[')
+            {
+                index++;
+                while (true)
+                {
+                    SkipWs(json, ref index);
+                    if (index >= json.Length)
+                    {
+                        throw new FormatException();
+                    }
+
+                    if (json[index] == ']')
+                    {
+                        index++;
+                        return false;
+                    }
+
+                    if (json[index] == ',')
+                    {
+                        index++;
+                        SkipWs(json, ref index);
+                    }
+
+                    if (ValueHasProperty(json, ref index, propertyName))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            SkipValue(json, ref index);
+            return false;
+        }
+
+        private static void CopyValue(string json, ref int index, StringBuilder builder)
+        {
+            if (index >= json.Length)
+            {
+                throw new FormatException();
+            }
+
+            char kind = json[index];
+            if (kind == '{')
+            {
+                CopyObject(json, ref index, builder);
+                return;
+            }
+
+            if (kind == '[')
+            {
+                CopyArray(json, ref index, builder);
+                return;
+            }
+
+            int start = index;
+            SkipValue(json, ref index);
+            builder.Append(json, start, index - start);
+        }
+
+        private static void CopyObject(string json, ref int index, StringBuilder builder)
+        {
+            builder.Append('{');
+            index++;
+            bool emitted = false;
+            while (true)
+            {
+                int whitespaceStart = index;
+                SkipWs(json, ref index);
+                if (index >= json.Length)
+                {
+                    throw new FormatException();
+                }
+
+                if (json[index] == '}')
+                {
+                    builder.Append(json, whitespaceStart, index - whitespaceStart);
+                    builder.Append('}');
+                    index++;
+                    return;
+                }
+
+                bool comma = false;
+                int separatorWhitespace = whitespaceStart;
+                if (json[index] == ',')
+                {
+                    comma = true;
+                    index++;
+                    separatorWhitespace = index;
+                    SkipWs(json, ref index);
+                }
+
+                int nameStart = index;
+                string name = ReadString(json, ref index);
+                int afterName = index;
+                SkipWs(json, ref index);
+                if (index >= json.Length || json[index] != ':')
+                {
+                    throw new FormatException();
+                }
+
+                index++;
+                int afterColon = index;
+                SkipWs(json, ref index);
+                int valueStart = index;
+                if (ShouldOmit(name, json, valueStart))
+                {
+                    SkipValue(json, ref index);
+                    continue;
+                }
+
+                if (emitted && comma)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(json, comma ? separatorWhitespace : whitespaceStart, nameStart - (comma ? separatorWhitespace : whitespaceStart));
+                builder.Append(json, nameStart, afterName - nameStart);
+                builder.Append(':');
+                builder.Append(json, afterColon, valueStart - afterColon);
+                CopyValue(json, ref index, builder);
+                emitted = true;
+            }
+        }
+
+        private static void CopyArray(string json, ref int index, StringBuilder builder)
+        {
+            builder.Append('[');
+            index++;
+            bool emitted = false;
+            while (true)
+            {
+                int whitespaceStart = index;
+                SkipWs(json, ref index);
+                if (index >= json.Length)
+                {
+                    throw new FormatException();
+                }
+
+                if (json[index] == ']')
+                {
+                    builder.Append(json, whitespaceStart, index - whitespaceStart);
+                    builder.Append(']');
+                    index++;
+                    return;
+                }
+
+                bool comma = false;
+                int separatorWhitespace = whitespaceStart;
+                if (json[index] == ',')
+                {
+                    comma = true;
+                    index++;
+                    separatorWhitespace = index;
+                    SkipWs(json, ref index);
+                }
+
+                int valueStart = index;
+                if (emitted && comma)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(json, comma ? separatorWhitespace : whitespaceStart, valueStart - (comma ? separatorWhitespace : whitespaceStart));
+                CopyValue(json, ref index, builder);
+                emitted = true;
+            }
+        }
+
+        private static bool ShouldOmit(string name, string json, int index)
+        {
+            if (string.Equals(name, "warning", StringComparison.Ordinal))
+            {
+                return IsEmptyStringOrNull(json, index);
+            }
+
+            if (string.Equals(name, "frameClamp", StringComparison.Ordinal))
+            {
+                return IsNullOrZeroClamp(json, index);
+            }
+
+            return false;
+        }
+
+        private static bool IsEmptyStringOrNull(string json, int index)
+        {
+            SkipWs(json, ref index);
+            if (index >= json.Length)
+            {
+                return false;
+            }
+
+            if (Match(json, index, "null"))
+            {
+                return true;
+            }
+
+            return json[index] == '"' && index + 1 < json.Length && json[index + 1] == '"';
+        }
+
+        private static bool IsNullOrZeroClamp(string json, int index)
+        {
+            SkipWs(json, ref index);
+            if (index >= json.Length)
+            {
+                return false;
+            }
+
+            if (Match(json, index, "null"))
+            {
+                return true;
+            }
+
+            if (json[index] != '{')
+            {
+                return false;
+            }
+
+            index++;
+            while (true)
+            {
+                SkipWs(json, ref index);
+                if (index >= json.Length)
+                {
+                    throw new FormatException();
+                }
+
+                if (json[index] == '}')
+                {
+                    return true;
+                }
+
+                if (json[index] == ',')
+                {
+                    index++;
+                    SkipWs(json, ref index);
+                }
+
+                ReadString(json, ref index);
+                SkipWs(json, ref index);
+                if (index >= json.Length || json[index] != ':')
+                {
+                    throw new FormatException();
+                }
+
+                index++;
+                SkipWs(json, ref index);
+                if (!IsZeroValue(json, ref index))
+                {
+                    return false;
+                }
+            }
+        }
+
+        private static bool IsZeroValue(string json, ref int index)
+        {
+            if (index >= json.Length)
+            {
+                throw new FormatException();
+            }
+
+            char kind = json[index];
+            if (kind == '"')
+            {
+                int start = index;
+                SkipString(json, ref index);
+                return index == start + 2;
+            }
+
+            if (kind == '{')
+            {
+                return IsNullOrZeroClamp(json, index) && AdvancePastValue(json, ref index);
+            }
+
+            if (kind == '[')
+            {
+                SkipValue(json, ref index);
+                return false;
+            }
+
+            if (kind == 'n' && Match(json, index, "null"))
+            {
+                index += 4;
+                return true;
+            }
+
+            if (kind == 't' || kind == 'f')
+            {
+                SkipLiteral(json, ref index);
+                return false;
+            }
+
+            int numberStart = index;
+            SkipNumber(json, ref index);
+            return IsZeroNumber(json.Substring(numberStart, index - numberStart));
+        }
+
+        private static bool AdvancePastValue(string json, ref int index)
+        {
+            SkipValue(json, ref index);
+            return true;
+        }
+
+        private static bool IsZeroNumber(string literal)
+        {
+            return double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out double value)
+                && value == 0d;
+        }
+
+        private static void SkipValue(string json, ref int index)
+        {
+            if (index >= json.Length)
+            {
+                throw new FormatException();
+            }
+
+            char kind = json[index];
+            if (kind == '{')
+            {
+                index++;
+                while (true)
+                {
+                    SkipWs(json, ref index);
+                    if (index >= json.Length)
+                    {
+                        throw new FormatException();
+                    }
+
+                    if (json[index] == '}')
+                    {
+                        index++;
+                        return;
+                    }
+
+                    if (json[index] == ',')
+                    {
+                        index++;
+                        SkipWs(json, ref index);
+                    }
+
+                    SkipString(json, ref index);
+                    SkipWs(json, ref index);
+                    if (index >= json.Length || json[index] != ':')
+                    {
+                        throw new FormatException();
+                    }
+
+                    index++;
+                    SkipWs(json, ref index);
+                    SkipValue(json, ref index);
+                }
+            }
+
+            if (kind == '[')
+            {
+                index++;
+                while (true)
+                {
+                    SkipWs(json, ref index);
+                    if (index >= json.Length)
+                    {
+                        throw new FormatException();
+                    }
+
+                    if (json[index] == ']')
+                    {
+                        index++;
+                        return;
+                    }
+
+                    if (json[index] == ',')
+                    {
+                        index++;
+                        SkipWs(json, ref index);
+                    }
+
+                    SkipValue(json, ref index);
+                }
+            }
+
+            if (kind == '"')
+            {
+                SkipString(json, ref index);
+                return;
+            }
+
+            if (kind == 't' || kind == 'f' || kind == 'n')
+            {
+                SkipLiteral(json, ref index);
+                return;
+            }
+
+            SkipNumber(json, ref index);
+        }
+
+        private static string ReadString(string json, ref int index)
+        {
+            int start = index;
+            SkipString(json, ref index);
+            return Unescape(json, start + 1, index - 1);
+        }
+
+        private static string Unescape(string json, int start, int end)
+        {
+            if (json.IndexOf('\\', start, end - start) < 0)
+            {
+                return json.Substring(start, end - start);
+            }
+
+            var builder = new StringBuilder(end - start);
+            for (int i = start; i < end; i++)
+            {
+                char character = json[i];
+                if (character != '\\' || i + 1 >= end)
+                {
+                    builder.Append(character);
+                    continue;
+                }
+
+                char escaped = json[++i];
+                switch (escaped)
+                {
+                    case '"':
+                    case '\\':
+                    case '/':
+                        builder.Append(escaped);
+                        break;
+                    case 'b':
+                        builder.Append('\b');
+                        break;
+                    case 'f':
+                        builder.Append('\f');
+                        break;
+                    case 'n':
+                        builder.Append('\n');
+                        break;
+                    case 'r':
+                        builder.Append('\r');
+                        break;
+                    case 't':
+                        builder.Append('\t');
+                        break;
+                    case 'u':
+                        if (i + 4 >= end)
+                        {
+                            throw new FormatException();
+                        }
+
+                        builder.Append((char)int.Parse(json.Substring(i + 1, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
+                        i += 4;
+                        break;
+                    default:
+                        builder.Append(escaped);
+                        break;
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        private static void SkipString(string json, ref int index)
+        {
+            if (index >= json.Length || json[index] != '"')
+            {
+                throw new FormatException();
+            }
+
+            index++;
+            while (index < json.Length)
+            {
+                char character = json[index++];
+                if (character == '\\')
+                {
+                    if (index >= json.Length)
+                    {
+                        throw new FormatException();
+                    }
+
+                    char escaped = json[index++];
+                    if (escaped == 'u')
+                    {
+                        if (index + 4 > json.Length)
+                        {
+                            throw new FormatException();
+                        }
+
+                        index += 4;
+                    }
+                }
+                else if (character == '"')
+                {
+                    return;
+                }
+            }
+
+            throw new FormatException();
+        }
+
+        private static void SkipNumber(string json, ref int index)
+        {
+            int start = index;
+            if (index < json.Length && json[index] == '-')
+            {
+                index++;
+            }
+
+            while (index < json.Length && char.IsDigit(json[index]))
+            {
+                index++;
+            }
+
+            if (index < json.Length && json[index] == '.')
+            {
+                index++;
+                while (index < json.Length && char.IsDigit(json[index]))
+                {
+                    index++;
+                }
+            }
+
+            if (index < json.Length && (json[index] == 'e' || json[index] == 'E'))
+            {
+                index++;
+                if (index < json.Length && (json[index] == '+' || json[index] == '-'))
+                {
+                    index++;
+                }
+
+                while (index < json.Length && char.IsDigit(json[index]))
+                {
+                    index++;
+                }
+            }
+
+            if (index == start || (json[start] == '-' && index == start + 1))
+            {
+                throw new FormatException();
+            }
+        }
+
+        private static void SkipLiteral(string json, ref int index)
+        {
+            if (Match(json, index, "true"))
+            {
+                index += 4;
+                return;
+            }
+
+            if (Match(json, index, "false"))
+            {
+                index += 5;
+                return;
+            }
+
+            if (Match(json, index, "null"))
+            {
+                index += 4;
+                return;
+            }
+
+            throw new FormatException();
+        }
+
+        private static void SkipWs(string json, ref int index)
+        {
+            while (index < json.Length && char.IsWhiteSpace(json[index]))
+            {
+                index++;
+            }
+        }
+
+        private static bool Match(string json, int index, string literal)
+        {
+            return index + literal.Length <= json.Length
+                && string.CompareOrdinal(json, index, literal, 0, literal.Length) == 0;
+        }
+    }
+
     [Serializable]
     public sealed class ProfileCaptureStartedPayload
     {
@@ -205,7 +939,7 @@ namespace UnityCli.Protocol
         public int durationSeconds;
         public float budgetMs;
 
-        /// <summary>Set when --frames was clamped to the profiler buffer. States requested, clamped, and the limit.</summary>
+        /// <summary>Set only when --frames was clamped. States requested, clamped, and the limit. Omitted otherwise.</summary>
         public string? warning;
 
         public ProfileFrameClamp? frameClamp;
@@ -289,7 +1023,7 @@ namespace UnityCli.Protocol
         public long gcUnattributedBytes;
         public string sidecarPath = string.Empty;
 
-        /// <summary>Set when --frames was clamped to the profiler buffer. Same text as the start response.</summary>
+        /// <summary>Set only when --frames was clamped. Same text as the start response. Omitted otherwise. capturedFrames is the actual count and can be under frameClamp.clamped.</summary>
         public string? warning;
 
         public ProfileFrameClamp? frameClamp;
@@ -299,7 +1033,8 @@ namespace UnityCli.Protocol
     /// A finished capture. <c>profile capture start --wait</c>, <c>profile capture stop --wait</c>, and
     /// <c>profile capture stop</c> after the capture already finished on its own all return this shape.
     /// <see cref="notice"/> is PROFILE_ALREADY_COMPLETED only for that last case.
-    /// <see cref="warning"/> is set when --frames was clamped to the profiler buffer.
+    /// <see cref="warning"/> is set only when --frames was clamped to the profiler buffer.
+    /// <see cref="capturedFrames"/> is the number of frames actually kept and can be slightly under the clamp.
     /// </summary>
     [Serializable]
     public sealed class ProfileCaptureResultPayload
@@ -316,6 +1051,7 @@ namespace UnityCli.Protocol
 
         public static ProfileCaptureResultPayload FromSummary(ProfileSummaryPayload summary, string? notice, string? message)
         {
+            ProfileClampJson.Normalize(summary);
             return new ProfileCaptureResultPayload
             {
                 captureId = summary.captureId,

@@ -278,7 +278,7 @@ namespace UnityCli.Protocol
             new CliCommandDescriptor(
                 "profile capture start",
                 "profile capture start [--frames <n> | --duration <seconds>] [--budget-ms <ms> (default: 16.67)] [--wait [--timeout <seconds>]]",
-                "Starts a Play Mode profiler capture and returns immediately with a captureId. Auto-stops after --frames/--duration or the 600s safety cap. --frames above the profiler buffer is clamped to that buffer, and the response then includes warning and frameClamp (requested, clamped, bufferLimit). --wait blocks until the capture finishes and returns captureId, status, capturedFrames, and summary, including that warning when the request was clamped.",
+                "Starts a Play Mode profiler capture and returns immediately with a captureId. Auto-stops after --frames/--duration or the 600s safety cap. --frames above the profiler buffer is clamped to that buffer. The capture records up to the buffer limit and can come back slightly short; capturedFrames is the actual count. When clamped, the response includes warning and frameClamp (requested, clamped, bufferLimit). Unclamped responses omit both. --wait blocks until the capture finishes and returns captureId, status, capturedFrames, and summary, including that warning and capturedFrames when the request was clamped.",
                 CliCommandGroup.Diagnostics,
                 ProtocolConstants.CommandProfileCaptureStart,
                 canUseLocal: false,
@@ -290,7 +290,7 @@ namespace UnityCli.Protocol
                     "Only one capture can run at a time (PROFILE_IN_PROGRESS otherwise).",
                     "--budget-ms sets the frame budget used for spike detection and the verdict.",
                     "--wait needs --frames or --duration. It returns captureId, status, capturedFrames, and summary (the `profile analyze` summary shape). The default --timeout is 60 s plus 0.25 s per frame (or the duration). On timeout it fails with PROFILE_WAIT_TIMEOUT, naming the captureId and the frames captured so far; the capture keeps running.",
-                    "--frames above the profiler buffer is clamped to that buffer (300 on Unity 2021.3, 2000 on Unity 6; the editor reports its own limit). The capture still records the clamped count, and requestedFrames is that count. The start response and the finished summary then include warning and frameClamp (requested, clamped, bufferLimit). A --wait timeout check uses --duration, or a --frames count inside the buffer; a frame count above the buffer finishes when the buffer is full.",
+                    "--frames above the profiler buffer is clamped to that buffer (300 on Unity 2021.3, 2000 on Unity 6; the editor reports its own limit). The capture records up to that limit and can come back slightly short, because the profiler ring buffer rotates. requestedFrames is the clamped cap. capturedFrames, on the finished summary next to frameClamp, is the actual count. warning and frameClamp are included only when the request was clamped; unclamped responses omit both. A --wait timeout check uses --duration, or a --frames count inside the buffer.",
                     "A capture that ends with 0 frames fails with PROFILE_EMPTY and a retry hint.",
                 }),
             new CliCommandDescriptor(
@@ -306,7 +306,7 @@ namespace UnityCli.Protocol
                 {
                     "Live-only. When the last capture already finished (--frames/--duration reached, the safety cap, or Play Mode ended), returns captureId, status, capturedFrames, and summary with notice PROFILE_ALREADY_COMPLETED. stop --wait returns that same shape, without the notice, once the summary is ready. PROFILE_NOT_RUNNING only when no capture is active and none finished in this Editor session.",
                     "Without --wait the response status is `Processing`; poll with `profile status <captureId>`.",
-                    "warning and frameClamp are included, on the payload and inside summary, when --frames was clamped to the profiler buffer.",
+                    "warning and frameClamp are included, on the payload and inside summary, only when --frames was clamped to the profiler buffer. Unclamped responses omit both. capturedFrames is the actual count and can be slightly under frameClamp.clamped.",
                     "A capture with 0 frames fails with PROFILE_EMPTY (captureId in the message) and a retry hint.",
                 }),
             new CliCommandDescriptor(
