@@ -55,24 +55,24 @@ Add the package in either of these ways.
 
 **Option A: .unitypackage**
 
-Download `com.yhc509.unity-cli-bridge-0.6.0.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.6.0 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.6.0). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
+Download `com.yhc509.unity-cli-bridge-0.6.1.unitypackage` from the [itch page](https://yhkk.itch.io/unity-cli-bridge) or the [v0.6.1 GitHub Release](https://github.com/yhc509/unity-cli-bridge/releases/tag/v0.6.1). In Unity, choose **Assets > Import Package > Custom Package…**. It imports as a package under `Packages/com.yhc509.unity-cli-bridge/`. From 0.5.6 on, each GitHub Release attaches `com.yhc509.unity-cli-bridge-<version>.unitypackage`.
 
 **Option B: Git URL** (easier to update)
 
 In Package Manager, choose **Add package from git URL** and paste:
 
 ```
-https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.0
+https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.1
 ```
 
-Use `#main` instead of `#v0.6.0` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
+Use `#main` instead of `#v0.6.1` to track the latest release. To reproduce a pinned build later, keep the release tag and commit `Packages/packages-lock.json`.
 
 The same URL can be written into `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.0"
+    "com.yhc509.unity-cli-bridge": "https://github.com/yhc509/unity-cli-bridge.git?path=/unity-package/com.yhc509.unity-cli-bridge#v0.6.1"
   }
 }
 ```
