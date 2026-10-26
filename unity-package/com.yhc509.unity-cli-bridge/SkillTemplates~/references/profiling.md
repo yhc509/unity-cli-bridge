@@ -5,19 +5,27 @@ How to **read** `profile` output. Command usage lives in SKILL.md's Profile Work
 ## Which script is expensive
 
 1. `unity-cli play`
-2. `unity-cli profile capture start --frames 300`, then `unity-cli profile capture stop` after those frames have been recorded.
-3. `unity-cli profile analyze <captureId>` returns the summary: `hotspots`, `gcTop`, and `spikes` (under `summary`).
-4. Script markers look like `Assembly-CSharp.dll!::Type.Update() [Invoke]`. `unity-cli profile analyze <captureId> --marker Type.Update` resolves that short name (also `Type.Update()`).
-5. Do not open the sidecar file. Hotspots live under `summary` there; `analyze` is the reader. One short name with several matches returns `PROFILE_MARKER_AMBIGUOUS` and the candidate names.
+2. `unity-cli profile capture start --frames 300 --wait` is one call. It returns when the 300 frames are captured, with `captureId`, `capturedFrames`, and `summary` (`hotspots`, `gcTop`, `gcByScript`, `spikes`). Do not add `sleep` or a separate `stop`.
+3. Script markers look like `Assembly-CSharp.dll!::Type.Update() [Invoke]`. `unity-cli profile analyze <captureId> --marker Type.Update` resolves that short name (also `Type.Update()`). `unity-cli profile analyze <captureId>` prints the summary again.
+4. Which script allocates: `summary.gcByScript`, or `unity-cli profile analyze <captureId> --gc`, adds up `GC.Alloc` bytes under the nearest script marker. `gcTop` leaves out the player-loop containers (`PlayerLoop`, `BehaviourUpdate`, ...), engine end-of-frame and PlayerLoop phase markers (`PlayerEndOfFrame`, `PostLateUpdate`, `Phase.Subsystem`), and `GC.Alloc` itself.
+5. To measure one or a few scripts without a capture (for an A/B check), run `unity-cli profile stats --marker Type.Update --frames 120`. Each marker gets ms min/median/p95/max and `gcBytesPerFrame`. Repeat `--marker` for more scripts. Short names resolve the same way as in `analyze`.
+6. Do not open the sidecar file. Hotspots live under `summary` there; `analyze` is the reader. One short name with several matches returns `PROFILE_MARKER_AMBIGUOUS` and the candidate names.
 
-In the Editor, `GC.GetAllocatedBytesForCurrentThread()` returns 0. Read `ProfilerRecorder` `"GC Allocated In Frame"`, `GC.GetTotalAllocatedBytes(true)`, or `unity-cli profile stats --preset memory` instead. `GarbageCollector.GCMode` cannot be set in the Editor.
+Pitfalls:
+
+- `PROFILE_EMPTY` means the capture recorded 0 frames: `stop` came right after `play` or `start`, or the Editor was not ticking. Retry with `profile capture start --frames <n> --wait`.
+- `profile capture stop` after a `--frames` capture already finished, and `profile capture stop --wait`, return the same shape: `captureId`, `status`, `capturedFrames`, and `summary`. The already-finished stop also sets `notice: PROFILE_ALREADY_COMPLETED`.
+- `--frames` larger than the profiler buffer is clamped to that buffer. The capture records up to the buffer limit and can come back slightly short, because the profiler ring buffer rotates. Unity 2021.3 holds 300 frames (a clamped capture has come back with about 254–297) and Unity 6 holds 2000 (a clamped capture has come back with 1998). The running editor reports its own limit. `capturedFrames` is the number of frames actually kept, and the finished summary reports it next to `frameClamp`. `requestedFrames` is the clamped cap. `warning` and `frameClamp` (`requested`, `clamped`, `bufferLimit`) are included only when the request was clamped; an unclamped start, `--wait`, or `stop` omits both. Example: `Requested 100000 frames, clamped to 300 (profiler buffer limit 300).` A huge `--frames` with a short `--timeout` therefore completes instead of returning `PROFILE_WAIT_TIMEOUT`. To check that timeout, use `--duration <seconds> --wait --timeout <smaller>` (or a `--frames` count inside the buffer).
+- `PROFILE_WAIT_TIMEOUT` means the Editor ran Play Mode too slowly for `--timeout`. The error names the `captureId` and the frames captured so far, and the capture keeps running. `profile capture stop --wait` returns what it has, or raise `--timeout`.
+- In the Editor, `GC.GetAllocatedBytesForCurrentThread()` returns 0. Read `ProfilerRecorder` `"GC Allocated In Frame"`, `GC.GetTotalAllocatedBytes(true)`, `unity-cli profile stats --preset memory`, or `profile stats --marker <name>` (`gcBytesPerFrame`) instead. `GarbageCollector.GCMode` cannot be set in the Editor.
+- A `ProfilerRecorder` you start yourself in `execute` reads 0 for a script marker unless the profiler is recording, and the short name `Type.Update` is not a marker name. `profile stats --marker` turns the profiler on for the measurement and resolves the name for you.
 
 ## Workflow loop
 
 Diagnose performance with this loop:
 
 1. Run `unity-cli qa run-sequence --spec-json <spec> --profile` to play the sequence and capture at the same time. The response `profileSummary` already contains frame-time percentiles, spike frames, hotspots, GC, and a CPU/GPU-bound verdict.
-2. When you only need a capture, start with `unity-cli profile capture start --frames <n>` and wait for the summary with `unity-cli profile capture stop --wait`.
+2. When you only need a capture, `unity-cli profile capture start --frames <n> --wait` returns the summary in one call. For an open-ended capture, start without `--frames` and end it with `unity-cli profile capture stop --wait`.
 3. After the summary shows a problem (overBudget count, spike, verdict), drill in with `unity-cli profile analyze <captureId>` (the summary) or `--gc` / `--frame <n>` / `--marker <name>` / `--spikes`. A short `--marker` name such as `Type.Update` is resolved. There is no Editor round trip, so repeated reads are safe. Do not open the sidecar JSON; hotspots are under `summary`.
 4. Fix the cause in code or assets, then run the same sequence with `--profile` again to make a new capture.
 5. Compare before and after with `unity-cli profile compare <baseCaptureId> <headCaptureId>`. One response has the verdict (`regression` / `improvement` / `unchanged`), frame-time / overBudget / GC deltas, and per-marker regressions and improvements. Sensitivity is `--threshold <percent>` (default 5). List length is `--limit <n>`. This also reads local sidecars only, so it works with the Editor closed. When you read it:
@@ -25,7 +33,7 @@ Diagnose performance with this loop:
    - `deltaPercent` means something only when the same object's `deltaPercentAvailable` is `true`. If the baseline is 0 (for example the base had zero over-budget frames), a percent is undefined, so read the absolute `delta`.
    - A marker whose self time (`deltaMs`) is flat but whose GC allocation grew lands in `regressions`. One whose allocation shrank lands in `improvements`.
    - A budget, Unity version, or frame-count mismatch is a warning in `notes`. Do not trust the result as-is in that case.
-6. For a quick counter sample in Edit Mode, use a preset: `unity-cli profile stats --frames 30 --preset memory` (`frame` / `render` / `gc` / `memory` / `all`).
+6. For a quick counter sample in Edit Mode, use a preset: `unity-cli profile stats --frames 30 --preset memory` (`frame` / `render` / `gc` / `memory` / `all`). For named markers, use `unity-cli profile stats --marker <name> [--marker <name>...] --frames <n>` instead of a preset. Each result has a `path`: `recorder` means `ProfilerRecorder` timed the marker; `capture` means the time was read from the profiler frame hierarchy because the recorder had no samples. GC bytes always come from the frame hierarchy.
 
 When a memory leak is the suspect, use the memory loop instead of the frame-time loop:
 
@@ -128,6 +136,8 @@ When reading `profile compare`:
 > The `GC.Alloc` marker does not time a Begin/End pair. To cut overhead it records only a timestamp and the allocation size. **The duration the Profiler shows is an artificial value added so the sample is visible in the view.**
 
 Do not rank by `GC.Alloc` self time. Ignore that number in other tools too.
+
+The GC column is inclusive: a marker's bytes include everything allocated below it. That is why `PlayerLoop`, `UpdateScene`, `BehaviourUpdate`, and `Update.ScriptRunBehaviourUpdate` all report the frame's whole allocation. `gcTop` and `analyze --gc` leave those containers, engine end-of-frame and PlayerLoop phase markers (`PlayerEndOfFrame`, `PostLateUpdate`, `EarlyUpdate`, and `Phase.Subsystem` names such as `PostLateUpdate.FinishFrameRendering`), and `GC.Alloc` itself out. `gcByScript` assigns each `GC.Alloc` sample to the nearest script marker above it (`Type.Update() [Invoke]` or your own `ProfilerMarker`), so it names the allocating script directly. Those engine markers are not script ancestors, even when the profiler flags them as script code, so their bytes go to the nearest real script above them or to `gcUnattributedBytes`. `gcUnattributedBytes` is allocation with no script marker above it (engine or Editor work). A capture recorded before 0.6.1 has no `gcByScript`; `notes` says so, and a new capture fixes it.
 
 Unity states the target clearly: **0 bytes per frame in the main game loop**, as close to zero as possible.
 
@@ -294,8 +304,7 @@ Everything below runs with no person in the loop — no GUI Editor and no focus 
 ```bash
 unity-cli editor launch --project <path>     # headless by default (the GPU stays available)
 unity-cli play
-unity-cli profile capture start --duration 10
-unity-cli profile capture stop --wait        # → head captureId
+unity-cli profile capture start --duration 10 --wait   # → head captureId + summary
 unity-cli profile memory                     # → head reportId
 unity-cli stop
 unity-cli editor stop

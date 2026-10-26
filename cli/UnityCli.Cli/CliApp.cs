@@ -837,6 +837,11 @@ public static class CliApp
                     return await PollRecordStatusAsync(parsed, target, sendCommandAsync, response, cts.Token);
                 }
 
+                if (ShouldWaitProfileCapture(parsed, response))
+                {
+                    return await WaitProfileCaptureAsync(parsed, target, sendCommandAsync, response, cts.Token);
+                }
+
                 if (ShouldPollProfileStop(parsed, response))
                 {
                     var stopSummary = DeserializeData<ProfileSummaryPayload>(response);
@@ -845,6 +850,7 @@ public static class CliApp
                         try
                         {
                             response = await PollProfileStatusAsync(target, sendCommandAsync, stopSummary.captureId, cts.Token);
+                            response = PresentFinishedCapture(response);
                         }
                         catch (Exception)
                         {
@@ -874,6 +880,7 @@ public static class CliApp
                         pollInterval: ResolveEditorReadyPollInterval(parsed.Kind));
                 }
 
+                response = RequireMarkerStatsSupport(parsed, response);
                 return NormalizeResultEnvelope(parsed.Kind, response);
             }
             catch (Exception ex)
@@ -1133,6 +1140,14 @@ public static class CliApp
             return totalMs >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(totalMs));
         }
 
+        if (parsed.Kind == CommandKind.ProfileCaptureStart && parsed.ProfileWait)
+        {
+            int waitSeconds = ProfileCaptureWaiter.ResolveTimeoutSeconds(
+                parsed.ProfileFrames, parsed.ProfileDuration, parsed.ProfileWaitTimeoutSeconds);
+            double totalMs = liveTimeoutMs + (waitSeconds + 15) * 1000d;
+            return totalMs >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(totalMs));
+        }
+
         if (parsed.Kind == CommandKind.ProfileCaptureStop && parsed.ProfileWait)
         {
             double totalMs = Math.Max(liveTimeoutMs, (ProtocolConstants.ProfileStopWaitTimeoutSeconds + 15) * 1000d);
@@ -1167,11 +1182,123 @@ public static class CliApp
             && string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal);
     }
 
-    private static bool ShouldPollProfileStop(ParsedCommand parsed, ResponseEnvelope response)
+    /// <summary>
+    /// <c>profile status</c> returns the summary flat. <c>stop --wait</c> wraps a finished one so it matches
+    /// <c>stop</c> on a capture that already finished: captureId, status, capturedFrames, summary, and warning
+    /// when --frames was clamped. A payload that already has <c>summary</c> is left as-is.
+    /// </summary>
+    internal static ResponseEnvelope PresentFinishedCapture(ResponseEnvelope poll)
     {
-        return parsed.Kind == CommandKind.ProfileCaptureStop
+        if (!string.Equals(poll.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal)
+            || !poll.data.HasValue
+            || poll.data.Value.ValueKind != JsonValueKind.Object)
+        {
+            return poll;
+        }
+
+        if (poll.data.Value.TryGetProperty("summary", out JsonElement nested)
+            && nested.ValueKind == JsonValueKind.Object)
+        {
+            return poll;
+        }
+
+        ProfileSummaryPayload? summary = DeserializeData<ProfileSummaryPayload>(poll);
+        if (summary is null || !string.Equals(summary.status, "Completed", StringComparison.Ordinal))
+        {
+            return poll;
+        }
+
+        return ResponseEnvelope.Success(
+            poll.requestId,
+            poll.target,
+            JsonSerializer.SerializeToElement(ProfileCaptureResultPayload.FromSummary(summary, null, null), ProtocolJson.Default),
+            poll.durationMs,
+            poll.transport);
+    }
+
+    /// <summary>
+    /// Only a stop that left the capture Capturing/Processing needs polling. A stop on a capture that already
+    /// finished on its own returns the finished result (status Completed) and is printed as-is.
+    /// </summary>
+    internal static bool ShouldPollProfileStop(ParsedCommand parsed, ResponseEnvelope response)
+    {
+        if (parsed.Kind != CommandKind.ProfileCaptureStop
+            || !parsed.ProfileWait
+            || !string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string? status = DeserializeData<ProfileSummaryPayload>(response)?.status;
+        return status is "Capturing" or "Processing";
+    }
+
+    /// <summary>
+    /// A bridge that predates `profile stats --marker` ignores the markers and answers with counters only;
+    /// its payload has no markerStats field at all (a current bridge always writes it).
+    /// </summary>
+    internal static ResponseEnvelope RequireMarkerStatsSupport(ParsedCommand parsed, ResponseEnvelope response)
+    {
+        if (parsed.Kind != CommandKind.ProfileStats
+            || parsed.ProfileStatsMarkers.Count == 0
+            || !string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal))
+        {
+            return response;
+        }
+
+        string dataJson = GetDataJsonString(response);
+        bool hasMarkerStats = false;
+        if (!string.IsNullOrWhiteSpace(dataJson))
+        {
+            using JsonDocument document = JsonDocument.Parse(dataJson);
+            hasMarkerStats = document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("markerStats", out _);
+        }
+
+        if (hasMarkerStats)
+        {
+            return response;
+        }
+
+        return ResponseEnvelope.Failure(
+            response.requestId,
+            response.target,
+            ProtocolConstants.ErrorProfileFailed,
+            "The Unity package in this project does not support `profile stats --marker`. Update com.yhc509.unity-cli-bridge to the version that matches this CLI.",
+            false,
+            response.durationMs,
+            response.transport);
+    }
+
+    internal static bool ShouldWaitProfileCapture(ParsedCommand parsed, ResponseEnvelope response)
+    {
+        return parsed.Kind == CommandKind.ProfileCaptureStart
             && parsed.ProfileWait
             && string.Equals(response.status, ProtocolConstants.StatusSuccess, StringComparison.Ordinal);
+    }
+
+    private static async Task<ResponseEnvelope> WaitProfileCaptureAsync(
+        ParsedCommand parsed,
+        InstanceRecord target,
+        Func<InstanceRecord, CommandEnvelope, int, CancellationToken, Task<ResponseEnvelope>> sendCommandAsync,
+        ResponseEnvelope startResponse,
+        CancellationToken cancellationToken)
+    {
+        int timeoutSeconds = ProfileCaptureWaiter.ResolveTimeoutSeconds(
+            parsed.ProfileFrames, parsed.ProfileDuration, parsed.ProfileWaitTimeoutSeconds);
+        try
+        {
+            return await ProfileCaptureWaiter.WaitAsync(
+                target, sendCommandAsync, startResponse, timeoutSeconds, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // The capture itself started; keep its id so the caller can stop or read it.
+            string captureId = DeserializeData<ProfileCaptureStartedPayload>(startResponse)?.captureId ?? string.Empty;
+            return CreateLiveUnavailableResponse(
+                target.projectHash,
+                $"Waiting for profile capture `{captureId}` stopped: {ex.Message} The capture was started; read it with `profile status {captureId}` or end it with `profile capture stop --wait`.");
+        }
     }
 
     private static bool ShouldPollEditorReady(ParsedCommand parsed, ResponseEnvelope response)
@@ -1405,14 +1532,7 @@ public static class CliApp
             if (!string.Equals(summary.status, "Capturing", StringComparison.Ordinal)
                 && !string.Equals(summary.status, "Processing", StringComparison.Ordinal))
             {
-                return ResponseEnvelope.Failure(
-                    poll.requestId,
-                    poll.target,
-                    GetProfileResultErrorCode(summary.status),
-                    $"profile capture `{captureId}` status is {summary.status}.",
-                    false,
-                    poll.durationMs,
-                    poll.transport);
+                return ProfileCaptureWaiter.TerminalFailure(poll, captureId, summary);
             }
 
             if (DateTime.UtcNow >= deadline)
@@ -1429,16 +1549,6 @@ public static class CliApp
 
             await delayAsync(interval, cancellationToken);
         }
-    }
-
-    private static string GetProfileResultErrorCode(string status)
-    {
-        return status switch
-        {
-            "NotFound" => ProtocolConstants.ErrorProfileNotFound,
-            "Interrupted" => ProtocolConstants.ErrorProfileInterrupted,
-            _ => ProtocolConstants.ErrorProfileFailed,
-        };
     }
 
     internal static async Task<ResponseEnvelope> MergeQaProfileSummaryAsync(

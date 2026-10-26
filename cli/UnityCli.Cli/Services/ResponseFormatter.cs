@@ -25,7 +25,7 @@ public static class ResponseFormatter
     {
         if (outputMode == OutputMode.Json)
         {
-            return ProtocolJson.Serialize(response);
+            return ProfileClampJson.OmitUnclamped(ProtocolJson.Serialize(response));
         }
 
         response = PresentForText(outputMode, response);
@@ -173,7 +173,7 @@ public static class ResponseFormatter
 
     private static string SerializeData(JsonElement data, JsonSerializerOptions options)
     {
-        return JsonSerializer.Serialize(data, options);
+        return ProfileClampJson.OmitUnclamped(JsonSerializer.Serialize(data, options));
     }
 
 }

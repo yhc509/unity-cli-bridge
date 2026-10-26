@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using Unity.Profiling;
+using Unity.Profiling.LowLevel;
 using UnityCli.Protocol;
 using UnityEditor;
 using UnityEditor.Profiling;
@@ -30,15 +32,53 @@ namespace UnityCliBridge.Bridge.Editor
             public int Frames;
         }
 
+        /// <summary>HierarchyFrameDataView as the Unity-free hierarchy the GC attribution walker reads.</summary>
+        private sealed class HierarchyViewAdapter : IProfileHierarchy
+        {
+            private static readonly ushort ScriptsCategory = ProfilerCategory.Scripts;
+            private const MarkerFlags ScriptFlags = MarkerFlags.Script | MarkerFlags.ScriptInvoke | MarkerFlags.ScriptDeepProfiler;
+            private readonly HierarchyFrameDataView _view;
+
+            public HierarchyViewAdapter(HierarchyFrameDataView view)
+            {
+                _view = view;
+            }
+
+            public int RootId
+            {
+                get { return _view.GetRootItemID(); }
+            }
+
+            public void GetChildren(int itemId, List<int> children)
+            {
+                _view.GetItemChildren(itemId, children);
+            }
+
+            public string GetName(int itemId)
+            {
+                return _view.GetItemName(itemId);
+            }
+
+            public bool HasScriptFlag(int itemId)
+            {
+                int markerId = _view.GetItemMarkerID(itemId);
+                return (_view.GetMarkerFlags(markerId) & ScriptFlags) != 0
+                    || _view.GetMarkerCategoryIndex(markerId) == ScriptsCategory;
+            }
+        }
+
         private static readonly object _captureLock = new object();
         private static CapturePhase _phase = CapturePhase.Idle;
         private static string? _captureId;
         private static string? _lastCaptureId;
+        private static string? _lastCaptureStatus;
         private static DateTime _startedAtUtc;
         private static int _requestedFrames;
         private static int _durationSeconds;
         private static float _budgetMs;
         private static bool _requestClamped;
+        private static ProfileFrameClamp? _frameClamp;
+        private static string? _frameClampWarning;
         private static int _startFrameIndex;
 
         // walk state (Processing phase)
@@ -48,7 +88,7 @@ namespace UnityCliBridge.Bridge.Editor
         private static List<ProfileFrameEntry>? _walkFrames;
         private static Dictionary<string, MarkerAggregate>? _walkMarkers;
         private static List<double>? _walkGpuMs;
-        private static readonly List<int> _childBuffer = new List<int>(256);
+        private static ProfileGcByScriptAccumulator? _walkGcByScript;
 
         internal static string StartForSequence()
         {
@@ -97,6 +137,13 @@ namespace UnityCliBridge.Bridge.Editor
                         "A memory snapshot is in progress. Wait for it to finish before starting a capture.");
                 }
 
+                if (_markerStatsInFlight)
+                {
+                    throw new CommandFailureException(
+                        ProtocolConstants.ErrorProfileInProgress,
+                        "`profile stats --marker` is measuring. Wait for it to finish before starting a capture.");
+                }
+
                 _phase = CapturePhase.Capturing;
             }
 
@@ -105,8 +152,13 @@ namespace UnityCliBridge.Bridge.Editor
                 int ringBufferFrames = ReadRingBufferFrameCount();
                 _captureId = Guid.NewGuid().ToString("N");
                 _budgetMs = args.budgetMs > 0 ? args.budgetMs : ProtocolConstants.DefaultProfileBudgetMs;
-                _requestClamped = args.frames > ringBufferFrames;
-                _requestedFrames = args.frames > 0 ? Math.Min(args.frames, ringBufferFrames) : 0;
+                // Clamping itself is unchanged: a request above the buffer is capped at the buffer size.
+                // The walk can still keep slightly fewer frames, because the ring buffer rotates.
+                ProfileFrameClamp? clamp = ProfileFrameClamp.TryCreate(args.frames, ringBufferFrames);
+                _frameClamp = clamp;
+                _frameClampWarning = clamp?.WarningText();
+                _requestClamped = clamp != null;
+                _requestedFrames = clamp != null ? clamp.clamped : args.frames > 0 ? args.frames : 0;
                 _durationSeconds = args.durationSeconds > 0
                     ? Math.Min(args.durationSeconds, ProtocolConstants.MaxProfileCaptureSeconds)
                     : 0;
@@ -120,7 +172,7 @@ namespace UnityCliBridge.Bridge.Editor
                 SessionState.SetString(ProtocolConstants.ProfileSessionKeyActiveId, _captureId);
                 RegisterAutoStopPoll();
 
-                return ProtocolJson.Serialize(new ProfileCaptureStartedPayload
+                return SerializeProfile(new ProfileCaptureStartedPayload
                 {
                     captureId = _captureId,
                     status = "STARTED",
@@ -128,6 +180,8 @@ namespace UnityCliBridge.Bridge.Editor
                     requestedFrames = _requestedFrames,
                     durationSeconds = _durationSeconds,
                     budgetMs = _budgetMs,
+                    warning = _frameClampWarning,
+                    frameClamp = _frameClamp,
                 });
             }
             catch
@@ -139,29 +193,97 @@ namespace UnityCliBridge.Bridge.Editor
 
         private static string StopCapture()
         {
+            CapturePhase phase;
             lock (_captureLock)
             {
-                if (_phase == CapturePhase.Idle)
-                {
-                    throw new CommandFailureException(
-                        ProtocolConstants.ErrorProfileNotRunning,
-                        "No profile capture is active. Start one with `profile capture start`.");
-                }
+                phase = _phase;
             }
 
-            if (_phase == CapturePhase.Capturing)
+            if (phase == CapturePhase.Idle)
+            {
+                return StopFinishedCapture();
+            }
+
+            string captureId = _captureId ?? string.Empty;
+            int requestedFrames = _requestedFrames;
+            if (phase == CapturePhase.Capturing)
             {
                 BeginProcessing();
             }
 
-            return ProtocolJson.Serialize(new ProfileSummaryPayload
+            // A capture with no frames to walk finishes inside BeginProcessing.
+            if (_phase == CapturePhase.Idle
+                && string.Equals(_lastCaptureId, captureId, StringComparison.Ordinal)
+                && string.Equals(_lastCaptureStatus, "Empty", StringComparison.Ordinal))
             {
-                captureId = _captureId ?? string.Empty,
-                status = "Processing",
+                throw EmptyCaptureFailure(captureId, requestedFrames);
+            }
+
+            return SerializeProfile(new ProfileSummaryPayload
+            {
+                captureId = captureId,
+                status = _phase == CapturePhase.Idle ? (_lastCaptureStatus ?? "Completed") : "Processing",
                 capturedFrames = CountCapturedFrames(),
-                requestedFrames = _requestedFrames,
+                requestedFrames = requestedFrames,
                 budgetMs = _budgetMs,
             });
+        }
+
+        /// <summary>
+        /// `profile capture stop` with nothing running. A capture that already finished on its own (--frames,
+        /// --duration, the safety cap, or leaving Play Mode) is returned instead of PROFILE_NOT_RUNNING, so its
+        /// captureId and summary are never lost.
+        /// </summary>
+        private static string StopFinishedCapture()
+        {
+            string? lastId = _lastCaptureId;
+            if (string.IsNullOrEmpty(lastId))
+            {
+                lastId = SessionState.GetString(ProtocolConstants.ProfileSessionKeyLastId, string.Empty);
+            }
+
+            ProfileSidecarFile? sidecar = null;
+            if (!string.IsNullOrEmpty(lastId) && File.Exists(SidecarPath(lastId!)))
+            {
+                sidecar = ProtocolJson.Deserialize<ProfileSidecarFile>(File.ReadAllText(SidecarPath(lastId!)));
+            }
+
+            if (sidecar == null || sidecar.summary == null)
+            {
+                throw new CommandFailureException(
+                    ProtocolConstants.ErrorProfileNotRunning,
+                    "No profile capture is active and none finished in this Editor session. Start one with `profile capture start`.");
+            }
+
+            ProfileSummaryPayload summary = sidecar.summary;
+            if (string.Equals(summary.status, "Empty", StringComparison.Ordinal))
+            {
+                throw EmptyCaptureFailure(lastId!, summary.requestedFrames);
+            }
+
+            if (!string.Equals(summary.status, "Completed", StringComparison.Ordinal))
+            {
+                throw new CommandFailureException(
+                    ProtocolConstants.ErrorProfileNotRunning,
+                    "No profile capture is active. The last capture `" + lastId + "` ended as " + summary.status
+                    + ". Start a new one with `profile capture start`.");
+            }
+
+            ProfileCaptureResultPayload finished = ProfileCaptureResultPayload.FromSummary(
+                summary,
+                ProtocolConstants.NoticeProfileAlreadyCompleted,
+                "Capture `" + lastId + "` had already finished on its own (--frames/--duration reached, the 600 s cap, or Play Mode ended). This is its summary.");
+            finished.captureId = lastId!;
+            return SerializeProfile(finished);
+        }
+
+        private static CommandFailureException EmptyCaptureFailure(string captureId, int requestedFrames)
+        {
+            return new CommandFailureException(
+                ProtocolConstants.ErrorProfileEmpty,
+                "Profile capture `" + captureId + "` finished with 0 frames. " + ProtocolConstants.ProfileEmptyHint,
+                "captureId=" + captureId + " capturedFrames=0 requestedFrames=" + requestedFrames,
+                true);
         }
 
         private static string HandleStatus(ProfileStatusArgs args)
@@ -172,13 +294,15 @@ namespace UnityCliBridge.Bridge.Editor
                 && _captureId != null
                 && (string.IsNullOrWhiteSpace(args.captureId) || string.Equals(args.captureId, _captureId, StringComparison.Ordinal)))
             {
-                return ProtocolJson.Serialize(new ProfileSummaryPayload
+                return SerializeProfile(new ProfileSummaryPayload
                 {
                     captureId = _captureId,
                     status = _phase == CapturePhase.Capturing ? "Capturing" : "Processing",
                     capturedFrames = CountCapturedFrames(),
                     requestedFrames = _requestedFrames,
                     budgetMs = _budgetMs,
+                    warning = _frameClampWarning,
+                    frameClamp = _frameClamp,
                 });
             }
 
@@ -190,12 +314,12 @@ namespace UnityCliBridge.Bridge.Editor
                     ProfileSidecarFile? file = ProtocolJson.Deserialize<ProfileSidecarFile>(File.ReadAllText(sidecar));
                     if (file != null)
                     {
-                        return ProtocolJson.Serialize(file.summary);
+                        return SerializeProfile(file.summary);
                     }
                 }
             }
 
-            return ProtocolJson.Serialize(new ProfileSummaryPayload
+            return SerializeProfile(new ProfileSummaryPayload
             {
                 captureId = id ?? string.Empty,
                 status = "NotFound",
@@ -273,6 +397,14 @@ namespace UnityCliBridge.Bridge.Editor
             _walkFrames = new List<ProfileFrameEntry>(Math.Max(0, last - firstAvailable + 1));
             _walkMarkers = new Dictionary<string, MarkerAggregate>(512, StringComparer.Ordinal);
             _walkGpuMs = new List<double>();
+            _walkGcByScript = new ProfileGcByScriptAccumulator();
+
+            if (last < firstAvailable)
+            {
+                // Nothing was recorded (stop right after start, or the Editor did not tick): finish now as Empty.
+                FinishProcessing("Completed");
+                return;
+            }
 
             EditorTickPump.Add(WalkStep);
         }
@@ -333,18 +465,10 @@ namespace UnityCliBridge.Bridge.Editor
                 }
 
                 var perFrame = new Dictionary<string, (double Self, long Gc, int Calls)>(256, StringComparer.Ordinal);
-                var pending = new Stack<int>();
-                _childBuffer.Clear();
-                view.GetItemChildren(view.GetRootItemID(), _childBuffer);
-                for (int index = 0; index < _childBuffer.Count; index++)
+                ProfileGcByScriptAccumulator gcByScript = _walkGcByScript!;
+                gcByScript.BeginFrame();
+                ProfileHierarchyWalker.Walk(new HierarchyViewAdapter(view), (itemId, name, scriptAncestor) =>
                 {
-                    pending.Push(_childBuffer[index]);
-                }
-
-                while (pending.Count > 0)
-                {
-                    int itemId = pending.Pop();
-                    string name = view.GetItemName(itemId);
                     double self = view.GetItemColumnDataAsDouble(itemId, HierarchyFrameDataView.columnSelfTime);
                     long gc = (long)view.GetItemColumnDataAsDouble(itemId, HierarchyFrameDataView.columnGcMemory);
                     int calls = (int)view.GetItemColumnDataAsDouble(itemId, HierarchyFrameDataView.columnCalls);
@@ -352,13 +476,11 @@ namespace UnityCliBridge.Bridge.Editor
                     perFrame.TryGetValue(name, out (double Self, long Gc, int Calls) agg);
                     perFrame[name] = (agg.Self + self, agg.Gc + gc, agg.Calls + calls);
 
-                    _childBuffer.Clear();
-                    view.GetItemChildren(itemId, _childBuffer);
-                    for (int index = 0; index < _childBuffer.Count; index++)
+                    if (string.Equals(name, ProfileGcAttribution.GcAllocMarker, StringComparison.Ordinal))
                     {
-                        pending.Push(_childBuffer[index]);
+                        gcByScript.Record(scriptAncestor, gc, calls);
                     }
-                }
+                });
 
                 ProfileFrameMarker[] top = perFrame
                     .OrderByDescending(pair => pair.Value.Self)
@@ -401,6 +523,12 @@ namespace UnityCliBridge.Bridge.Editor
         {
             string captureId = _captureId ?? string.Empty;
             List<ProfileFrameEntry> frames = _walkFrames ?? new List<ProfileFrameEntry>();
+            if (frames.Count == 0 && string.Equals(status, "Completed", StringComparison.Ordinal))
+            {
+                // Never report a silent "Completed" with nothing in it.
+                status = "Empty";
+            }
+
             Dictionary<string, MarkerAggregate> markerMap = _walkMarkers ?? new Dictionary<string, MarkerAggregate>();
             List<double> gpuValues = _walkGpuMs ?? new List<double>();
 
@@ -463,17 +591,10 @@ namespace UnityCliBridge.Bridge.Editor
                 })
                 .ToArray();
 
-            ProfileGcEntry[] gcTop = markers
-                .Where(entry => entry.gcBytes > 0)
-                .OrderByDescending(entry => entry.gcBytes)
-                .Take(ProtocolConstants.DefaultProfileListLimit)
-                .Select(entry => new ProfileGcEntry
-                {
-                    marker = entry.m,
-                    bytesTotal = entry.gcBytes,
-                    framesWithAlloc = entry.frames,
-                })
-                .ToArray();
+            ProfileGcEntry[] gcTop = ProfileGcAttribution.BuildGcTop(
+                markers, ProtocolConstants.DefaultProfileListLimit, out _);
+            ProfileGcByScriptAccumulator gcAccumulator = _walkGcByScript ?? new ProfileGcByScriptAccumulator();
+            ProfileGcScriptEntry[] gcByScript = gcAccumulator.Build(frames.Count);
 
             var summary = new ProfileSummaryPayload
             {
@@ -490,21 +611,29 @@ namespace UnityCliBridge.Bridge.Editor
                 spikes = spikes,
                 hotspots = hotspots,
                 gcTop = gcTop,
+                gcByScript = ProfileGcAttribution.Take(gcByScript, ProtocolConstants.DefaultProfileListLimit, out _),
+                gcUnattributedBytes = gcAccumulator.UnattributedBytes,
                 sidecarPath = ProtocolConstants.ProfilesDirectoryRelative + "/" + captureId + ".json",
+                warning = _frameClampWarning,
+                frameClamp = _frameClamp,
             };
 
             var sidecar = new ProfileSidecarFile
             {
-                schemaVersion = 1,
+                schemaVersion = ProtocolConstants.ProfileSidecarSchemaVersion,
                 captureId = captureId,
                 createdUtc = DateTime.UtcNow.ToString("O"),
                 summary = summary,
                 frames = frames.ToArray(),
                 markers = markers,
+                gcByScript = gcByScript,
+                gcUnattributedBytes = gcAccumulator.UnattributedBytes,
             };
 
             WriteSidecar(captureId, sidecar);
             _lastCaptureId = captureId;
+            _lastCaptureStatus = status;
+            SessionState.SetString(ProtocolConstants.ProfileSessionKeyLastId, captureId);
             ResetCaptureState();
         }
 
@@ -519,10 +648,19 @@ namespace UnityCliBridge.Bridge.Editor
             _requestedFrames = 0;
             _durationSeconds = 0;
             _requestClamped = false;
+            _frameClamp = null;
+            _frameClampWarning = null;
             _walkFrames = null;
             _walkMarkers = null;
             _walkGpuMs = null;
+            _walkGcByScript = null;
             SessionState.EraseString(ProtocolConstants.ProfileSessionKeyActiveId);
+        }
+
+        /// <summary>JsonUtility cannot omit nulls. Drop empty warning and a zero frameClamp after it writes them.</summary>
+        private static string SerializeProfile<T>(T value)
+        {
+            return ProfileClampJson.OmitUnclamped(ProtocolJson.Serialize(value));
         }
 
         private static string SidecarPath(string captureId)
@@ -535,7 +673,7 @@ namespace UnityCliBridge.Bridge.Editor
         private static void WriteSidecar(string captureId, ProfileSidecarFile sidecar)
         {
             string path = SidecarPath(captureId);
-            AtomicFileUtility.WriteAllText(path, ProtocolJson.Serialize(sidecar));
+            AtomicFileUtility.WriteAllText(path, SerializeProfile(sidecar));
             AtomicFileUtility.CleanupTempFiles(Path.GetDirectoryName(path)!);
         }
 
@@ -572,8 +710,10 @@ namespace UnityCliBridge.Bridge.Editor
             SessionState.EraseString(ProtocolConstants.ProfileSessionKeyActiveId);
             // A domain reload wiped the capture state; leave a terminal sidecar so
             // `profile status <id>` reports Interrupted instead of NotFound.
+            SessionState.SetString(ProtocolConstants.ProfileSessionKeyLastId, activeId);
             var sidecar = new ProfileSidecarFile
             {
+                schemaVersion = ProtocolConstants.ProfileSidecarSchemaVersion,
                 captureId = activeId,
                 createdUtc = DateTime.UtcNow.ToString("O"),
                 summary = new ProfileSummaryPayload

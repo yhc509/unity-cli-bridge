@@ -146,6 +146,8 @@ public sealed class ParsedCommand
     public int? ProfileDuration { get; set; }
     public double? ProfileBudgetMs { get; set; }
     public bool ProfileWait { get; set; }
+    public int? ProfileWaitTimeoutSeconds { get; set; }
+    public List<string> ProfileStatsMarkers { get; } = new();
     public string? ProfileCaptureId { get; set; }
     public string? ProfileAnalyzeMarker { get; set; }
     public int? ProfileAnalyzeFrame { get; set; }
@@ -447,6 +449,7 @@ public sealed class ParsedCommand
             {
                 frames = ProfileFrames ?? 0,
                 preset = ProfilePreset ?? string.Empty,
+                markers = ProfileStatsMarkers.ToArray(),
             },
             CommandKind.ProfileCaptureStart => new ProfileCaptureStartArgs
             {
