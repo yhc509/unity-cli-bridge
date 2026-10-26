@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.6.1] - Unreleased
+## [0.6.1] - 2026-10-26
 
 ### Added
 - `profile analyze <captureId>` with no mode returns the capture summary. `hotspots`, `gcTop`, and `spikes` are under `summary`.
@@ -25,12 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A capture that records 0 frames is no longer reported as `Completed`. Its status is `Empty`, and `profile capture stop`, `stop --wait`, and `start --wait` fail with `PROFILE_EMPTY` (retryable), the `captureId`, and a hint to retry with `--frames <n> --wait`.
 - `gcTop` in the capture summary, `profile analyze`, and `profile analyze --gc` leaves out the player-loop containers (`PlayerLoop`, `UpdateScene`, `BehaviourUpdate`, `Update.ScriptRunBehaviourUpdate`, and the LateUpdate and FixedUpdate equivalents) and `GC.Alloc` itself. Their GC column is the total of everything below them, so they used to fill the list.
 - Capture sidecars are `schemaVersion` 2, which adds `gcByScript` and `gcUnattributedBytes`. Version 1 sidecars still load. Their `gcByScript` is empty, and `notes` says the capture was recorded before GC attribution.
+- `scene open` accepts the scene path as a positional argument (`scene open Assets/Scenes/Foo.unity`) as well as `--path`. `scene inspect`, `asset reimport`, `asset mkdir`, and `asset delete` do the same: each takes one asset path, and that path may be positional or `--path`. There is no `scene save` or `scene close`. If two different paths are given, the command fails with `CLI_USAGE` and names both paths. The same path given both ways is accepted. `asset delete` still requires `--force`.
 
 ### Fixed
 - `profile capture start` still clamps `--frames` to the profiler buffer (300 frames on Unity 2021.3, 2000 on Unity 6). A clamped capture records up to that buffer and can come back slightly short, because the ring buffer rotates. The finished summary reports `capturedFrames` (the actual count) next to `frameClamp` (`requested`, `clamped`, `bufferLimit`). `warning` and `frameClamp` are included only when the request was clamped; unclamped start, `--wait`, and `stop` responses omit both. `requestedFrames` is the clamped cap. A `--wait` timeout check uses `--duration`, or a `--frames` count inside the buffer.
 - `gcTop` and `gcByScript` leave out engine end-of-frame and PlayerLoop phase markers such as `PlayerEndOfFrame`, `PostLateUpdate`, and `PostLateUpdate.*`. Allocation under those markers is attributed to the nearest script marker above them, or counted as unattributed. Script markers such as `ThreatField.Update()` stay ranked.
 - `profile capture stop --wait` returns the same shape as `stop` on a capture that already finished: `captureId`, `status`, `capturedFrames`, and `summary`. `notice: PROFILE_ALREADY_COMPLETED` is set only when the capture had already finished on its own.
-- `scene open` accepts the scene path as a positional argument (`scene open Assets/Scenes/Foo.unity`) as well as `--path`. `scene inspect`, `asset reimport`, `asset mkdir`, and `asset delete` do the same: each takes one asset path, and that path may be positional or `--path`. There is no `scene save` or `scene close`. If two different paths are given, the command fails with `CLI_USAGE` and names both paths. The same path given both ways is accepted. `asset delete` still requires `--force`.
 
 ## [0.6.0] - 2026-10-24
 

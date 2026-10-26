@@ -300,7 +300,10 @@ internal sealed class FakeLauncher : IRoslynHostLauncher
 
     public FakeLauncher(Func<int, IRoslynHostInstance> create) => _create = create;
 
-    public int Launches { get; private set; }
+    private int _launches;
+
+    /// <summary>Visible to a test thread that waits for a background restart to call <see cref="Launch"/>.</summary>
+    public int Launches => Volatile.Read(ref _launches);
 
     public List<bool> PrewarmFlags { get; } = new();
 
@@ -327,7 +330,7 @@ internal sealed class FakeLauncher : IRoslynHostLauncher
     public RoslynHostLaunch Launch(bool prewarm, Action<IRoslynHostInstance> onSpawned)
     {
         BeforeSpawn?.Wait(TimeSpan.FromSeconds(30));
-        int attempt = ++Launches;
+        int attempt = Interlocked.Increment(ref _launches);
         PrewarmFlags.Add(prewarm);
         IRoslynHostInstance instance = _create(attempt);
         onSpawned(instance);
