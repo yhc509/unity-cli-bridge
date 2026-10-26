@@ -109,39 +109,34 @@ public sealed class ProcessListingCancelTests
     public void FastExit_DoesNotWaitOutAnExitTimeout()
     {
         using IDisposable scope = RoslynHostProcessInspector.AcquireListingScope();
-        // Warm both paths. The samples below are a child that has already exited.
-        RunEcho();
-        ReadEchoDirect();
-        long worstGap = 0;
-        long worstListing = 0;
+        // Warm the drain so the samples below are not the first JIT of that path.
+        RunEcho(_ => { });
+        long worstDrainMs = 0;
         for (int i = 0; i < 4; i++)
         {
-            long direct = ReadEchoDirect();
-            var watch = Stopwatch.StartNew();
-            string? output = RunEcho();
-            watch.Stop();
+            long drainMs = -1;
+            string? output = RunEcho(ms => drainMs = ms);
             Assert.NotNull(output);
             Assert.Contains("hello", output, StringComparison.Ordinal);
-            long gap = watch.ElapsedMilliseconds - direct;
-            if (gap > worstGap)
+            Assert.True(drainMs >= 0, "the post-exit drain was not reported");
+            if (drainMs > worstDrainMs)
             {
-                worstGap = gap;
-            }
-
-            if (watch.ElapsedMilliseconds > worstListing)
-            {
-                worstListing = watch.ElapsedMilliseconds;
+                worstDrainMs = drainMs;
             }
         }
 
-        // Shutdown lists processes on the editor main thread. After the child exited, the
-        // listing slept twice (20 ms) and then called WaitForExit(200). On Unity's Mono that
-        // wait consumed the whole budget, so macOS lastShutdownMs sat at about 210 ms.
-        // .NET's WaitForExit(200) returns immediately once HasExited is true, so the gap
-        // against a plain ReadToEnd is the post-exit sleep (about 40 ms), not that budget.
-        // A finished echo has to come back with the process.
-        int gapBoundMs = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 80 : 25;
-        Assert.True(worstGap < gapBoundMs, "listing ran " + worstGap + " ms slower than reading stdout directly (listing " + worstListing + " ms)");
+        // Shutdown lists processes on the editor main thread. After the child has exited, the
+        // listing used to call WaitForExit(200). On Unity's Mono that wait consumed the whole
+        // budget, so macOS lastShutdownMs sat at about 210 ms. The figure here is only that
+        // post-exit drain, not process startup (a busy runner made the old wall-clock gap
+        // against ReadToEnd miss a 25 ms bound at 28 ms). The drain has to stay under the
+        // budget with room for a stall; a wait that runs out the 200 ms timeout still fails.
+        // A finished echo still has to come back with its output, asserted above.
+        const long exitWaitBudgetMs = 200;
+        const long stallMarginMs = 50;
+        Assert.True(
+            worstDrainMs < exitWaitBudgetMs - stallMarginMs,
+            "exit drain took " + worstDrainMs + " ms; WaitForExit(" + exitWaitBudgetMs + ") consumes that budget");
         _ = scope;
     }
 
@@ -216,25 +211,7 @@ public sealed class ProcessListingCancelTests
         return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "-n 40 127.0.0.1" : "-c \"exec sleep 30\"";
     }
 
-    private static long ReadEchoDirect()
-    {
-        var watch = Stopwatch.StartNew();
-        var start = new ProcessStartInfo(EchoFile(), EchoArguments())
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        using Process process = Process.Start(start) ?? throw new InvalidOperationException("echo did not start");
-        string text = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        watch.Stop();
-        Assert.Contains("hello", text, StringComparison.Ordinal);
-        return watch.ElapsedMilliseconds;
-    }
-
-    private static string? RunEcho()
+    private static string? RunEcho(Action<long>? onChildExitDrainMs = null)
     {
         string? output = RoslynHostProcessInspector.RunListing(
             EchoFile(),
@@ -244,7 +221,8 @@ public sealed class ProcessListingCancelTests
             true,
             0,
             out bool cancelled,
-            out bool failed);
+            out bool failed,
+            onChildExitDrainMs);
         Assert.False(cancelled);
         Assert.False(failed, output ?? "null");
         return output;

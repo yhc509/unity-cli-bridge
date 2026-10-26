@@ -939,12 +939,19 @@ public sealed class RoslynHostBackendTests : IDisposable
             instances.Add(instance);
             return instance;
         });
+        // AcquireReady returns as soon as the host is adopted. The start thread then writes
+        // status with no stopped reason. On a slow runner that write lands after idle-exit and
+        // replaces the note, so the assertion below never sees idle-exit (windows release CI,
+        // the 10 s spin). HoldStartCloseOut runs after that write. Production leaves it null.
+        using var startClosedOut = new ManualResetEventSlim(false);
         using RoslynHostSupervisor supervisor = Supervisor(
             launcher,
             Settings((ExecuteCompilerSettings.IdleExitVariable, "1")),
             clock: () => clock.Now,
-            idleCheck: TimeSpan.FromMilliseconds(50));
+            idleCheck: TimeSpan.FromMilliseconds(50),
+            configure: options => options.HoldStartCloseOut = () => startClosedOut.Set());
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
+        Assert.True(startClosedOut.Wait(TimeSpan.FromSeconds(10)), "start did not finish its status write");
 
         clock.Now = clock.Now.AddSeconds(30);
         Thread.Sleep(300);
@@ -953,7 +960,9 @@ public sealed class RoslynHostBackendTests : IDisposable
         Assert.True(SpinWait.SpinUntil(() => supervisor.State == "stopped", TimeSpan.FromSeconds(10)));
         // State is published before Stop returns, so the stop count can lag the state by one call.
         Assert.True(SpinWait.SpinUntil(() => instances[0].Stops == 1, TimeSpan.FromSeconds(10)));
-        Assert.True(SpinWait.SpinUntil(() => RoslynHostStatus.TryRead(supervisor.StatusFilePath)?.Note == "idle-exit", TimeSpan.FromSeconds(10)));
+        Assert.True(
+            SpinWait.SpinUntil(() => RoslynHostStatus.TryRead(supervisor.StatusFilePath)?.Note == "idle-exit", TimeSpan.FromSeconds(10)),
+            "note=" + (RoslynHostStatus.TryRead(supervisor.StatusFilePath)?.Note ?? "<unreadable>"));
         Assert.NotNull(supervisor.AcquireReady(5000, out _));
         Assert.Equal(2, launcher.Launches);
         Assert.Equal(0, supervisor.Snapshot().RecentCrashes);

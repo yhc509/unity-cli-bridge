@@ -527,6 +527,9 @@ namespace UnityCliBridge.Bridge.Editor
         /// Test entry with the timeout and the failure flag. <paramref name="timeoutMs"/> 0 uses
         /// <see cref="ListingTimeoutMs"/>. <paramref name="failed"/> is a timeout or a child that
         /// exited without producing output, which is not an empty process table.
+        /// <paramref name="onChildExitDrainMs"/> runs on the listing thread after the post-exit
+        /// drain, with how many milliseconds that drain took. Production passes null, and a null
+        /// callback does not time the drain or change its result.
         /// </summary>
         internal static string? RunListing(
             string fileName,
@@ -536,9 +539,20 @@ namespace UnityCliBridge.Bridge.Editor
             bool ignoreListingScope,
             int timeoutMs,
             out bool cancelled,
-            out bool failed)
+            out bool failed,
+            Action<long>? onChildExitDrainMs = null)
         {
-            return Capture(fileName, arguments, null, cancellation, linkDomainCancellation, ignoreListingScope, timeoutMs, out cancelled, out failed);
+            return Capture(
+                fileName,
+                arguments,
+                null,
+                cancellation,
+                linkDomainCancellation,
+                ignoreListingScope,
+                timeoutMs,
+                out cancelled,
+                out failed,
+                onChildExitDrainMs);
         }
 
         /// <summary>
@@ -557,7 +571,8 @@ namespace UnityCliBridge.Bridge.Editor
             bool ignoreListingScope,
             int timeoutMs,
             out bool cancelled,
-            out bool failed)
+            out bool failed,
+            Action<long>? onChildExitDrainMs = null)
         {
             cancelled = false;
             failed = false;
@@ -661,20 +676,35 @@ namespace UnityCliBridge.Bridge.Editor
                         // Unity's Mono, WaitForExit(200) after HasExited still waited out that
                         // whole budget, so macOS shutdown sat at about 210 ms. A leaked write end
                         // never delivers EOF; a quiet drain is the end of this child's output.
-                        while (DrainPipe(output, buffer, decoder, stdout) > 0)
+                        // The callback is null in production and is not invoked, so this drain
+                        // does not time itself or change its result. Tests use it to measure
+                        // only this section against that 200 ms budget.
+                        Stopwatch? exitDrain = onChildExitDrainMs != null ? Stopwatch.StartNew() : null;
+                        try
                         {
+                            while (DrainPipe(output, buffer, decoder, stdout) > 0)
+                            {
+                                DrainPipe(error, discard, null, null);
+                            }
+
                             DrainPipe(error, discard, null, null);
-                        }
+                            if (token.IsCancellationRequested)
+                            {
+                                cancelled = true;
+                                return null;
+                            }
 
-                        DrainPipe(error, discard, null, null);
-                        if (token.IsCancellationRequested)
+                            Decode(decoder, buffer, 0, stdout, flush: true);
+                            return FinishExitedChild(child, stdout.ToString(), out failed);
+                        }
+                        finally
                         {
-                            cancelled = true;
-                            return null;
+                            if (exitDrain != null)
+                            {
+                                exitDrain.Stop();
+                                onChildExitDrainMs!(exitDrain.ElapsedMilliseconds);
+                            }
                         }
-
-                        Decode(decoder, buffer, 0, stdout, flush: true);
-                        return FinishExitedChild(child, stdout.ToString(), out failed);
                     }
 
                     if (watch.ElapsedMilliseconds >= limitMs)
