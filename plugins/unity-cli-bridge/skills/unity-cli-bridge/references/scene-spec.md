@@ -7,17 +7,20 @@ Use `scene inspect` and `scene patch` to edit saved `Assets/...unity` scenes in 
 ## `scene open`
 
 ```bash
+unity-cli scene open Assets/Scenes/System.unity [--force]
 unity-cli scene open --path Assets/Scenes/System.unity [--force]
 ```
 
 Rules:
 
-- `--path` targets a saved `.unity` asset
+- The scene path is a positional argument or `--path`. Pass it once. If both are set and they differ, the command fails with `CLI_USAGE`.
+- The path targets a saved `.unity` asset under `Assets/`
 - if currently loaded scenes are dirty, `--force` is required to discard them and open the target scene
+- There is no `scene save` or `scene close` command
 
 ## `scene inspect`
 
-Use `--with-values` when you need data for authoring a patch.
+The scene asset path may be positional or `--path`, same as `scene open`. Use `--with-values` when you need data for authoring a patch.
 
 - `/` is the virtual scene root
 - Root object paths look like `/Environment[0]`, `/Player[0]`

@@ -60,11 +60,11 @@ Commands for querying assets under `Assets/...` and `Packages/...`, plus mutatin
 | `asset find` | `asset find [--name <term>] [--type <type>] [--folder <Assets/...>] [--limit N]` | live | `None` | Finds assets by name and/or type, with an optional folder filter. Requires at least one of --name or --type. |
 | `asset types` | `asset types` | live | `None` | Lists built-in and project extension asset-create type descriptors available to the target project. |
 | `asset info` | `asset info (--path <Assets/...\|Packages/...> \| --guid <guid>)` | live | `None` | Reads asset metadata by path or GUID. Query paths may point to package assets. |
-| `asset reimport` | `asset reimport --path <Assets/...>` | live | `None` | Reimports an existing asset. |
-| `asset mkdir` | `asset mkdir --path <Assets/...>` | live | `None` | Creates missing folders under `Assets/...`. |
+| `asset reimport` | `asset reimport (<Assets/...> \| --path <Assets/...>)` | live | `None` | Reimports an existing asset. |
+| `asset mkdir` | `asset mkdir (<Assets/...> \| --path <Assets/...>)` | live | `None` | Creates missing folders under `Assets/...`. |
 | `asset move` | `asset move --from <Assets/...> --to <Assets/...> [--force]` | live | `OnOverwrite` | Moves an asset to a new path; overwriting the destination requires --force. |
 | `asset rename` | `asset rename --path <Assets/...> --name <newName> [--force]` | live | `OnOverwrite` | Renames an asset in place; overwriting the destination requires --force. |
-| `asset delete` | `asset delete --path <Assets/...> --force` | live | `Always` | Deletes an asset and always requires --force. |
+| `asset delete` | `asset delete (<Assets/...> \| --path <Assets/...>) --force` | live | `Always` | Deletes an asset and always requires --force. |
 | `asset create` | `asset create --type <kind> --path <Assets/...> [--data-json <json>] [options]` | live | `OnOverwrite` | Creates a built-in or extension asset type; overwriting an existing asset requires --force. |
 
 ## Scene Workflows
@@ -73,8 +73,8 @@ Commands for opening, inspecting, and patching saved scene assets.
 
 | Command | Synopsis | Modes | Force Rule | Summary |
 | --- | --- | --- | --- | --- |
-| `scene open` | `scene open --path <Assets/...> [--force]` | live | `None` | Opens a saved scene asset; use --force to discard dirty loaded scenes. |
-| `scene inspect` | `scene inspect --path <Assets/...> [--node <scenePath>] [--with-values] [--max-depth <N>] [--omit-defaults]` | live | `None` | Inspects a saved scene hierarchy; use --with-values when authoring scene patch specs and the other options to reduce payload size. |
+| `scene open` | `scene open (<Assets/...> \| --path <Assets/...>) [--force]` | live | `None` | Opens a saved scene asset; use --force to discard dirty loaded scenes. |
+| `scene inspect` | `scene inspect (<Assets/...> \| --path <Assets/...>) [--node <scenePath>] [--with-values] [--max-depth <N>] [--omit-defaults]` | live | `None` | Inspects a saved scene hierarchy; use --with-values when authoring scene patch specs and the other options to reduce payload size. |
 | `scene patch` | `scene patch --path <Assets/...> (--spec-file <file.json> \| --spec-json <json>) [--force]` | live | `OnDestructiveOp` | Applies a deterministic scene patch spec; destructive operations require --force. |
 | `scene add-object` | `scene add-object --path <Assets/...> [--parent <scenePath>] --name <name> [--primitive <Cube\|Sphere\|Capsule\|Cylinder\|Plane\|Quad>] [--position x,y,z] [--components "Type1,Type2"]` | live | `None` | Adds a new GameObject or built-in primitive to a scene; shortcut for a single add-gameobject scene patch operation. |
 | `scene set-transform` | `scene set-transform --node <scenePath> [--position x,y,z] [--rotation x,y,z] [--scale x,y,z]` | live | `None` | Sets local transform values on a node in the active loaded scene and saves the scene immediately. |

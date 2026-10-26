@@ -283,17 +283,18 @@ unity-cli asset find --type Material                    # Find by type
 unity-cli asset find --name Player --type Prefab        # Find by name + type
 unity-cli asset info --path Assets/Scenes/Main.unity    # Asset metadata
 unity-cli asset create --type material --path Assets/Materials/Red  # Create
-unity-cli asset mkdir --path Assets/NewFolder            # Create folder
+unity-cli asset mkdir Assets/NewFolder                  # Create folder (--path also works)
+unity-cli asset reimport Assets/Materials/Red.mat        # Reimport (--path also works)
 unity-cli asset move --from ... --to ... --force         # Move/rename
-unity-cli asset delete --path ... --force                # Delete
+unity-cli asset delete Assets/Old.asset --force          # Delete (--path also works)
 ```
 
 ### Scenes
 
 ```bash
-# Open and inspect
-unity-cli scene open --path Assets/Scenes/Main.unity
-unity-cli scene inspect --path ... --with-values --omit-defaults
+# Open and inspect. The scene path may be positional or --path.
+unity-cli scene open Assets/Scenes/Main.unity
+unity-cli scene inspect Assets/Scenes/Main.unity --with-values --omit-defaults
 unity-cli scene inspect --path ... --node "/Player[0]/Arm[0]" --max-depth 2
 
 # Build scenes with convenience commands

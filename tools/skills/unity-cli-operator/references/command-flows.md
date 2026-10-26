@@ -142,6 +142,14 @@ ucli asset create --project "$PROJECT" --type scriptable-object --path Assets/Da
 
 ## Scene workflow
 
+### Open
+
+```bash
+ucli scene open --project "$PROJECT" Assets/Scenes/SampleScene.unity --output compact
+```
+
+The scene path may be positional or `--path`. `scene inspect` takes the scene path the same way. `asset reimport`, `asset mkdir`, and `asset delete` take their single asset path the same way (`asset delete` still needs `--force`). There is no `scene save` or `scene close` command. Commands that need more than one value (`scene patch`, `asset move`, `asset rename`, `asset create`, `asset info`) keep named flags.
+
 ### Inspect
 
 ```bash
