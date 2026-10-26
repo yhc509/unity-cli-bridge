@@ -1048,9 +1048,13 @@ public static partial class CliArgumentParser
                     parsed.AssetGuid = RequireValue(tokens, "--guid");
                     break;
                 case CommandKind.AssetReimport when token == "--path":
+                    parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, RequireValue(tokens, "--path"), "asset reimport", "--path");
+                    break;
                 case CommandKind.AssetMkdir when token == "--path":
+                    parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, RequireValue(tokens, "--path"), "asset mkdir", "--path");
+                    break;
                 case CommandKind.AssetDelete when token == "--path":
-                    parsed.AssetPath = RequireAssetPath(RequireValue(tokens, "--path"), "--path");
+                    parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, RequireValue(tokens, "--path"), "asset delete", "--path");
                     break;
                 case CommandKind.AssetMove when token == "--from":
                     parsed.AssetFrom = RequireAssetPath(RequireValue(tokens, "--from"), "--from");
@@ -1110,7 +1114,11 @@ public static partial class CliArgumentParser
                     parsed.AssetDepth = RequireInt(RequireValue(tokens, "--depth"), "--depth", minimumValue: 0);
                     break;
                 case CommandKind.SceneOpen when token == "--path":
+                    parsed.ScenePath = MergeSingleAssetPath(parsed.ScenePath, RequireValue(tokens, "--path"), "scene open", "--path");
+                    break;
                 case CommandKind.SceneInspect when token == "--path":
+                    parsed.ScenePath = MergeSingleAssetPath(parsed.ScenePath, RequireValue(tokens, "--path"), "scene inspect", "--path");
+                    break;
                 case CommandKind.ScenePatch when token == "--path":
                 case CommandKind.SceneAddObject when token == "--path":
                 case CommandKind.SceneAddComponent when token == "--path":
@@ -1236,6 +1244,11 @@ public static partial class CliArgumentParser
                     parsed.InstancesBrief = true;
                     break;
                 default:
+                    if (TryAssignSinglePositionalPath(parsed, token))
+                    {
+                        break;
+                    }
+
                     if (parsed.Kind == CommandKind.AssetCreate && token.StartsWith("--", StringComparison.Ordinal))
                     {
                         AddAssetCreateCustomOption(parsed, token, tokens);

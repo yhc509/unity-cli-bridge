@@ -37,7 +37,7 @@ Diagnose performance with this loop:
 
 When a memory leak is the suspect, use the memory loop instead of the frame-time loop:
 
-1. Create a baseline reportId with `unity-cli profile memory`. Reproduce the suspect flow, then run it again for a head reportId. Both must be the **same mode** (both playmode, or both editmode).
+1. Create a baseline reportId with `unity-cli profile memory`. In Play Mode, advance a known number of frames with `unity-cli profile capture start --frames <n> --wait`, then run `profile memory` again for the head reportId. Both reports must be the **same mode** (both playmode, or both editmode). Do not `sleep` between them. The count recipe, including Texture2D via `profile memory top`, is in section 11.
 2. Compare with `unity-cli profile memory compare <baseReportId> <headReportId>`. The verdict uses the `Total Used Memory` median (`--threshold`, default 5%), and `increases` says which counters grew. This works with the Editor closed.
 3. An asset type whose Count and Memory rise together (for example `Texture Count` plus `Texture Memory`) is the first leak candidate. A rise in `GC Used Memory` means managed objects are still alive. A rise in `GC Reserved Memory` alone is heap growth. Do not use `Total Reserved` or `System Used` to call a leak.
 4. Name the objects with `unity-cli profile memory top` (`--type Texture2D|Mesh|AudioClip|Material|AnimationClip|...`, `--limit`, default 20, `--scope loaded|scene|assets`). `totals` is count and bytes per type. `top` is the largest objects, with asset path when there is one, plus width/height/format/mipCount for textures and vertexCount/subMeshCount for meshes. These sizes are Editor measurements and differ from player builds. Compare the same mode with the same mode.
@@ -268,14 +268,33 @@ Allocation causes that **are still valid**: string concatenation and interpolati
 
 Use this when you are looking at **memory**, not frame time. It is the light path: counter medians, no snapshot. It follows the order Unity staff recommend (counter trend first, snapshot only when needed).
 
+To see whether Texture2D or object counts grow, sample twice in Play Mode and let the Editor advance by frames. Do not insert a fixed `sleep 10` (or any other fixed sleep) between the samples.
+
 ```bash
+unity-cli play
 unity-cli profile memory                          # baseline reportId
-# Reproduce the suspect flow (play, repeat scene loads, let time pass)
-unity-cli profile memory                          # head reportId
-unity-cli profile memory compare <base> <head>
-unity-cli profile memory top --limit 20
-unity-cli profile memory top --type Texture2D --scope assets
+unity-cli profile memory top --type Texture2D     # totals.count and totals.bytes
+unity-cli profile capture start --frames 300 --wait
+unity-cli profile memory                          # head reportId, still Play Mode
+unity-cli profile memory top --type Texture2D
+unity-cli profile memory compare <baseReportId> <headReportId>
 ```
+
+`play` already waits until Play Mode is entered. `profile capture start` runs only in Play Mode. With `--frames <n> --wait` it returns when that many frames have been captured (`--frames` or `--duration` is required with `--wait`). That captured stretch is the gap between the two samples: a frame count, not a wall-clock sleep. `--duration <seconds> --wait` is the time-based form of the same wait. Prefer `--frames` when the question is what changed after N frames. Each `profile memory` call also waits for its own sample window (`--frames`, default 30). That window is the sample, not the gap.
+
+`profile memory` records `Texture Count`, `Object Count`, and `Scene Object Count`, plus the byte counters. `profile memory compare` diffs those two reports locally. It does not diff `profile memory top`. For Texture2D specifically, read `totals` on each `profile memory top --type Texture2D` response (`count` and `bytes`). `Texture Count` on the memory report is every texture, not Texture2D alone. `--type` also accepts Texture, RenderTexture, Cubemap, Mesh, AudioClip, Material, AnimationClip, Shader, and Sprite. `--scope` is `loaded` (default), `scene`, or `assets`.
+
+Do not do this:
+
+```bash
+unity-cli profile memory top --type Texture2D
+sleep 10
+unity-cli profile memory top --type Texture2D
+```
+
+A fixed sleep does not advance a known number of frames, and it does not wait for the Editor. `profile memory snapshot` writes a `.snap` for the Memory Profiler window. It is rejected with `PROFILE_IN_PROGRESS` while a capture is running, and this recipe does not use it.
+
+`profile memory top --limit 20` and `profile memory top --type Texture2D --scope assets` are the follow-up once `increases` names a type. Take both sides in the same mode.
 
 How to read it:
 

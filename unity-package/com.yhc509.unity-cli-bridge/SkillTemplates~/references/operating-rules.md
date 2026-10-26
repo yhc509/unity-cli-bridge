@@ -77,8 +77,8 @@ unity-cli does not have dedicated script create/delete commands. Use this combin
 4. `unity-cli read-console --type error` — check for compile errors. `--type error` also includes Exception and Assert; the entry `type` stays `Exception` or `Assert`.
 
 **Delete script:**
-- `unity-cli asset delete --path Assets/Scripts/MyScript.cs --force`
-  (handles .meta cleanup and refresh automatically)
+- `unity-cli asset delete Assets/Scripts/MyScript.cs --force`
+  (`--path` is the same path. Deletion handles .meta cleanup and refresh automatically)
 
 ## Component operations
 

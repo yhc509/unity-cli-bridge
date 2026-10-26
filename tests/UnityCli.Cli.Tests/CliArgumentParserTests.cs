@@ -862,6 +862,211 @@ public sealed class CliArgumentParserTests
     }
 
     [Fact]
+    public void Parse_SceneOpen_AcceptsPositionalPath()
+    {
+        var parsed = CliArgumentParser.Parse([
+            "scene",
+            "open",
+            "--force",
+            "Assets/Scenes/Foo.unity"
+        ]);
+
+        Assert.Equal(CommandKind.SceneOpen, parsed.Kind);
+        Assert.Equal("Assets/Scenes/Foo.unity", parsed.ScenePath);
+        Assert.True(parsed.Force);
+
+        var args = ProtocolJson.Deserialize<SceneOpenArgs>(parsed.ToEnvelope().argumentsJson);
+        Assert.NotNull(args);
+        Assert.Equal("Assets/Scenes/Foo.unity", args.path);
+        Assert.True(args.force);
+    }
+
+    [Fact]
+    public void Parse_SceneOpen_SamePathBothWays_IsAccepted()
+    {
+        var parsed = CliArgumentParser.Parse([
+            "scene",
+            "open",
+            @"Assets\Scenes\Foo.unity",
+            "--path",
+            "Assets/Scenes/Foo.unity"
+        ]);
+
+        Assert.Equal("Assets/Scenes/Foo.unity", parsed.ScenePath);
+    }
+
+    [Fact]
+    public void Parse_SceneOpen_DifferentPaths_Throws()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse([
+                "scene",
+                "open",
+                "Assets/Scenes/Foo.unity",
+                "--path",
+                "Assets/Scenes/Bar.unity"
+            ]));
+
+        Assert.Contains("two different paths", ex.Message);
+        Assert.Contains("Assets/Scenes/Foo.unity", ex.Message);
+        Assert.Contains("Assets/Scenes/Bar.unity", ex.Message);
+        Assert.Contains("--path", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_SceneOpen_MissingPath_NamesBothForms()
+    {
+        var ex = Assert.Throws<CliUsageException>(() => CliArgumentParser.Parse(["scene", "open"]));
+
+        Assert.Contains("<Assets/...>", ex.Message);
+        Assert.Contains("--path", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_SceneInspect_AcceptsPositionalPathWithOptions()
+    {
+        var parsed = CliArgumentParser.Parse([
+            "scene",
+            "inspect",
+            "Assets/Scenes/Foo.unity",
+            "--node", "/Player[0]",
+            "--with-values",
+            "--max-depth", "2",
+            "--omit-defaults"
+        ]);
+
+        Assert.Equal(CommandKind.SceneInspect, parsed.Kind);
+        Assert.Equal("Assets/Scenes/Foo.unity", parsed.ScenePath);
+        Assert.Equal("/Player[0]", parsed.SceneTarget);
+        Assert.True(parsed.SceneWithValues);
+        Assert.Equal(2, parsed.MaxDepth);
+        Assert.True(parsed.OmitDefaults);
+    }
+
+    [Fact]
+    public void Parse_SceneInspect_DifferentPaths_Throws()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse([
+                "scene",
+                "inspect",
+                "--path",
+                "Assets/Scenes/Foo.unity",
+                "Assets/Scenes/Bar.unity"
+            ]));
+
+        Assert.Contains("scene inspect", ex.Message);
+        Assert.Contains("two different paths", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_ScenePatch_RejectsPositionalPath()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse([
+                "scene",
+                "patch",
+                "Assets/Scenes/Foo.unity",
+                "--spec-json",
+                "{\"version\":1}"
+            ]));
+
+        Assert.Contains("Unsupported option", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_AssetReimport_AcceptsPositionalPath()
+    {
+        var parsed = CliArgumentParser.Parse(["asset", "reimport", "Assets/Materials/Red.mat"]);
+
+        Assert.Equal(CommandKind.AssetReimport, parsed.Kind);
+        Assert.Equal("Assets/Materials/Red.mat", parsed.AssetPath);
+    }
+
+    [Fact]
+    public void Parse_AssetMkdir_AcceptsPositionalPath()
+    {
+        var parsed = CliArgumentParser.Parse(["asset", "mkdir", "Assets/NewFolder"]);
+
+        Assert.Equal(CommandKind.AssetMkdir, parsed.Kind);
+        Assert.Equal("Assets/NewFolder", parsed.AssetPath);
+    }
+
+    [Fact]
+    public void Parse_AssetDelete_AcceptsPositionalPath()
+    {
+        var parsed = CliArgumentParser.Parse([
+            "asset",
+            "delete",
+            "Assets/Materials/Red.mat",
+            "--force"
+        ]);
+
+        Assert.Equal(CommandKind.AssetDelete, parsed.Kind);
+        Assert.Equal("Assets/Materials/Red.mat", parsed.AssetPath);
+        Assert.True(parsed.Force);
+    }
+
+    [Fact]
+    public void Parse_AssetDelete_PositionalPathStillRequiresForce()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["asset", "delete", "Assets/Materials/Red.mat"]));
+
+        Assert.Contains("--force", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_AssetMkdir_DifferentPaths_Throws()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse([
+                "asset",
+                "mkdir",
+                "Assets/NewFolder",
+                "--path",
+                "Assets/OtherFolder"
+            ]));
+
+        Assert.Contains("asset mkdir", ex.Message);
+        Assert.Contains("two different paths", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_AssetInfo_RejectsPositionalPath()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse(["asset", "info", "Assets/Materials/Red.mat"]));
+
+        Assert.Contains("Unsupported option", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_AssetMove_RejectsPositionalPath()
+    {
+        var ex = Assert.Throws<CliUsageException>(() =>
+            CliArgumentParser.Parse([
+                "asset",
+                "move",
+                "Assets/A.mat",
+                "--to",
+                "Assets/B.mat"
+            ]));
+
+        Assert.Contains("Unsupported option", ex.Message);
+    }
+
+    [Fact]
+    public void SceneOpenHelp_DocumentsPositionalPath()
+    {
+        string? help = CliCommandMetadata.BuildTopicHelpText("scene open");
+
+        Assert.NotNull(help);
+        Assert.Contains("scene open (<Assets/...> | --path <Assets/...>) [--force]", help);
+        Assert.Contains("positional", help);
+    }
+
+    [Fact]
     public void Parse_SceneInspect_AcceptsWithValues()
     {
         var parsed = CliArgumentParser.Parse([

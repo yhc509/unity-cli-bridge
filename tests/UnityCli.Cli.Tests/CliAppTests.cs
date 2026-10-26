@@ -106,8 +106,30 @@ public sealed class CliAppTests
 
         var details = ParseDetails(response.error?.details);
         Assert.Equal(
-            "usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] asset delete --path <Assets/...> --force",
+            "usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] asset delete (<Assets/...> | --path <Assets/...>) --force",
             details.GetProperty("usage").GetString());
+    }
+
+    [Fact]
+    public async Task RunAsync_SceneOpen_ConflictingPaths_IsCliUsage()
+    {
+        var result = await InvokeAsync([
+            "--json",
+            "scene",
+            "open",
+            "Assets/Scenes/Foo.unity",
+            "--path",
+            "Assets/Scenes/Bar.unity"
+        ]);
+
+        Assert.Equal(2, result.ExitCode);
+        Assert.Equal(string.Empty, result.Stderr);
+
+        var response = ParseResponse(result.Stdout);
+        Assert.Equal("CLI_USAGE", response.error?.code);
+        Assert.Contains("two different paths", response.error?.message);
+        Assert.Contains("Assets/Scenes/Foo.unity", response.error?.message);
+        Assert.Contains("Assets/Scenes/Bar.unity", response.error?.message);
     }
 
     [Fact]
@@ -679,7 +701,7 @@ public sealed class CliAppTests
         Assert.Equal(string.Empty, result.Stdout);
         Assert.Contains("--force", result.Stderr);
         Assert.Contains(
-            "usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] asset delete --path <Assets/...> --force",
+            "usage: unity-cli [--json] [--output <default|json|compact>] [--project <path|name>] asset delete (<Assets/...> | --path <Assets/...>) --force",
             result.Stderr);
     }
 

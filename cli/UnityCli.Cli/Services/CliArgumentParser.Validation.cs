@@ -128,6 +128,54 @@ public static partial class CliArgumentParser
         }
     }
 
+    /// <summary>
+    /// Commands whose only asset operand is one path accept that path positionally or as <c>--path</c>.
+    /// A second path that normalizes to a different value is a usage error. The same path both ways is accepted.
+    /// </summary>
+    private static string MergeSingleAssetPath(string? current, string rawValue, string command, string optionLabel)
+    {
+        string normalized = RequireAssetPath(rawValue, optionLabel);
+        if (!string.IsNullOrWhiteSpace(current)
+            && !string.Equals(current, normalized, StringComparison.Ordinal))
+        {
+            throw new CliUsageException(
+                "`" + command + "` was given two different paths (`"
+                + current + "` and `" + normalized
+                + "`). Pass the path once, as a positional argument or as `--path`.");
+        }
+
+        return normalized;
+    }
+
+    private static bool TryAssignSinglePositionalPath(ParsedCommand parsed, string token)
+    {
+        if (token.StartsWith("-", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        switch (parsed.Kind)
+        {
+            case CommandKind.SceneOpen:
+                parsed.ScenePath = MergeSingleAssetPath(parsed.ScenePath, token, "scene open", "path");
+                return true;
+            case CommandKind.SceneInspect:
+                parsed.ScenePath = MergeSingleAssetPath(parsed.ScenePath, token, "scene inspect", "path");
+                return true;
+            case CommandKind.AssetReimport:
+                parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, token, "asset reimport", "path");
+                return true;
+            case CommandKind.AssetMkdir:
+                parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, token, "asset mkdir", "path");
+                return true;
+            case CommandKind.AssetDelete:
+                parsed.AssetPath = MergeSingleAssetPath(parsed.AssetPath, token, "asset delete", "path");
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private static string RequireAssetCreateType(string value)
     {
         string normalized = BuiltInAssetCreateCatalog.NormalizeTypeId(value);
@@ -203,15 +251,15 @@ public static partial class CliArgumentParser
                 break;
             }
             case CommandKind.AssetReimport when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset reimport` requires `--path`.");
+                throw new CliUsageException("`asset reimport` requires an asset path (`<Assets/...>` or `--path`).");
             case CommandKind.AssetMkdir when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset mkdir` requires `--path`.");
+                throw new CliUsageException("`asset mkdir` requires an asset path (`<Assets/...>` or `--path`).");
             case CommandKind.AssetMove when string.IsNullOrWhiteSpace(parsed.AssetFrom) || string.IsNullOrWhiteSpace(parsed.AssetTo):
                 throw new CliUsageException("`asset move` requires both `--from` and `--to`.");
             case CommandKind.AssetRename when string.IsNullOrWhiteSpace(parsed.AssetPath) || string.IsNullOrWhiteSpace(parsed.AssetNewName):
                 throw new CliUsageException("`asset rename` requires both `--path` and `--name`.");
             case CommandKind.AssetDelete when string.IsNullOrWhiteSpace(parsed.AssetPath):
-                throw new CliUsageException("`asset delete` requires `--path`.");
+                throw new CliUsageException("`asset delete` requires an asset path (`<Assets/...>` or `--path`).");
             case CommandKind.AssetDelete when ForceRequiredByCatalog(parsed):
                 throw new CliUsageException("`asset delete` requires `--force`.");
             case CommandKind.AssetCreate when string.IsNullOrWhiteSpace(parsed.AssetCreateType) || string.IsNullOrWhiteSpace(parsed.AssetPath):
@@ -266,9 +314,9 @@ public static partial class CliArgumentParser
         switch (parsed.Kind)
         {
             case CommandKind.SceneOpen when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene open` requires `--path`.");
+                throw new CliUsageException("`scene open` requires a scene path (`<Assets/...>` or `--path`).");
             case CommandKind.SceneInspect when string.IsNullOrWhiteSpace(parsed.ScenePath):
-                throw new CliUsageException("`scene inspect` requires `--path`.");
+                throw new CliUsageException("`scene inspect` requires a scene path (`<Assets/...>` or `--path`).");
             case CommandKind.ScenePatch when string.IsNullOrWhiteSpace(parsed.ScenePath):
                 throw new CliUsageException("`scene patch` requires `--path`.");
             case CommandKind.ScenePatch when HasInvalidSceneSpecSource(parsed):
