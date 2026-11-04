@@ -21,11 +21,17 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Restore locked dependencies
+        run: dotnet restore UnityCliBridge.sln --locked-mode
+
       - name: Run tests
-        run: dotnet test UnityCliBridge.sln
+        run: dotnet test UnityCliBridge.sln --no-restore
+
+      - name: Restore osx-arm64 publish dependencies
+        run: dotnet restore cli/UnityCli.Cli/UnityCli.Cli.csproj --locked-mode -r osx-arm64
 
       - name: Publish osx-arm64 build
-        run: ./scripts/publish-osx-arm64.sh
+        run: ./scripts/publish-osx-arm64.sh --no-restore
 
       - name: Package osx-arm64 archive
         run: tar -czf unity-cli-osx-arm64.tar.gz -C dist/unity-cli .
@@ -49,12 +55,18 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Restore locked dependencies
+        run: dotnet restore UnityCliBridge.sln --locked-mode
+
       - name: Run tests
-        run: dotnet test UnityCliBridge.sln
+        run: dotnet test UnityCliBridge.sln --no-restore
+
+      - name: Restore win-x64 publish dependencies
+        run: dotnet restore cli/UnityCli.Cli/UnityCli.Cli.csproj --locked-mode -r win-x64
 
       - name: Publish win-x64 build
         shell: bash
-        run: bash ./scripts/publish-win-x64.sh
+        run: bash ./scripts/publish-win-x64.sh --no-restore
 
       - name: Package win-x64 archive
         shell: pwsh

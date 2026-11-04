@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- UcbRoslynHost.cs brings its own Main; keep the test SDK from generating a second entry point. -->
     <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>

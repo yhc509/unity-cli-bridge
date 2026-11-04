@@ -10,6 +10,9 @@ on:
       - main
       - dev
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -45,8 +48,11 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Restore locked dependencies
+        run: dotnet restore UnityCliBridge.sln --locked-mode
+
       - name: Build solution
-        run: dotnet build UnityCliBridge.sln -c Debug
+        run: dotnet build UnityCliBridge.sln -c Debug --no-restore
 
       - name: Run tests
-        run: dotnet test UnityCliBridge.sln
+        run: dotnet test UnityCliBridge.sln --no-restore
