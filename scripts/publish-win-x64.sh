@@ -13,6 +13,7 @@ dotnet publish \
   --self-contained true \
   -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
-  -o "$OUTPUT_DIR"
+  -o "$OUTPUT_DIR" \
+  "$@"
 
 echo "published to $OUTPUT_DIR"
